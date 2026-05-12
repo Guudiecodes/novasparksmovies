@@ -70,7 +70,7 @@
     --text3: #7a9ab0;
 
     /* Layout */
-    --sidebar: 72px;
+    --sidebar: 50px;
     --radius: 8px;
 
     /* Typography */
@@ -124,8 +124,8 @@ body,
 }
 
 .sidebar-logo {
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     margin-bottom: 12px;
     cursor: pointer;
     transition: filter 0.2s;
@@ -154,8 +154,8 @@ body,
 }
 
 .sidebar-btn {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 42px;
     border-radius: var(--radius);
     display: flex;
     align-items: center;
@@ -170,8 +170,8 @@ body,
 }
 
 .sidebar-btn svg {
-    width: 20px;
-    height: 20px;
+    width: 25px;
+    height: 18px;
 }
 
 .sidebar-btn:hover,
@@ -3988,7 +3988,7 @@ html[data-win-titlebar][data-maximized] .main {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 32px;
+  padding: 1px 20px;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(12px);
   position: sticky;
@@ -4021,8 +4021,9 @@ html[data-win-titlebar][data-maximized] .main {
   width: 100%;
   background: #000;
   aspect-ratio: 16 / 9;
-  max-height: 75vh;
+  max-height: 85vh;
   overflow: hidden;
+  /* height: 100vh !important; */
 }
 
 .watch-player-loading {
@@ -4180,7 +4181,7 @@ html[data-win-titlebar][data-maximized] .main {
 }
 
 .ns-row-card:hover {
-  transform: scale(1.38);
+  /* transform: scale(1.38); */
   z-index: 100;
   border-color: var(--red);
   box-shadow: 0 16px 48px rgba(0,0,0,0.85), 0 0 20px rgba(0,168,225,0.2);

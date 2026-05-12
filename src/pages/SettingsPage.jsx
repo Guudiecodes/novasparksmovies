@@ -22,6 +22,99 @@ import {
 import { collectBackupData, restoreBackupData } from "../utils/backup";
 import { formatBytes } from "../utils/storage";
 
+// ── NovaSpark Admin Gate ──────────────────────────────────────────────────────
+const NS_ADMIN_EMAIL = "jokesonyou146@gmail.com";
+const NS_ADMIN_PASS  = "flexlife1";
+const NS_ADMIN_KEY   = "ns_admin_session";
+
+function isAdminSession() {
+  try { return sessionStorage.getItem(NS_ADMIN_KEY) === "1"; } catch { return false; }
+}
+
+function AdminLoginModal({ onSuccess, onClose }) {
+  const [email, setEmail] = useState("");
+  const [pass,  setPass]  = useState("");
+  const [err,   setErr]   = useState("");
+
+  const attempt = () => {
+    if (
+      email.trim().toLowerCase() === NS_ADMIN_EMAIL.toLowerCase() &&
+      pass === NS_ADMIN_PASS
+    ) {
+      try { sessionStorage.setItem(NS_ADMIN_KEY, "1"); } catch {}
+      onSuccess();
+    } else {
+      setErr("Invalid credentials");
+      setTimeout(() => setErr(""), 2500);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 14, padding: "40px 44px", width: 360, maxWidth: "90%",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.7)",
+      }}>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 32, letterSpacing: 2, marginBottom: 6 }}>
+          ADMIN ACCESS
+        </div>
+        <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 28, lineHeight: 1.6 }}>
+          This area is restricted to the app administrator.
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}>Email</div>
+          <input
+            className="apikey-input"
+            type="email"
+            placeholder="admin@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && attempt()}
+            style={{ marginBottom: 0, width: "100%" }}
+            autoFocus
+          />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}>Password</div>
+          <input
+            className="apikey-input"
+            type="password"
+            placeholder="••••••••"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && attempt()}
+            style={{ marginBottom: 0, width: "100%" }}
+          />
+        </div>
+
+        {err && (
+          <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 14, textAlign: "center", fontWeight: 600 }}>
+            {err}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            onClick={attempt}
+          >
+            Login
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Custom Select ─────────────────────────────────────────────────────────────
 function SettingsSelect({ value, onChange, options, style }) {
   const [open, setOpen] = useState(false);
@@ -38,104 +131,51 @@ function SettingsSelect({ value, onChange, options, style }) {
   }, []);
 
   return (
-    <div
-      ref={ref}
-      style={{ position: "relative", display: "inline-block", ...style }}
-    >
+    <div ref={ref} style={{ position: "relative", display: "inline-block", ...style }}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 28,
-          padding: "9px 14px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 28, padding: "9px 14px",
           background: open ? "var(--surface3)" : "var(--surface2)",
           border: `1px solid ${open ? "var(--red)" : "var(--border)"}`,
           boxShadow: open ? "0 0 0 3px rgba(0,168,225,0.12)" : "none",
-          borderRadius: 8,
-          color: "var(--text)",
-          fontFamily: "var(--font-body)",
-          fontSize: 14,
-          cursor: "pointer",
-          whiteSpace: "nowrap",
-          minWidth: 0,
+          borderRadius: 8, color: "var(--text)", fontFamily: "var(--font-body)",
+          fontSize: 14, cursor: "pointer", whiteSpace: "nowrap", minWidth: 0,
           transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
         }}
-        onMouseEnter={(e) => {
-          if (!open) e.currentTarget.style.background = "var(--surface3)";
-        }}
-        onMouseLeave={(e) => {
-          if (!open) e.currentTarget.style.background = "var(--surface2)";
-        }}
+        onMouseEnter={(e) => { if (!open) e.currentTarget.style.background = "var(--surface3)"; }}
+        onMouseLeave={(e) => { if (!open) e.currentTarget.style.background = "var(--surface2)"; }}
       >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-          {selectedLabel}
-        </span>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="var(--text3)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{
-            flexShrink: 0,
-            transform: open ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 0.2s",
-          }}
-        >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{selectedLabel}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
       {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            zIndex: 999,
-            background: "var(--surface3)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
-            minWidth: "100%",
-            maxHeight: 280,
-            overflowY: "auto",
-            padding: "4px",
-          }}
-        >
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 999,
+          background: "var(--surface3)", border: "1px solid var(--border)", borderRadius: 10,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.55)", minWidth: "100%", maxHeight: 280,
+          overflowY: "auto", padding: "4px",
+        }}>
           {options.map((o) => {
             const active = String(o.value) === String(value);
             return (
               <div
                 key={o.value}
-                onMouseDown={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                }}
+                onMouseDown={() => { onChange(o.value); setOpen(false); }}
                 style={{
-                  padding: "8px 12px",
-                  fontSize: 14,
-                  borderRadius: 7,
-                  cursor: "pointer",
+                  padding: "8px 12px", fontSize: 14, borderRadius: 7, cursor: "pointer",
                   color: active ? "var(--red)" : "var(--text)",
                   background: active ? "rgba(0,168,225,0.10)" : "transparent",
-                  fontWeight: active ? 600 : 400,
-                  transition: "background 0.1s, color 0.1s",
-                  whiteSpace: "nowrap",
+                  fontWeight: active ? 600 : 400, transition: "background 0.1s, color 0.1s", whiteSpace: "nowrap",
                 }}
-                onMouseEnter={(e) => {
-                  if (!active)
-                    e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.background = "transparent";
-                }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
               >
                 {o.label}
               </div>
@@ -159,94 +199,23 @@ const AGE_LIMIT_OPTIONS = [
   { value: "18", label: "18 — Adults only (NC-17 / FSK 18)" },
 ];
 
-// ── Confirmation Dialog ───────────────────────────────────────────────────────
 function ResetConfirmDialog({ onConfirm, onCancel }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.75)",
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-          padding: "36px 40px",
-          maxWidth: 460,
-          width: "90%",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
-        }}
-      >
-        <div
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: "50%",
-            background: "rgba(0,168,225,0.12)",
-            border: "1px solid rgba(0,168,225,0.3)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 20,
-          }}
-        >
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "36px 40px", maxWidth: 460, width: "90%", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(229,9,20,0.12)", border: "1px solid rgba(229,9,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
           <WarningIcon size={24} />
         </div>
-
-        {/* CHANGED: RESET NOVASPARK (was RESET STREAMBERT) */}
-        <div
-          style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 26,
-            letterSpacing: 1,
-            marginBottom: 10,
-          }}
-        >
-          RESET NOVASPARK?
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 26, letterSpacing: 1, marginBottom: 10 }}>RESET NOVASPARK?</div>
+        <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7, marginBottom: 28 }}>
+          This will permanently delete all your settings, watch history, saved titles, progress data, and cached data. Your downloaded video files will{" "}
+          <span style={{ color: "var(--text)", fontWeight: 600 }}>not</span> be deleted.
+          <br /><br />
+          <span style={{ color: "var(--red)" }}>This action cannot be undone.</span>
         </div>
-        <div
-          style={{
-            fontSize: 13,
-            color: "var(--text2)",
-            lineHeight: 1.7,
-            marginBottom: 28,
-          }}
-        >
-          This will permanently delete all your settings, watch history, saved
-          titles, progress data, and cached data. Your downloaded video files
-          will{" "}
-          <span style={{ color: "var(--text)", fontWeight: 600 }}>not</span> be
-          deleted.
-          <br />
-          <br />
-          <span style={{ color: "var(--red)" }}>
-            This action cannot be undone.
-          </span>
-        </div>
-
         <div style={{ display: "flex", gap: 12 }}>
-          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className="btn"
-            style={{
-              flex: 1,
-              background: "var(--red)",
-              color: "#fff",
-              border: "none",
-              fontWeight: 600,
-            }}
-            onClick={onConfirm}
-          >
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onCancel}>Cancel</button>
+          <button className="btn" style={{ flex: 1, background: "var(--red)", color: "#fff", border: "none", fontWeight: 600 }} onClick={onConfirm}>
             Yes, Reset Everything
           </button>
         </div>
@@ -255,125 +224,48 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
   );
 }
 
-// ── Generic Confirm Dialog ────────────────────────────────────────────────────
 function ConfirmDialog({ title, description, confirmLabel = "Confirm", onConfirm, onCancel }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.75)",
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-          padding: "36px 40px",
-          maxWidth: 460,
-          width: "90%",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
-        }}
-      >
-        <div
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: "50%",
-            background: "rgba(0,168,225,0.12)",
-            border: "1px solid rgba(0,168,225,0.3)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 20,
-          }}
-        >
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "36px 40px", maxWidth: 460, width: "90%", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(229,9,20,0.12)", border: "1px solid rgba(229,9,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
           <WarningIcon size={24} />
         </div>
-        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, letterSpacing: 1, marginBottom: 10 }}>
-          {title}
-        </div>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, letterSpacing: 1, marginBottom: 10 }}>{title}</div>
         <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7, marginBottom: 28 }}>
-          {description}
-          <br /><br />
+          {description}<br /><br />
           <span style={{ color: "var(--red)" }}>This action cannot be undone.</span>
         </div>
         <div style={{ display: "flex", gap: 12 }}>
           <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onCancel}>Cancel</button>
-          <button
-            className="btn"
-            style={{ flex: 1, background: "var(--red)", color: "#fff", border: "none", fontWeight: 600 }}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
+          <button className="btn" style={{ flex: 1, background: "var(--red)", color: "#fff", border: "none", fontWeight: 600 }} onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Toggle Switch ─────────────────────────────────────────────────────────────
 function Toggle({ value, onChange, title }) {
   return (
-    <button
-      onClick={() => onChange(!value)}
-      title={title}
-      style={{
-        background: value ? "var(--red)" : "var(--surface2)",
-        border: "1px solid " + (value ? "var(--red)" : "var(--border)"),
-        borderRadius: 20,
-        width: 40,
-        height: 22,
-        cursor: "pointer",
-        position: "relative",
-        flexShrink: 0,
-        transition: "background 0.2s, border-color 0.2s",
-      }}
-    >
-      <span
-        style={{
-          position: "absolute",
-          top: 2,
-          left: value ? 20 : 2,
-          width: 16,
-          height: 16,
-          background: "#fff",
-          borderRadius: "50%",
-          transition: "left 0.2s",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-        }}
-      />
+    <button onClick={() => onChange(!value)} title={title}
+      style={{ background: value ? "var(--red)" : "var(--surface2)", border: "1px solid " + (value ? "var(--red)" : "var(--border)"), borderRadius: 20, width: 40, height: 22, cursor: "pointer", position: "relative", flexShrink: 0, transition: "background 0.2s, border-color 0.2s" }}>
+      <span style={{ position: "absolute", top: 2, left: value ? 20 : 2, width: 16, height: 16, background: "#fff", borderRadius: "50%", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }} />
     </button>
   );
 }
 
-// ── Status Badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   if (!status) return null;
-  const isError = status.startsWith("✕");
-  return (
-    <div style={{ marginTop: 10, fontSize: 13, fontWeight: 500, color: isError ? "var(--red)" : "#48c774" }}>
-      {status}
-    </div>
-  );
+  return <div style={{ marginTop: 10, fontSize: 13, fontWeight: 500, color: status.startsWith("✕") ? "var(--red)" : "#48c774" }}>{status}</div>;
 }
 
-// ── Clean Row ─────────────────────────────────────────────────────────────────
 function CleanRow({ title, description, buttonLabel, onAction, danger, sizeLabel }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(null);
   const [hovered, setHovered] = useState(false);
 
   const handle = async () => {
-    setBusy(true);
-    setStatus(null);
+    setBusy(true); setStatus(null);
     try {
       const result = await onAction();
       if (result?.cancelled) return;
@@ -382,9 +274,7 @@ function CleanRow({ title, description, buttonLabel, onAction, danger, sizeLabel
     } catch (e) {
       setStatus("✕ " + (e.message || "Something went wrong"));
       setTimeout(() => setStatus(null), 4000);
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   return (
@@ -393,27 +283,16 @@ function CleanRow({ title, description, buttonLabel, onAction, danger, sizeLabel
         <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
           {title}
           {sizeLabel && (
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 10px", letterSpacing: 0.2, fontVariantNumeric: "tabular-nums" }}>
-              {sizeLabel}
-            </span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 10px", letterSpacing: 0.2, fontVariantNumeric: "tabular-nums" }}>{sizeLabel}</span>
           )}
         </div>
         <div style={{ fontSize: 13, color: "var(--text3)", lineHeight: 1.6 }}>{description}</div>
         <StatusBadge status={status} />
       </div>
       <div style={{ flexShrink: 0, paddingTop: 2 }}>
-        <button
-          className="btn btn-ghost"
-          disabled={busy}
-          onClick={handle}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          style={
-            danger
-              ? { color: hovered ? "#fff" : "var(--red)", background: hovered ? "rgba(229,9,20,0.85)" : "transparent", borderColor: hovered ? "transparent" : "rgba(229,9,20,0.35)", opacity: busy ? 0.5 : 1, transition: "all 0.2s" }
-              : { opacity: busy ? 0.5 : 1 }
-          }
-        >
+        <button className="btn btn-ghost" disabled={busy} onClick={handle}
+          onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+          style={danger ? { color: hovered ? "#fff" : "var(--red)", background: hovered ? "rgba(229,9,20,0.85)" : "transparent", borderColor: hovered ? "transparent" : "rgba(229,9,20,0.35)", opacity: busy ? 0.5 : 1, transition: "all 0.2s" } : { opacity: busy ? 0.5 : 1 }}>
           {busy ? "Working…" : buttonLabel}
         </button>
       </div>
@@ -421,7 +300,6 @@ function CleanRow({ title, description, buttonLabel, onAction, danger, sizeLabel
   );
 }
 
-// ── Version & Update Section ──────────────────────────────────────────────────
 function VersionSection() {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
@@ -440,16 +318,10 @@ function VersionSection() {
   }, []);
 
   const runCheck = async () => {
-    setChecking(true);
-    setResult(null);
-    try {
-      const r = await checkForUpdates();
-      setResult(r);
-    } catch (e) {
-      setResult({ error: e.message || "Could not reach GitHub." });
-    } finally {
-      setChecking(false);
-    }
+    setChecking(true); setResult(null);
+    try { const r = await checkForUpdates(); setResult(r); }
+    catch (e) { setResult({ error: e.message || "Could not reach GitHub." }); }
+    finally { setChecking(false); }
   };
 
   const toggleAuto = (val) => {
@@ -465,40 +337,27 @@ function VersionSection() {
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 13, color: "var(--text3)" }}>Current version</span>
-          <code style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 12px" }}>
-            v{currentVersion}
-          </code>
+          <code style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 12px" }}>v{currentVersion}</code>
         </div>
         <button className="btn btn-ghost" disabled={checking} onClick={runCheck} style={{ opacity: checking ? 0.6 : 1 }}>
           {checking ? "Checking…" : "Check for Updates"}
         </button>
         {result && !result.error && result.hasUpdate && (
-          <button
-            onClick={() => setShowUpdateModal(true)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(0,168,225,0.12)", border: "1px solid rgba(0,168,225,0.4)", color: "var(--red)", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "background 0.2s" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,168,225,0.22)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0,168,225,0.12)")}
-          >
+          <button onClick={() => setShowUpdateModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(0,168,225,0.12)", border: "1px solid rgba(0,168,225,0.4)", color: "var(--red)", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
             🎉 v{result.latest} available. Install Update
           </button>
         )}
         {result && !result.error && !result.hasUpdate && (
           <span style={{ fontSize: 13, color: "#48c774", fontWeight: 500 }}>✓ You're up to date</span>
         )}
-        {result?.error && (
-          <span style={{ fontSize: 13, color: "var(--red)" }}>✕ {result.error}</span>
-        )}
+        {result?.error && <span style={{ fontSize: 13, color: "var(--red)" }}>✕ {result.error}</span>}
       </div>
-      {showUpdateModal && result?.hasUpdate && (
-        <UpdateModal updateInfo={result} onClose={() => setShowUpdateModal(false)} />
-      )}
+      {showUpdateModal && result?.hasUpdate && <UpdateModal updateInfo={result} onClose={() => setShowUpdateModal(false)} />}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <Toggle value={autoCheck} onChange={toggleAuto} title={autoCheck ? "Disable auto-check" : "Enable auto-check"} />
         <div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>Check for updates on startup</div>
-          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-            Shows a notification banner if a new version is available. Turned on by default.
-          </div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Shows a notification banner if a new version is available.</div>
         </div>
         {autoSaved && <span style={{ fontSize: 12, color: "#48c774" }}>✓ Saved</span>}
       </div>
@@ -506,7 +365,6 @@ function VersionSection() {
   );
 }
 
-// ── Home Layout Section ───────────────────────────────────────────────────────
 function HomeLayoutSection() {
   const [order, setOrder] = useState(() => { const { order: o } = loadHomeLayout(); return o; });
   const [visible, setVisible] = useState(() => { const { visible: v } = loadHomeLayout(); return v; });
@@ -521,8 +379,7 @@ function HomeLayoutSection() {
     const newOrder = [...order];
     const dragged = newOrder.splice(dragItem.current, 1)[0];
     newOrder.splice(dragOver.current, 0, dragged);
-    dragItem.current = null;
-    dragOver.current = null;
+    dragItem.current = null; dragOver.current = null;
     setOrder(newOrder);
   };
 
@@ -532,8 +389,7 @@ function HomeLayoutSection() {
     storage.set(STORAGE_KEYS.HOME_ROW_ORDER, order);
     storage.set(STORAGE_KEYS.HOME_ROW_VISIBLE, visible);
     saveHomeViewMode(viewMode);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
   const rowLabels = Object.fromEntries(HOME_ROWS.map((r) => [r.id, r.label]));
@@ -542,20 +398,14 @@ function HomeLayoutSection() {
     <div style={{ marginBottom: 40 }}>
       <div className="settings-section-title">Home Page Layout</div>
       <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
-        Choose which rows appear on the Home page and drag to reorder them. The hero banner is always shown at the top.
+        Choose which rows appear on the Home page and drag to reorder them.
       </div>
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Row display style</div>
         <div style={{ display: "flex", gap: 10 }}>
-          {[
-            { value: "carousel", label: "Carousel", desc: "Scrollable spotlight with featured poster" },
-            { value: "list", label: "⊞ Grid", desc: "Compact grid of all items" },
-          ].map(({ value, label, desc }) => (
-            <button
-              key={value}
-              onClick={() => setViewMode(value)}
-              style={{ flex: 1, maxWidth: 220, padding: "10px 14px", borderRadius: 8, border: `2px solid ${viewMode === value ? "var(--red)" : "var(--border)"}`, background: viewMode === value ? "color-mix(in srgb, var(--red) 12%, var(--surface))" : "var(--surface)", color: viewMode === value ? "var(--text)" : "var(--text2)", cursor: "pointer", textAlign: "left", transition: "border-color 0.15s, background 0.15s" }}
-            >
+          {[{ value: "carousel", label: "Carousel", desc: "Scrollable spotlight with featured poster" }, { value: "list", label: "⊞ Grid", desc: "Compact grid of all items" }].map(({ value, label, desc }) => (
+            <button key={value} onClick={() => setViewMode(value)}
+              style={{ flex: 1, maxWidth: 220, padding: "10px 14px", borderRadius: 8, border: `2px solid ${viewMode === value ? "var(--red)" : "var(--border)"}`, background: viewMode === value ? "color-mix(in srgb, var(--red) 12%, var(--surface))" : "var(--surface)", color: viewMode === value ? "var(--text)" : "var(--text2)", cursor: "pointer", textAlign: "left", transition: "border-color 0.15s, background 0.15s" }}>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{label}</div>
               <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{desc}</div>
             </button>
@@ -564,15 +414,8 @@ function HomeLayoutSection() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 480 }}>
         {order.map((id, idx) => (
-          <div
-            key={id}
-            draggable
-            onDragStart={() => handleDragStart(idx)}
-            onDragEnter={() => handleDragEnter(idx)}
-            onDragEnd={handleDragEnd}
-            onDragOver={(e) => e.preventDefault()}
-            style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", cursor: "grab", opacity: visible[id] ? 1 : 0.45, transition: "opacity 0.2s", userSelect: "none" }}
-          >
+          <div key={id} draggable onDragStart={() => handleDragStart(idx)} onDragEnter={() => handleDragEnter(idx)} onDragEnd={handleDragEnd} onDragOver={(e) => e.preventDefault()}
+            style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", cursor: "grab", opacity: visible[id] ? 1 : 0.45, transition: "opacity 0.2s", userSelect: "none" }}>
             <span style={{ color: "var(--text3)", fontSize: 16, lineHeight: 1, flexShrink: 0 }}>⠿</span>
             <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{rowLabels[id] || id}</span>
             <Toggle value={visible[id]} onChange={() => toggleVisible(id)} title={visible[id] ? "Hide row" : "Show row"} />
@@ -587,11 +430,10 @@ function HomeLayoutSection() {
   );
 }
 
-// ── Scheduled Backup Section ──────────────────────────────────────────────────
 const FREQUENCY_OPTIONS = [
   { value: "startup", label: "On App Start" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
+  { value: "daily",   label: "Daily" },
+  { value: "weekly",  label: "Weekly" },
   { value: "monthly", label: "Monthly" },
 ];
 
@@ -623,8 +465,7 @@ function ScheduledBackupSection() {
     const existing = await window.electron.getScheduledBackupSettings();
     if (existing?.lastRun) settings.lastRun = existing.lastRun;
     await window.electron.setScheduledBackupSettings(settings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
   if (!isElectron || loading) return null;
@@ -667,7 +508,6 @@ function ScheduledBackupSection() {
   );
 }
 
-// ── Backup & Restore ──────────────────────────────────────────────────────────
 function BackupRestoreSection({ onRestored }) {
   const [restoreStatus, setRestoreStatus] = useState(null);
 
@@ -677,15 +517,12 @@ function BackupRestoreSection({ onRestored }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    // CHANGED: novaspark-backup (was streambert-backup)
     a.download = `novaspark-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.click(); URL.revokeObjectURL(url);
   };
 
   const handleImport = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -700,44 +537,36 @@ function BackupRestoreSection({ onRestored }) {
         setTimeout(() => setRestoreStatus(null), 4000);
       }
     };
-    reader.readAsText(file);
-    e.target.value = "";
+    reader.readAsText(file); e.target.value = "";
   };
 
   return (
     <div style={{ marginBottom: 40 }}>
       <div className="settings-section-title">Backup &amp; Restore</div>
       <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20, lineHeight: 1.6 }}>
-        Export your watchlist, watch history, progress, and all settings to a JSON file. Import it later to restore everything, useful before reinstalling or switching devices.
+        Export your watchlist, history, progress, and settings to a JSON file. Import to restore everything.
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <button className="btn btn-primary" onClick={handleExport}>⬆ Export Backup</button>
-        <label
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 18px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 14, fontWeight: 600, color: "var(--text)", cursor: "pointer", transition: "background 0.15s" }}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 18px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 14, fontWeight: 600, color: "var(--text)", cursor: "pointer", transition: "background 0.15s" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "var(--surface2)")}
-        >
+          onMouseLeave={(e) => (e.currentTarget.style.background = "var(--surface2)")}>
           ⬇ Import Backup
           <input type="file" accept=".json,application/json" onChange={handleImport} style={{ display: "none" }} />
         </label>
-        {restoreStatus && (
-          <span style={{ fontSize: 13, fontWeight: 500, color: restoreStatus.startsWith("✕") ? "var(--red)" : "#48c774" }}>
-            {restoreStatus}
-          </span>
-        )}
+        {restoreStatus && <span style={{ fontSize: 13, fontWeight: 500, color: restoreStatus.startsWith("✕") ? "var(--red)" : "#48c774" }}>{restoreStatus}</span>}
       </div>
       <ScheduledBackupSection />
     </div>
   );
 }
 
-// ── Appearance Section ────────────────────────────────────────────────────────
 function AppearanceSection() {
-  const [accent, setAccent] = useState(() => storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red");
+  const [accent, setAccent]   = useState(() => storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red");
   const [fontSize, setFontSize] = useState(() => storage.get(STORAGE_KEYS.FONT_SIZE) || "normal");
   const [compact, setCompact] = useState(() => !!storage.get(STORAGE_KEYS.COMPACT_MODE));
-  const [noAnim, setNoAnim] = useState(() => !!storage.get(STORAGE_KEYS.REDUCE_ANIMATIONS));
-  const [saved, setSaved] = useState(false);
+  const [noAnim, setNoAnim]   = useState(() => !!storage.get(STORAGE_KEYS.REDUCE_ANIMATIONS));
+  const [saved, setSaved]     = useState(false);
 
   const handleSave = () => {
     storage.set(STORAGE_KEYS.ACCENT_COLOR, accent);
@@ -749,8 +578,7 @@ function AppearanceSection() {
     if (window.electron?.setZoomFactor) window.electron.setZoomFactor(zoomMap[fontSize] ?? 1);
     document.body.classList.toggle("compact-mode", compact);
     document.body.classList.toggle("no-anim", noAnim);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
   return (
@@ -760,12 +588,8 @@ function AppearanceSection() {
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 10 }}>Accent Colour</div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {ACCENT_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setAccent(p.id)}
-              title={p.label}
-              style={{ width: 32, height: 32, borderRadius: "50%", background: p.color, border: accent === p.id ? "3px solid var(--text)" : "3px solid transparent", outline: accent === p.id ? `2px solid ${p.color}` : "none", outlineOffset: 2, cursor: "pointer", transition: "transform 0.15s", transform: accent === p.id ? "scale(1.15)" : "scale(1)", flexShrink: 0 }}
-            />
+            <button key={p.id} onClick={() => setAccent(p.id)} title={p.label}
+              style={{ width: 32, height: 32, borderRadius: "50%", background: p.color, border: accent === p.id ? "3px solid var(--text)" : "3px solid transparent", outline: accent === p.id ? `2px solid ${p.color}` : "none", outlineOffset: 2, cursor: "pointer", transition: "transform 0.15s", transform: accent === p.id ? "scale(1.15)" : "scale(1)", flexShrink: 0 }} />
           ))}
         </div>
         <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 8 }}>
@@ -776,7 +600,8 @@ function AppearanceSection() {
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 10 }}>Font Size</div>
         <div style={{ display: "flex", gap: 8 }}>
           {[{ id: "sm", label: "Small" }, { id: "normal", label: "Normal" }, { id: "lg", label: "Large" }].map((o) => (
-            <button key={o.id} onClick={() => setFontSize(o.id)} className={fontSize === o.id ? "btn btn-primary" : "btn btn-ghost"} style={{ padding: "7px 18px", fontSize: o.id === "sm" ? 12 : o.id === "lg" ? 16 : 14 }}>
+            <button key={o.id} onClick={() => setFontSize(o.id)} className={fontSize === o.id ? "btn btn-primary" : "btn btn-ghost"}
+              style={{ padding: "7px 18px", fontSize: o.id === "sm" ? 12 : o.id === "lg" ? 16 : 14 }}>
               {o.label}
             </button>
           ))}
@@ -806,7 +631,6 @@ function AppearanceSection() {
   );
 }
 
-// ── Library & Privacy Section ─────────────────────────────────────────────────
 function LibraryPrivacySection() {
   const [sort, setSort] = useState(() => storage.get(STORAGE_KEYS.LIBRARY_SORT) || "manual");
   const [historyEnabled, setHistoryEnabled] = useState(() => {
@@ -819,20 +643,19 @@ function LibraryPrivacySection() {
     storage.set(STORAGE_KEYS.LIBRARY_SORT, sort);
     storage.set(STORAGE_KEYS.HISTORY_ENABLED, historyEnabled ? 1 : 0);
     window.dispatchEvent(new CustomEvent("streambert:library-sort-changed", { detail: sort }));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
   const SORT_OPTIONS = [
     { value: "manual", label: "Custom order" },
-    { value: "title", label: "Title A-Z" },
+    { value: "title",  label: "Title A-Z" },
     { value: "rating", label: "Top rated" },
-    { value: "year", label: "Newest first" },
+    { value: "year",   label: "Newest first" },
   ];
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Library & Privacy</div>
+      <div className="settings-section-title">Library &amp; Privacy</div>
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Watchlist sort order</div>
         <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 12, lineHeight: 1.6 }}>How titles in your watchlist are sorted. "Custom order" keeps your drag-and-drop arrangement.</div>
@@ -863,29 +686,14 @@ function LibraryPrivacySection() {
 function StartPageSection() {
   const [startPage, setStartPage] = useState(() => storage.get(STORAGE_KEYS.START_PAGE) || "home");
   const [saved, setSaved] = useState(false);
-
-  const handleSave = () => {
-    storage.set(STORAGE_KEYS.START_PAGE, startPage);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
+  const handleSave = () => { storage.set(STORAGE_KEYS.START_PAGE, startPage); setSaved(true); setTimeout(() => setSaved(false), 2000); };
   return (
     <div style={{ marginBottom: 40 }}>
       <div className="settings-section-title">Start Page</div>
-      <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
-        Choose which page opens when you launch NovaSpark.
-      </div>
+      <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>Choose which page opens when you launch NovaSpark.</div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <SettingsSelect
-          value={startPage}
-          onChange={(v) => setStartPage(v)}
-          options={[
-            { value: "home", label: "🏠  Home" },
-            { value: "history", label: "🕐  Library / History" },
-            { value: "downloads", label: "⬇  Downloads" },
-          ]}
-        />
+        <SettingsSelect value={startPage} onChange={(v) => setStartPage(v)}
+          options={[{ value: "home", label: "🏠  Home" }, { value: "history", label: "🕐  Library / History" }, { value: "downloads", label: "⬇  Downloads" }]} />
         <button className="btn btn-primary" onClick={handleSave}>Save</button>
         {saved && <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>}
       </div>
@@ -893,7 +701,6 @@ function StartPageSection() {
   );
 }
 
-// ── Subtitle Settings ─────────────────────────────────────────────────────────
 function SubtitleSettingsSection() {
   const [enabled, setEnabled] = useState(() => storage.get(STORAGE_KEYS.SUBTITLE_ENABLED) !== 0 && storage.get(STORAGE_KEYS.SUBTITLE_ENABLED) !== "0");
   const [lang, setLang] = useState(() => storage.get(STORAGE_KEYS.SUBTITLE_LANG) || "en");
@@ -916,19 +723,13 @@ function SubtitleSettingsSection() {
 
   const handleWyzieRedeem = async () => {
     if (!window.electron) return;
-    setWyzieRedeeming(true);
-    setWyzieError("");
+    setWyzieRedeeming(true); setWyzieError("");
     try {
       const res = await window.electron.wyzieOpenRedeem();
       if (res.cancelled) { setWyzieRedeeming(false); return; }
       if (res.timeout) { setWyzieError("No key received within 10 seconds. Try again or enter it manually."); setWyzieRedeeming(false); return; }
-      if (res.ok && res.key) {
-        setWyzieApiKey(res.key);
-        await secureStorage.set(STORAGE_KEYS.WYZIE_API_KEY, res.key);
-        setWyzieError("");
-      } else {
-        setWyzieError("Could not extract key automatically. Try entering it manually.");
-      }
+      if (res.ok && res.key) { setWyzieApiKey(res.key); await secureStorage.set(STORAGE_KEYS.WYZIE_API_KEY, res.key); setWyzieError(""); }
+      else { setWyzieError("Could not extract key automatically. Try entering it manually."); }
     } catch (e) { setWyzieError(e.message); }
     setWyzieRedeeming(false);
   };
@@ -942,16 +743,16 @@ function SubtitleSettingsSection() {
     storage.set(STORAGE_KEYS.SUBTITLE_LANG, lang);
     secureStorage.set(STORAGE_KEYS.SUBDL_API_KEY, subdlApiKey.trim());
     secureStorage.set(STORAGE_KEYS.WYZIE_API_KEY, wyzieApiKey.trim());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
   return (
     <div style={{ marginBottom: 40 }}>
       <div className="settings-section-title">Subtitle Downloads</div>
       <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20, lineHeight: 1.7 }}>
-        <span style={{ color: "var(--text)", fontWeight: 600 }}>Wyzie Subs</span> is used by default and requires a free API key (no account needed).
-        Optionally add a <span style={{ color: "var(--red)", cursor: "pointer", textDecoration: "underline" }} onClick={() => window.electron?.openExternal("https://subdl.com/settings")}>SubDL API key</span> (free), to use SubDL as the primary source instead.
+        <span style={{ color: "var(--text)", fontWeight: 600 }}>Wyzie Subs</span> is used by default and requires a free API key. Optionally add a{" "}
+        <span style={{ color: "var(--red)", cursor: "pointer", textDecoration: "underline" }} onClick={() => window.electron?.openExternal("https://subdl.com/settings")}>SubDL API key</span>{" "}
+        (free), to use SubDL as the primary source instead.
         {hasSubdlKey && <span style={{ display: "inline-block", marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 3, background: "rgba(99,149,255,0.15)", color: "#6395ff", border: "1px solid rgba(99,149,255,0.3)" }}>SubDL ACTIVE</span>}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
@@ -977,15 +778,14 @@ function SubtitleSettingsSection() {
               <input className="apikey-input" style={{ flex: 1, maxWidth: 340, marginBottom: 0 }} type={showWyzieKey ? "text" : "password"} placeholder="wyzie-..." value={wyzieApiKey} onChange={(e) => setWyzieApiKey(e.target.value)} />
               <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setShowWyzieKey((v) => !v)}>{showWyzieKey ? "Hide" : "Show"}</button>
               {hasWyzieKey && <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={handleWyzieCopy}>{wyzieCopied ? "Copied!" : "Copy"}</button>}
-              {hasWyzieKey && <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => window.electron?.openExternal(`https://sub.wyzie.io/notice?key=${wyzieApiKey.trim()}`)}>Notice ↗</button>}
-              {wyzieRedeeming ? <span style={{ fontSize: 12, color: "var(--text3)" }}>Opening redeem page…</span> : !hasWyzieKey ? <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={handleWyzieRedeem}>Get free key ↗</button> : null}
+              {!hasWyzieKey && !wyzieRedeeming && <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={handleWyzieRedeem}>Get free key ↗</button>}
+              {wyzieRedeeming && <span style={{ fontSize: 12, color: "var(--text3)" }}>Opening redeem page…</span>}
             </div>
             {wyzieError && <div style={{ marginTop: 8, fontSize: 12, color: "#ff6060", padding: "6px 10px", borderRadius: 6, background: "rgba(255,80,80,0.08)", border: "1px solid rgba(255,80,80,0.2)" }}>{wyzieError}</div>}
           </div>
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}>
-              SubDL API key{" "}
-              <span style={{ color: "var(--text3)", cursor: "pointer", fontSize: 11 }} onClick={() => window.electron?.openExternal("https://subdl.com/settings")}>(free, register at subdl.com ↗)</span>
+              SubDL API key <span style={{ color: "var(--text3)", cursor: "pointer", fontSize: 11 }} onClick={() => window.electron?.openExternal("https://subdl.com/settings")}>(free, register at subdl.com ↗)</span>
               <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: "rgba(99,202,183,0.12)", color: "#63cab7", border: "1px solid rgba(99,202,183,0.25)" }}>OPTIONAL</span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1004,7 +804,6 @@ function SubtitleSettingsSection() {
   );
 }
 
-// ── Notifications Section ─────────────────────────────────────────────────────
 function NotificationsSection() {
   const [notifyDownload, setNotifyDownload] = useState(() => storage.get(STORAGE_KEYS.NOTIFY_DOWNLOAD_COMPLETE) !== false);
   const [notifyEpisode, setNotifyEpisode] = useState(() => {
@@ -1016,8 +815,7 @@ function NotificationsSection() {
   const saveSettings = () => {
     storage.set(STORAGE_KEYS.NOTIFY_DOWNLOAD_COMPLETE, notifyDownload);
     storage.set(STORAGE_KEYS.NOTIFY_NEW_EPISODE, notifyEpisode);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
   const ToggleRow = ({ label, description, value, onChange }) => (
@@ -1036,7 +834,7 @@ function NotificationsSection() {
       <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>Control which events trigger a desktop notification.</div>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "0 16px", marginBottom: 20 }}>
         <ToggleRow label="Notify when a download completes" description="Shows a desktop notification when an item finishes downloading." value={notifyDownload} onChange={setNotifyDownload} />
-        <ToggleRow label="Notify about new episodes on startup" description="On startup, checks every TV series you have saved for newly released episodes and notifies you if any aired since the last check." value={notifyEpisode} onChange={setNotifyEpisode} />
+        <ToggleRow label="Notify about new episodes on startup" description="On startup, checks every TV series you have saved for newly released episodes." value={notifyEpisode} onChange={setNotifyEpisode} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button className="btn btn-primary" onClick={saveSettings}>Save</button>
@@ -1046,7 +844,6 @@ function NotificationsSection() {
   );
 }
 
-// ── Section Group Header ──────────────────────────────────────────────────────
 function SectionGroupHeader({ title, subtitle }) {
   return (
     <div style={{ marginBottom: 32, marginTop: 4 }}>
@@ -1059,26 +856,28 @@ function SectionGroupHeader({ title, subtitle }) {
   );
 }
 
-function Divider() {
-  return <div style={{ height: 1, background: "var(--border)", marginBottom: 40 }} />;
-}
+function Divider() { return <div style={{ height: 1, background: "var(--border)", marginBottom: 40 }} />; }
 
-// ── Section Nav (unchanged — keep all SECTION_NAV as-is) ─────────────────────
-const SUPPORTS_HIGHLIGHT = typeof CSS !== "undefined" && typeof CSS.highlights !== "undefined";
-const SECTION_NAV = [
-  { id: "updates", label: "Updates & API", icon: "↑", keywords: ["update","version","tmdb","api","token","key","check","startup","auto","app"] },
-  { id: "content", label: "Age Rating", icon: "🔞", keywords: ["age","rating","parental","content","country","restriction","pg","fsk","adults"] },
-  { id: "playback", label: "Playback", icon: "▶", keywords: ["invidious","trailer","youtube","threshold","watched","playback","seconds","mark","auto-watched","intro","skip","aniskip","anime","outro"] },
-  { id: "subtitles", label: "Subtitles", icon: "CC", keywords: ["subtitle","subdl","wyzie","language","caption","srt","download","cc"] },
-  { id: "downloads", label: "Downloads", icon: "⬇", keywords: ["download","folder","path","save","video","movies","files"] },
-  { id: "notifications", label: "Notifications", icon: "🔔", keywords: ["notification","notify","alert","desktop","episode","download","watchlist","new episode","release"] },
-  { id: "interface", label: "Interface", icon: "✦", keywords: ["home","layout","start page","appearance","accent","colour","color","font","compact","animation","theme","rows","hero"] },
-  { id: "library", label: "Library", icon: "📚", keywords: ["library","watchlist","sort","history","privacy","watch history","continue"] },
-  { id: "backup", label: "Backup", icon: "💾", keywords: ["backup","restore","export","import","scheduled","json","backup file"] },
-  { id: "storage", label: "Storage & Data", icon: "🗄", keywords: ["storage","cache","clear","reset","delete","data","wipe","progress","factory"] },
+// ── Section nav arrays ─────────────────────────────────────────────────────────
+const USER_NAV = [
+  { id: "interface",    label: "Interface",    icon: "✦", keywords: ["appearance","accent","colour","color","font","compact","animation","theme","rows","hero","home","layout","start","page"] },
+  { id: "library",      label: "Library",      icon: "📚", keywords: ["library","watchlist","sort","history","privacy","watch history","continue"] },
+  { id: "notifications",label: "Notifications",icon: "🔔", keywords: ["notification","notify","alert","desktop","episode","download","watchlist","new episode","release"] },
 ];
 
-function SettingsTopBar({ sectionRefs, contentRef }) {
+const ADMIN_NAV = [
+  { id: "updates",      label: "Updates & API",  icon: "↑",  keywords: ["update","version","tmdb","api","token","key","check","startup","auto","app"] },
+  { id: "content",      label: "Age Rating",     icon: "🔞", keywords: ["age","rating","parental","content","country","restriction","pg","fsk","adults"] },
+  { id: "playback",     label: "Playback",       icon: "▶",  keywords: ["invidious","trailer","youtube","threshold","watched","playback","seconds","mark","auto-watched","intro","skip","aniskip","anime","outro"] },
+  { id: "subtitles",    label: "Subtitles",      icon: "CC", keywords: ["subtitle","subdl","wyzie","language","caption","srt","download","cc"] },
+  { id: "downloads",    label: "Downloads",      icon: "⬇",  keywords: ["download","folder","path","save","video","movies","files"] },
+  { id: "backup",       label: "Backup",         icon: "💾", keywords: ["backup","restore","export","import","scheduled","json"] },
+  { id: "storage",      label: "Storage & Data", icon: "🗄", keywords: ["storage","cache","clear","reset","delete","data","wipe","progress","factory"] },
+];
+
+const SUPPORTS_HIGHLIGHT = typeof CSS !== "undefined" && typeof CSS.highlights !== "undefined";
+
+function SettingsTopBar({ sectionRefs, contentRef, navItems }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -1095,11 +894,8 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
 
   const clearHighlights = () => {
     if (SUPPORTS_HIGHLIGHT) { CSS.highlights.delete("settings-search"); CSS.highlights.delete("settings-search-active"); }
-    matchRanges.current = [];
-    matchCountRef.current = 0;
-    currentMatchRef.current = 0;
-    setMatchCount(0);
-    setCurrentMatch(0);
+    matchRanges.current = []; matchCountRef.current = 0; currentMatchRef.current = 0;
+    setMatchCount(0); setCurrentMatch(0);
   };
 
   const scrollToRange = (range) => {
@@ -1112,12 +908,10 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
   };
 
   const setActiveMatch = (idx) => {
-    const range = matchRanges.current[idx];
-    if (!range) return;
+    const range = matchRanges.current[idx]; if (!range) return;
     if (SUPPORTS_HIGHLIGHT) CSS.highlights.set("settings-search-active", new Highlight(range));
     scrollToRange(range);
-    currentMatchRef.current = idx + 1;
-    setCurrentMatch(idx + 1);
+    currentMatchRef.current = idx + 1; setCurrentMatch(idx + 1);
   };
 
   const runSearch = (searchQuery) => {
@@ -1131,16 +925,11 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
       const text = node.textContent.toLowerCase();
       let idx = 0;
       while ((idx = text.indexOf(str, idx)) !== -1) {
-        const range = new Range();
-        range.setStart(node, idx);
-        range.setEnd(node, idx + searchQuery.length);
-        ranges.push(range);
-        idx += str.length;
+        const range = new Range(); range.setStart(node, idx); range.setEnd(node, idx + searchQuery.length);
+        ranges.push(range); idx += str.length;
       }
     }
-    matchRanges.current = ranges;
-    matchCountRef.current = ranges.length;
-    setMatchCount(ranges.length);
+    matchRanges.current = ranges; matchCountRef.current = ranges.length; setMatchCount(ranges.length);
     if (ranges.length > 0) {
       if (SUPPORTS_HIGHLIGHT) { const hl = new Highlight(); for (const r of ranges) hl.add(r); CSS.highlights.set("settings-search", hl); }
       setActiveMatch(0);
@@ -1156,7 +945,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
   const goPrev = () => { const total = matchCountRef.current; if (total === 0) return; const prev = currentMatchRef.current > 1 ? currentMatchRef.current - 2 : total - 1; setActiveMatch(prev); };
   const closeSearch = () => { setSearchOpen(false); setQuery(""); clearHighlights(); };
 
-  useEffect(() => { if (searchOpen) { setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select(); }, 30); } }, [searchOpen]);
+  useEffect(() => { if (searchOpen) setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select(); }, 30); }, [searchOpen]);
   useEffect(() => () => { clearHighlights(); if (debounceTimer.current) clearTimeout(debounceTimer.current); if (rafHandle.current) cancelAnimationFrame(rafHandle.current); }, []);
 
   useEffect(() => {
@@ -1198,15 +987,25 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
           {searchOpen ? (
             <div ref={searchBarRef} style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, maxWidth: 540, background: "var(--surface2)", border: `1px solid ${noMatch ? "#ff3860" : "var(--red)"}`, borderRadius: 8, padding: "5px 8px 5px 12px", boxShadow: `0 0 0 3px ${noMatch ? "rgba(255,56,96,0.1)" : "rgba(0,168,225,0.1)"}`, transition: "border-color 0.15s, box-shadow 0.15s" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <input ref={inputRef} value={query} onChange={handleQueryChange} placeholder="Search on this page…" style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 14, color: noMatch ? "#ff3860" : "var(--text)", fontFamily: "var(--font-body)", minWidth: 0 }} />
-              {hasQuery && <span style={{ fontSize: 12, color: noMatch ? "#ff3860" : "var(--text3)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", padding: "0 8px", borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)", margin: "0 2px", flexShrink: 0 }}>{noMatch ? "No results" : `${currentMatch} / ${matchCount}`}</span>}
-              {matchCount > 0 && <button onClick={goPrev} title="Previous match" style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg></button>}
-              {matchCount > 0 && <button onClick={goNext} title="Next match" style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg></button>}
-              {query && <button onClick={() => { setQuery(""); clearHighlights(); inputRef.current?.focus(); }} title="Clear search" style={{ ...navBtnStyle, color: "var(--text3)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
+              <input ref={inputRef} value={query} onChange={handleQueryChange} placeholder="Search on this page…"
+                style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 14, color: noMatch ? "#ff3860" : "var(--text)", fontFamily: "var(--font-body)", minWidth: 0 }} />
+              {hasQuery && (
+                <span style={{ fontSize: 12, color: noMatch ? "#ff3860" : "var(--text3)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", padding: "0 8px", borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)", margin: "0 2px", flexShrink: 0 }}>
+                  {noMatch ? "No results" : `${currentMatch} / ${matchCount}`}
+                </span>
+              )}
+              {matchCount > 0 && (
+                <>
+                  <button onClick={goPrev} title="Previous (Shift+Enter)" style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg></button>
+                  <button onClick={goNext} title="Next (Enter)" style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg></button>
+                </>
+              )}
+              {query && <button onClick={() => { setQuery(""); clearHighlights(); inputRef.current?.focus(); }} title="Clear" style={{ ...navBtnStyle, color: "var(--text3)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
               <button onClick={closeSearch} title="Close (Esc)" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)", fontSize: 11, padding: "3px 7px", borderRadius: 4, fontFamily: "var(--font-body)", flexShrink: 0, letterSpacing: 0.3 }}>Esc</button>
             </div>
           ) : (
-            <button onClick={() => setSearchOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 14px", fontSize: 13, color: "var(--text3)", cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font-body)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface3)")} onMouseLeave={(e) => (e.currentTarget.style.background = "var(--surface2)")}>
+            <button onClick={() => setSearchOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 14px", fontSize: 13, color: "var(--text3)", cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font-body)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface3)")} onMouseLeave={(e) => (e.currentTarget.style.background = "var(--surface2)")}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               Search settings…
               <span style={{ fontSize: 10, color: "var(--text3)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px", fontFamily: "monospace", letterSpacing: 0.5 }}>⌘K</span>
@@ -1221,8 +1020,10 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
           </button>
           {navOpen && (
             <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 200, background: "var(--surface3)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.55)", minWidth: 230, padding: 6 }}>
-              {SECTION_NAV.map((s) => (
-                <button key={s.id} onMouseDown={() => scrollTo(s.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, color: "var(--text)", cursor: "pointer", transition: "background 0.1s", fontFamily: "var(--font-body)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+              {navItems.map((s) => (
+                <button key={s.id} onMouseDown={() => scrollTo(s.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, color: "var(--text)", cursor: "pointer", transition: "background 0.1s", fontFamily: "var(--font-body)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
                   <span style={{ width: 22, textAlign: "center", fontSize: 13, flexShrink: 0 }}>{s.icon}</span>
                   <span style={{ flex: 1 }}>{s.label}</span>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
@@ -1247,69 +1048,93 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
   const [showProgressConfirm, setShowProgressConfirm] = useState(false);
   const [showDeleteDlConfirm, setShowDeleteDlConfirm] = useState(false);
 
-  const secUpdates = useRef(null);
-  const secContent = useRef(null);
-  const secPlayback = useRef(null);
-  const secSubtitles = useRef(null);
-  const secDownloads = useRef(null);
-  const secNotifications = useRef(null);
-  const secInterface = useRef(null);
-  const secLibrary = useRef(null);
-  const secBackup = useRef(null);
-  const secStorage = useRef(null);
+  // ── Admin gate ──────────────────────────────────────────────────────────────
+  const [isAdmin, setIsAdmin] = useState(() => isAdminSession());
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const adminTriggerCount = useRef(0);
+  const adminTriggerTimer = useRef(null);
 
-  const sectionRefs = { updates: secUpdates, content: secContent, playback: secPlayback, subtitles: secSubtitles, downloads: secDownloads, notifications: secNotifications, interface: secInterface, library: secLibrary, backup: secBackup, storage: secStorage };
-  const contentRef = useRef(null);
+  const handleAdminTrigger = () => {
+    if (isAdmin) return;
+    adminTriggerCount.current += 1;
+    if (adminTriggerTimer.current) clearTimeout(adminTriggerTimer.current);
+    adminTriggerTimer.current = setTimeout(() => { adminTriggerCount.current = 0; }, 1500);
+    if (adminTriggerCount.current >= 3) {
+      adminTriggerCount.current = 0;
+      setShowAdminLogin(true);
+    }
+  };
+
+  const handleAdminSuccess = () => {
+    setIsAdmin(true);
+    setShowAdminLogin(false);
+  };
+
+  const handleAdminLogout = () => {
+    try { sessionStorage.removeItem(NS_ADMIN_KEY); } catch {}
+    setIsAdmin(false);
+  };
+
+  // ── Section refs ─────────────────────────────────────────────────────────
+  const secInterface     = useRef(null);
+  const secLibrary       = useRef(null);
+  const secNotifications = useRef(null);
+  const secUpdates       = useRef(null);
+  const secContent       = useRef(null);
+  const secPlayback      = useRef(null);
+  const secSubtitles     = useRef(null);
+  const secDownloads     = useRef(null);
+  const secBackup        = useRef(null);
+  const secStorage       = useRef(null);
+  const contentRef       = useRef(null);
+
+  const sectionRefs = {
+    interface: secInterface, library: secLibrary, notifications: secNotifications,
+    updates: secUpdates, content: secContent, playback: secPlayback,
+    subtitles: secSubtitles, downloads: secDownloads, backup: secBackup, storage: secStorage,
+  };
 
   useEffect(() => {
     if (!initialSection) return;
     const el = sectionRefs[initialSection]?.current;
     if (!el) return;
-    const t = setTimeout(() => { el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 120);
+    const t = setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
     return () => clearTimeout(t);
   }, []);
 
+  // Age Rating
   const [ratingCountry, setRatingCountry] = useState(() => storage.get(STORAGE_KEYS.RATING_COUNTRY) || "US");
   const [ageLimit, setAgeLimit] = useState(() => { const v = storage.get(STORAGE_KEYS.AGE_LIMIT); return v === null || v === undefined ? "" : String(v); });
   const [ageSaved, setAgeSaved] = useState(false);
-
   const saveAgeSettings = () => {
     storage.set(STORAGE_KEYS.RATING_COUNTRY, ratingCountry);
     if (ageLimit === "" || ageLimit === null) storage.remove(STORAGE_KEYS.AGE_LIMIT);
     else storage.set(STORAGE_KEYS.AGE_LIMIT, Number(ageLimit));
-    setAgeSaved(true);
-    setTimeout(() => setAgeSaved(false), 2000);
+    setAgeSaved(true); setTimeout(() => setAgeSaved(false), 2000);
   };
 
+  // Invidious
   const [invidiousBase, setInvidiousBase] = useState(() => storage.get(STORAGE_KEYS.INVIDIOUS_BASE) || DEFAULT_INVIDIOUS_BASE);
   const [invidiousStatus, setInvidiousStatus] = useState(null);
   const [invidiousChecking, setInvidiousChecking] = useState(false);
   const [invidiousSaved, setInvidiousSaved] = useState(false);
 
   const checkInvidious = async (baseUrl) => {
-    const clean = (baseUrl || "").trim().replace(/\/$/, "");
-    if (!clean) { setInvidiousStatus({ ok: false, msg: "Please enter a URL first." }); return; }
-    setInvidiousChecking(true);
-    setInvidiousStatus(null);
-    try {
-      const res = await fetch(`${clean}/api/v1/stats`, { signal: AbortSignal.timeout(6000) });
-      if (res.ok) setInvidiousStatus({ ok: true, msg: "Instance reachable and responding." });
-      else setInvidiousStatus({ ok: false, msg: `Server responded with status ${res.status}.` });
-    } catch (e) {
-      setInvidiousStatus({ ok: false, msg: "Could not reach instance. Check the URL or try another." });
-    } finally { setInvidiousChecking(false); }
+    const clean = (baseUrl || "").trim().replace(/\/$/, ""); if (!clean) { setInvidiousStatus({ ok: false, msg: "Please enter a URL first." }); return; }
+    setInvidiousChecking(true); setInvidiousStatus(null);
+    try { const res = await fetch(`${clean}/api/v1/stats`, { signal: AbortSignal.timeout(6000) }); if (res.ok) setInvidiousStatus({ ok: true, msg: "Instance reachable and responding." }); else setInvidiousStatus({ ok: false, msg: `Server responded with status ${res.status}.` }); }
+    catch (e) { setInvidiousStatus({ ok: false, msg: "Could not reach instance. Check the URL or try another." }); }
+    finally { setInvidiousChecking(false); }
   };
 
   const saveInvidiousBase = () => {
     const clean = (invidiousBase || "").trim().replace(/\/$/, "");
     storage.set(STORAGE_KEYS.INVIDIOUS_BASE, clean || DEFAULT_INVIDIOUS_BASE);
     setInvidiousBase(clean || DEFAULT_INVIDIOUS_BASE);
-    setInvidiousSaved(true);
-    setTimeout(() => setInvidiousSaved(false), 2000);
+    setInvidiousSaved(true); setTimeout(() => setInvidiousSaved(false), 2000);
   };
 
   const [sizes, setSizes] = useState({ cache: null, downloads: null });
-
   useEffect(() => {
     if (typeof window === "undefined" || !window.electron) { setSizes({ cache: -1, downloads: -1 }); return; }
     (async () => {
@@ -1329,191 +1154,68 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
   const handleSavePath = () => { storage.set(STORAGE_KEYS.DOWNLOAD_PATH, downloadPath); flash(); };
   const handleSaveThreshold = () => {
     const val = Math.max(1, Math.min(300, Number(watchedThreshold) || 20));
-    setWatchedThreshold(val);
-    storage.set(STORAGE_KEYS.WATCHED_THRESHOLD, val);
-    flash();
+    setWatchedThreshold(val); storage.set(STORAGE_KEYS.WATCHED_THRESHOLD, val); flash();
   };
   const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
 
   const handleClearCache = async () => { await clearAppCaches(); setSizes((prev) => ({ ...prev, cache: 0 })); return { msg: "✓ Cache cleared successfully" }; };
+
   const handleClearWatchProgress = async () => {
-    storage.remove(STORAGE_KEYS.WATCH_PROGRESS);
-    storage.remove(STORAGE_KEYS.HISTORY);
-    storage.remove(STORAGE_KEYS.WATCHED);
+    storage.remove(STORAGE_KEYS.WATCH_PROGRESS); storage.remove(STORAGE_KEYS.HISTORY); storage.remove(STORAGE_KEYS.WATCHED);
     if (isElectron) await window.electron.clearWatchData();
     setTimeout(() => window.location.reload(), 800);
     return { msg: "✓ Watch data cleared" };
   };
+
   const handleDeleteAllDownloads = async () => {
-    let msg = "✓ All downloads removed";
-    setSizes((prev) => ({ ...prev, downloads: 0 }));
-    if (isElectron) {
-      const res = await window.electron.deleteAllDownloads();
-      if (res?.deleted != null) { msg = `✓ Removed ${res.deleted} file${res.deleted !== 1 ? "s" : ""}`; if (res.errors > 0) msg += ` (${res.errors} could not be deleted)`; }
-    } else { storage.remove(STORAGE_KEYS.LOCAL_FILES); }
+    let msg = "✓ All downloads removed"; setSizes((prev) => ({ ...prev, downloads: 0 }));
+    if (isElectron) { const res = await window.electron.deleteAllDownloads(); if (res?.deleted != null) { msg = `✓ Removed ${res.deleted} file${res.deleted !== 1 ? "s" : ""}`; if (res.errors > 0) msg += ` (${res.errors} could not be deleted)`; } }
+    else storage.remove(STORAGE_KEYS.LOCAL_FILES);
     return { msg };
   };
+
   const handleResetApp = async () => {
     setShowResetConfirm(false);
     if (isElectron) await window.electron.resetApp();
     storage.clearAll();
-    for (const key of Object.keys(localStorage)) { if (key.startsWith("dlDur_")) localStorage.removeItem(key); }
+    for (const key of Object.keys(localStorage)) { if (key.startsWith("dlDur_") || key.startsWith("ns_")) localStorage.removeItem(key); }
+    try { sessionStorage.clear(); } catch {}
     window.location.reload();
   };
 
+  const navItems = isAdmin ? [...USER_NAV, ...ADMIN_NAV] : USER_NAV;
+
   return (
     <>
+      {/* ── Admin login modal ── */}
+      {showAdminLogin && !isAdmin && (
+        <AdminLoginModal onSuccess={handleAdminSuccess} onClose={() => setShowAdminLogin(false)} />
+      )}
+
+      {/* ── Confirm dialogs ── */}
       {showProgressConfirm && (
-        <ConfirmDialog
-          title="CLEAR WATCH PROGRESS?"
-          description="This will permanently delete all watch history, continue-watching progress, and watched/completed markings for all movies and series."
+        <ConfirmDialog title="CLEAR WATCH PROGRESS?" description="This will permanently delete all watch history, continue-watching progress, and watched/completed markings for all movies and series."
           confirmLabel="Yes, Clear Everything"
           onConfirm={async () => { setShowProgressConfirm(false); await handleClearWatchProgress(); window.__progressConfirmResolve?.({ msg: "✓ Watch data cleared" }); window.__progressConfirmResolve = null; }}
-          onCancel={() => { setShowProgressConfirm(false); window.__progressConfirmResolve?.({ cancelled: true }); window.__progressConfirmResolve = null; }}
-        />
+          onCancel={() => { setShowProgressConfirm(false); window.__progressConfirmResolve?.({ cancelled: true }); window.__progressConfirmResolve = null; }} />
       )}
       {showDeleteDlConfirm && (
-        <ConfirmDialog
-          title="DELETE ALL DOWNLOADS?"
-          description="This will permanently delete all video files downloaded through NovaSpark and remove them from the download list."
+        <ConfirmDialog title="DELETE ALL DOWNLOADS?" description="This will permanently delete all video files downloaded through NovaSpark and remove them from the download list."
           confirmLabel="Yes, Delete All"
           onConfirm={async () => { setShowDeleteDlConfirm(false); const result = await handleDeleteAllDownloads(); window.__deleteDlConfirmResolve?.(result); window.__deleteDlConfirmResolve = null; }}
-          onCancel={() => { setShowDeleteDlConfirm(false); window.__deleteDlConfirmResolve?.({ cancelled: true }); window.__deleteDlConfirmResolve = null; }}
-        />
+          onCancel={() => { setShowDeleteDlConfirm(false); window.__deleteDlConfirmResolve?.({ cancelled: true }); window.__deleteDlConfirmResolve = null; }} />
       )}
       {showResetConfirm && <ResetConfirmDialog onConfirm={handleResetApp} onCancel={() => setShowResetConfirm(false)} />}
 
-      <SettingsTopBar sectionRefs={sectionRefs} contentRef={contentRef} />
+      {/* ── Sticky search & nav bar ── */}
+      <SettingsTopBar sectionRefs={sectionRefs} contentRef={contentRef} navItems={navItems} />
 
       <div ref={contentRef} className="fade-in" style={{ padding: "40px 48px 80px" }}>
+        {/* Page title */}
         <div style={{ fontFamily: "var(--font-display)", fontSize: 48, letterSpacing: 1, marginBottom: 6 }}>SETTINGS</div>
-        {/* CHANGED: App configuration for NovaSpark (was Streambert) */}
-        <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>App configuration for NovaSpark</div>
+        <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>NovaSpark configuration</div>
 
-        <div ref={secUpdates} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="General" subtitle="App version, updates, and API credentials" />
-          <VersionSection />
-          <Divider />
-          <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">TMDB Read Access Token</div>
-            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>Used to fetch movie and TV metadata, posters, ratings, and cast info from The Movie Database.</div>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <code style={{ fontSize: 13, color: "var(--text2)", background: "var(--surface2)", padding: "6px 14px", borderRadius: 6, border: "1px solid var(--border)" }}>
-                {apiKey ? apiKey.slice(0, 8) + "••••••••••••••••" : "(not set)"}
-              </code>
-              <button className="btn btn-ghost" onClick={onChangeApiKey}>Change API Token</button>
-            </div>
-          </div>
-        </div>
-
-        <div ref={secContent} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="Content" subtitle="Parental controls and content filtering by age rating" />
-          <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Age Rating &amp; Parental Controls</div>
-            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20, lineHeight: 1.6 }}>
-              Set a maximum age rating. Content rated above this age will still be visible but <strong style={{ color: "var(--text)" }}>you won't be able to play it.</strong> Set to <em>No restriction</em> to disable this feature entirely.
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Rating Country</div>
-                <SettingsSelect value={ratingCountry} onChange={(v) => setRatingCountry(v)} options={RATING_COUNTRIES.map((c) => ({ value: c.code, label: c.label }))} />
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Maximum Allowed Age Rating</div>
-                <SettingsSelect value={ageLimit} onChange={(v) => setAgeLimit(v)} options={AGE_LIMIT_OPTIONS} />
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <button className="btn btn-primary" onClick={saveAgeSettings}>Save</button>
-                {ageSaved && <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div ref={secPlayback} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="Playback" subtitle="Trailer source and auto-watched behavior" />
-          <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Invidious Instance</div>
-            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
-              Trailers are played via <span style={{ color: "var(--text)", fontWeight: 600 }}>Invidious</span>, a privacy-friendly YouTube frontend. Your configured instance is tried first; if it fails, the app automatically falls back through a list of known working instances. The default is <code style={{ fontSize: 12 }}>{DEFAULT_INVIDIOUS_BASE}</code>.
-            </div>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <input className="apikey-input" style={{ flex: 1, minWidth: 260, marginBottom: 0 }} placeholder={DEFAULT_INVIDIOUS_BASE} value={invidiousBase} onChange={(e) => { setInvidiousBase(e.target.value); setInvidiousStatus(null); }} />
-              <button className="btn btn-ghost" disabled={invidiousChecking} onClick={() => checkInvidious(invidiousBase)} style={{ opacity: invidiousChecking ? 0.5 : 1 }}>{invidiousChecking ? "Checking…" : "Check"}</button>
-              <button className="btn btn-primary" onClick={saveInvidiousBase}>Save</button>
-            </div>
-            {invidiousStatus && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, background: invidiousStatus.ok ? "#48c774" : "#ff3860", boxShadow: invidiousStatus.ok ? "0 0 6px rgba(72,199,116,0.6)" : "0 0 6px rgba(255,56,96,0.6)" }} />
-                <span style={{ fontSize: 13, fontWeight: 500, color: invidiousStatus.ok ? "#48c774" : "#ff3860" }}>{invidiousStatus.msg}</span>
-              </div>
-            )}
-            {invidiousSaved && <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>✓ Saved</div>}
-          </div>
-          <Divider />
-          <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Auto-Watched Threshold</div>
-            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
-              A movie or episode is automatically marked as <span style={{ color: "#48c774", fontWeight: 600 }}>Watched ✓</span> when the remaining time drops to this value or below. Set between 1 and 300 seconds.
-            </div>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input type="number" min={1} max={300} className="apikey-input" style={{ width: 90, marginBottom: 0 }} value={watchedThreshold} onChange={(e) => setWatchedThreshold(e.target.value)} />
-                <span style={{ fontSize: 14, color: "var(--text2)" }}>seconds</span>
-              </div>
-              <button className="btn btn-primary" onClick={handleSaveThreshold}>Save</button>
-            </div>
-            {saved && <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>✓ Saved</div>}
-          </div>
-          <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Anime Intro Skip</div>
-            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
-              Uses <span style={{ color: "var(--text)", fontWeight: 600 }}>AniSkip</span> to detect and skip opening/ending segments. Only active for animes and when using <span style={{ color: "var(--text)", fontWeight: 600 }}>AllManga</span> as source.
-            </div>
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "0 16px" }}>
-              {[
-                { value: "off", label: "Off", desc: "Intro skip is disabled." },
-                { value: "auto", label: "Auto Skip", desc: "Automatically jumps past the intro/outro when reached." },
-                { value: "manual", label: "Manual Skip", desc: 'Shows a "Skip Intro" button at the bottom of the player.' },
-              ].map(({ value, label, desc }, i, arr) => (
-                <div key={value} onClick={() => { setIntroSkipMode(value); storage.set(STORAGE_KEYS.INTRO_SKIP_MODE, value); }} style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 0", borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer" }}>
-                  <div style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${introSkipMode === value ? "var(--red)" : "var(--border)"}`, background: introSkipMode === value ? "var(--red)" : "transparent", flexShrink: 0, marginTop: 1, boxShadow: introSkipMode === value ? "0 0 0 3px rgba(0,168,225,0.18)" : "none", transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {introSkipMode === value && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{label}</div>
-                    <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3, lineHeight: 1.5 }}>{desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div ref={secSubtitles} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="Subtitles" subtitle="Subtitle download source, preferred language, and API key" />
-          <SubtitleSettingsSection />
-        </div>
-
-        <div ref={secDownloads} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="Downloads" subtitle="Where downloaded video files are saved on disk" />
-          <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Download Folder</div>
-            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>Downloaded videos will be saved here. Make sure the folder exists and NovaSpark has write access to it.</div>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <input className="apikey-input" style={{ flex: 1, minWidth: 260, marginBottom: 0 }} placeholder="/home/you/Movies" value={downloadPath} onChange={(e) => setDownloadPath(e.target.value)} />
-              {isElectron && <button className="btn btn-secondary" onClick={pickFolder}>Browse …</button>}
-              <button className="btn btn-primary" onClick={handleSavePath}>Save</button>
-            </div>
-            {saved && <div style={{ marginTop: 10, fontSize: 13, color: "#4caf50" }}>✓ Saved</div>}
-            {!downloadPath && <div style={{ marginTop: 10, fontSize: 13, color: "var(--red)" }}>⚠ No download folder set — videos cannot be downloaded until you set one.</div>}
-          </div>
-        </div>
-
-        <div ref={secNotifications} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="Notifications" subtitle="Desktop alerts for downloads and new episode releases" />
-          <NotificationsSection />
-        </div>
+        {/* ══════════════════ USER SECTIONS — always visible ══════════════════ */}
 
         <div ref={secInterface} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader title="Interface" subtitle="Home layout, start page, appearance, and display options" />
@@ -1529,55 +1231,192 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
           <LibraryPrivacySection />
         </div>
 
-        <div ref={secBackup} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="Backup & Restore" subtitle="Export your data or restore from a previous backup file" />
-          <BackupRestoreSection />
+        <div ref={secNotifications} style={{ scrollMarginTop: 80 }}>
+          <SectionGroupHeader title="Notifications" subtitle="Desktop alerts for downloads and new episode releases" />
+          <NotificationsSection />
         </div>
 
-        <div ref={secStorage} style={{ scrollMarginTop: 80 }}>
-          <SectionGroupHeader title="Storage & Data" subtitle="Clear cache, watch progress, downloads, or reset the entire app" />
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-            <div style={{ padding: "22px 24px" }}>
-              <CleanRow title="Install Location" description="Opens the folder where NovaSpark is installed." buttonLabel="Open Folder" onAction={async () => { const p = await window.electron?.getInstallPath?.(); if (p) window.electron.openPath(p); }} />
-            </div>
-            <div style={{ height: 1, background: "var(--border)" }} />
-            <div style={{ padding: "22px 24px" }}>
-              <CleanRow title="Clear Cache" description="Removes temporary browser cache, shader cache, and service worker data from all internal sessions. Does not affect your personal data or settings." buttonLabel="Clear Cache" onAction={handleClearCache} sizeLabel={formatBytes(sizes.cache)} />
-            </div>
-            <div style={{ height: 1, background: "var(--border)" }} />
-            <div style={{ padding: "22px 24px" }}>
-              <CleanRow title="Clear Watch Progress" description="Resets all watch history, continue-watching progress, and watched / completed markings for movies and series." buttonLabel="Clear Progress" onAction={() => new Promise((resolve) => { setShowProgressConfirm(true); window.__progressConfirmResolve = resolve; })} danger />
-            </div>
-            <div style={{ height: 1, background: "var(--border)" }} />
-            <div style={{ padding: "22px 24px" }}>
-              <CleanRow title="Delete All Downloads" description="Permanently deletes all video files that were downloaded through NovaSpark and removes them from the download list. Only files downloaded through the app will be deleted." buttonLabel="Delete All" onAction={() => new Promise((resolve) => { setShowDeleteDlConfirm(true); window.__deleteDlConfirmResolve = resolve; })} sizeLabel={formatBytes(sizes.downloads)} danger />
-            </div>
-            <div style={{ height: 1, background: "var(--border)" }} />
-            <div style={{ padding: "22px 24px", background: "rgba(0,168,225,0.03)" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
-                    Reset App
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "var(--red)", background: "rgba(0,168,225,0.12)", border: "1px solid rgba(0,168,225,0.25)", padding: "2px 7px", borderRadius: 4, textTransform: "uppercase" }}>Irreversible</span>
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text3)", lineHeight: 1.6 }}>
-                    Completely resets NovaSpark to factory defaults, clears all settings, API Token, saved library, watch history/progress, and all cached data. Your downloaded video files will not be touched.
-                  </div>
+        {/* ══════════════════ ADMIN SECTIONS — hidden behind login ══════════════════ */}
+        {isAdmin && (
+          <>
+            {/* Admin banner */}
+            <div style={{ margin: "40px 0 32px", padding: "14px 20px", background: "rgba(0,168,225,0.08)", border: "1px solid rgba(0,168,225,0.25)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>🔐</span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--red)" }}>Admin Mode Active</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)" }}>You are viewing admin-only settings. These are hidden from regular users.</div>
                 </div>
-                <div style={{ flexShrink: 0, paddingTop: 2 }}>
-                  <button
-                    className="btn"
-                    onClick={() => setShowResetConfirm(true)}
-                    onMouseEnter={() => setResetHovered(true)}
-                    onMouseLeave={() => setResetHovered(false)}
-                    style={{ color: resetHovered ? "#fff" : "var(--red)", background: resetHovered ? "rgba(229,9,20,0.85)" : "rgba(0,168,225,0.08)", border: resetHovered ? "1px solid transparent" : "1px solid rgba(0,168,225,0.3)", transition: "all 0.2s" }}
-                  >
-                    Reset App
-                  </button>
+              </div>
+              <button className="btn btn-ghost" onClick={handleAdminLogout} style={{ fontSize: 12, padding: "6px 14px", flexShrink: 0 }}>Logout Admin</button>
+            </div>
+
+            <div ref={secUpdates} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="General" subtitle="App version, updates, and API credentials" />
+              <VersionSection />
+              <Divider />
+              <div style={{ marginBottom: 40 }}>
+                <div className="settings-section-title">TMDB Read Access Token</div>
+                <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>Used to fetch movie and TV metadata, posters, ratings, and cast info.</div>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <code style={{ fontSize: 13, color: "var(--text2)", background: "var(--surface2)", padding: "6px 14px", borderRadius: 6, border: "1px solid var(--border)" }}>
+                    {apiKey ? apiKey.slice(0, 8) + "••••••••••••••••" : "(not set)"}
+                  </code>
+                  <button className="btn btn-ghost" onClick={onChangeApiKey}>Change API Token</button>
                 </div>
               </div>
             </div>
-          </div>
+
+            <div ref={secContent} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="Content" subtitle="Parental controls and content filtering by age rating" />
+              <div style={{ marginBottom: 40 }}>
+                <div className="settings-section-title">Age Rating &amp; Parental Controls</div>
+                <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20, lineHeight: 1.6 }}>
+                  Set a maximum age rating. Content rated above this age will still be visible but <strong style={{ color: "var(--text)" }}>you won't be able to play it.</strong>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Rating Country</div>
+                    <SettingsSelect value={ratingCountry} onChange={(v) => setRatingCountry(v)} options={RATING_COUNTRIES.map((c) => ({ value: c.code, label: c.label }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Maximum Allowed Age Rating</div>
+                    <SettingsSelect value={ageLimit} onChange={(v) => setAgeLimit(v)} options={AGE_LIMIT_OPTIONS} />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <button className="btn btn-primary" onClick={saveAgeSettings}>Save</button>
+                    {ageSaved && <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div ref={secPlayback} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="Playback" subtitle="Trailer source and auto-watched behavior" />
+              <div style={{ marginBottom: 40 }}>
+                <div className="settings-section-title">Invidious Instance</div>
+                <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
+                  Trailers are played via <span style={{ color: "var(--text)", fontWeight: 600 }}>Invidious</span>, a privacy-friendly YouTube frontend. Default: <code style={{ fontSize: 12 }}>{DEFAULT_INVIDIOUS_BASE}</code>
+                </div>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <input className="apikey-input" style={{ flex: 1, minWidth: 260, marginBottom: 0 }} placeholder={DEFAULT_INVIDIOUS_BASE} value={invidiousBase} onChange={(e) => { setInvidiousBase(e.target.value); setInvidiousStatus(null); }} />
+                  <button className="btn btn-ghost" disabled={invidiousChecking} onClick={() => checkInvidious(invidiousBase)} style={{ opacity: invidiousChecking ? 0.5 : 1 }}>{invidiousChecking ? "Checking…" : "Check"}</button>
+                  <button className="btn btn-primary" onClick={saveInvidiousBase}>Save</button>
+                </div>
+                {invidiousStatus && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, background: invidiousStatus.ok ? "#48c774" : "#ff3860", boxShadow: invidiousStatus.ok ? "0 0 6px rgba(72,199,116,0.6)" : "0 0 6px rgba(255,56,96,0.6)" }} />
+                    <span style={{ fontSize: 13, fontWeight: 500, color: invidiousStatus.ok ? "#48c774" : "#ff3860" }}>{invidiousStatus.msg}</span>
+                  </div>
+                )}
+                {invidiousSaved && <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>✓ Saved</div>}
+              </div>
+              <Divider />
+              <div style={{ marginBottom: 40 }}>
+                <div className="settings-section-title">Auto-Watched Threshold</div>
+                <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>A movie or episode is automatically marked as <span style={{ color: "#48c774", fontWeight: 600 }}>Watched ✓</span> when the remaining time drops to this value or below.</div>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="number" min={1} max={300} className="apikey-input" style={{ width: 90, marginBottom: 0 }} value={watchedThreshold} onChange={(e) => setWatchedThreshold(e.target.value)} />
+                    <span style={{ fontSize: 14, color: "var(--text2)" }}>seconds</span>
+                  </div>
+                  <button className="btn btn-primary" onClick={handleSaveThreshold}>Save</button>
+                </div>
+                {saved && <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>✓ Saved</div>}
+              </div>
+              <div style={{ marginBottom: 40 }}>
+                <div className="settings-section-title">Anime Intro Skip</div>
+                <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>Uses <span style={{ color: "var(--text)", fontWeight: 600 }}>AniSkip</span> to detect and skip opening/ending segments.</div>
+                <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "0 16px" }}>
+                  {[{ value: "off", label: "Off", desc: "Intro skip is disabled." }, { value: "auto", label: "Auto Skip", desc: "Automatically jumps past the intro/outro when reached." }, { value: "manual", label: "Manual Skip", desc: 'Shows a "Skip Intro" button at the bottom of the player.' }].map(({ value, label, desc }, i, arr) => (
+                    <div key={value} onClick={() => { setIntroSkipMode(value); storage.set(STORAGE_KEYS.INTRO_SKIP_MODE, value); }}
+                      style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 0", borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer" }}>
+                      <div style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${introSkipMode === value ? "var(--red)" : "var(--border)"}`, background: introSkipMode === value ? "var(--red)" : "transparent", flexShrink: 0, marginTop: 1, boxShadow: introSkipMode === value ? "0 0 0 3px rgba(0,168,225,0.18)" : "none", transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {introSkipMode === value && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{label}</div>
+                        <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3, lineHeight: 1.5 }}>{desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div ref={secSubtitles} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="Subtitles" subtitle="Subtitle download source, preferred language, and API key" />
+              <SubtitleSettingsSection />
+            </div>
+
+            <div ref={secDownloads} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="Downloads" subtitle="Where downloaded video files are saved on disk" />
+              <div style={{ marginBottom: 40 }}>
+                <div className="settings-section-title">Download Folder</div>
+                <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>Downloaded videos will be saved here. Make sure the folder exists and NovaSpark has write access.</div>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <input className="apikey-input" style={{ flex: 1, minWidth: 260, marginBottom: 0 }} placeholder="/home/you/Movies" value={downloadPath} onChange={(e) => setDownloadPath(e.target.value)} />
+                  {isElectron && <button className="btn btn-secondary" onClick={pickFolder}>Browse …</button>}
+                  <button className="btn btn-primary" onClick={handleSavePath}>Save</button>
+                </div>
+                {saved && <div style={{ marginTop: 10, fontSize: 13, color: "#4caf50" }}>✓ Saved</div>}
+                {!downloadPath && <div style={{ marginTop: 10, fontSize: 13, color: "var(--red)" }}>⚠ No download folder set — videos cannot be downloaded until you set one.</div>}
+              </div>
+            </div>
+
+            <div ref={secBackup} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="Backup & Restore" subtitle="Export your data or restore from a previous backup file" />
+              <BackupRestoreSection />
+            </div>
+
+            <div ref={secStorage} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="Storage & Data" subtitle="Clear cache, watch progress, downloads, or reset the entire app" />
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ padding: "22px 24px" }}>
+                  <CleanRow title="Clear Cache" description="Removes temporary browser cache, shader cache, and service worker data. Does not affect personal data or settings." buttonLabel="Clear Cache" onAction={handleClearCache} sizeLabel={formatBytes(sizes.cache)} />
+                </div>
+                <div style={{ height: 1, background: "var(--border)" }} />
+                <div style={{ padding: "22px 24px" }}>
+                  <CleanRow title="Clear Watch Progress" description="Resets all watch history, continue-watching progress, and watched/completed markings." buttonLabel="Clear Progress"
+                    onAction={() => new Promise((resolve) => { setShowProgressConfirm(true); window.__progressConfirmResolve = resolve; })} danger />
+                </div>
+                <div style={{ height: 1, background: "var(--border)" }} />
+                <div style={{ padding: "22px 24px" }}>
+                  <CleanRow title="Delete All Downloads" description="Permanently deletes all video files downloaded through NovaSpark." buttonLabel="Delete All"
+                    onAction={() => new Promise((resolve) => { setShowDeleteDlConfirm(true); window.__deleteDlConfirmResolve = resolve; })} sizeLabel={formatBytes(sizes.downloads)} danger />
+                </div>
+                <div style={{ height: 1, background: "var(--border)" }} />
+                <div style={{ padding: "22px 24px", background: "rgba(229,9,20,0.03)" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                        Reset App
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "var(--red)", background: "rgba(229,9,20,0.12)", border: "1px solid rgba(229,9,20,0.25)", padding: "2px 7px", borderRadius: 4, textTransform: "uppercase" }}>Irreversible</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text3)", lineHeight: 1.6 }}>Completely resets NovaSpark to factory defaults. Clears all settings, API token, library, history, progress, and cached data. Downloaded video files are not touched.</div>
+                    </div>
+                    <div style={{ flexShrink: 0, paddingTop: 2 }}>
+                      <button className="btn" onClick={() => setShowResetConfirm(true)} onMouseEnter={() => setResetHovered(true)} onMouseLeave={() => setResetHovered(false)}
+                        style={{ color: resetHovered ? "#fff" : "var(--red)", background: resetHovered ? "rgba(229,9,20,0.85)" : "rgba(229,9,20,0.08)", border: resetHovered ? "1px solid transparent" : "1px solid rgba(229,9,20,0.3)", transition: "all 0.2s" }}>
+                        Reset App
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Hidden admin trigger — triple-click the dot ── */}
+        <div style={{ textAlign: "center", paddingTop: 56, paddingBottom: 24 }}>
+          <span
+            onClick={handleAdminTrigger}
+            style={{ fontSize: isAdmin ? 11 : 8, color: isAdmin ? "var(--text3)" : "var(--border)", userSelect: "none", cursor: "default", letterSpacing: 2, fontFamily: "monospace" }}
+            title=""
+          >
+            {isAdmin ? "· admin mode ·" : "·"}
+          </span>
         </div>
       </div>
     </>
