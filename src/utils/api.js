@@ -159,7 +159,7 @@ export async function findWorkingSource(
 export const PLAYER_SOURCES = [
   {
     id: "vidfast",
-    label: "VidFast",
+    label: "Server 1",
     tag: null,
     note: "fast",
     supportsProgress: true,
@@ -169,7 +169,7 @@ export const PLAYER_SOURCES = [
   },
   {
     id: "videasy",
-    label: "Videasy",
+    label: "Server 2",
     tag: null,
     note: "subs",
     supportsProgress: true,
@@ -179,7 +179,7 @@ export const PLAYER_SOURCES = [
   },
   {
     id: "autoembed",
-    label: "AutoEmbed",
+    label: "Server 3",
     tag: null,
     note: null,
     supportsProgress: true,
@@ -190,7 +190,7 @@ export const PLAYER_SOURCES = [
   },
   {
     id: "vidlink",
-    label: "VidLink",
+    label: "Server 4",
     tag: null,
     note: "may need bypass",
     supportsProgress: true,
@@ -200,7 +200,7 @@ export const PLAYER_SOURCES = [
   },
   {
     id: "vidsrc_cc",
-    label: "VidSrc.cc",
+    label: "Server 5",
     tag: null,
     note: "uses IMDB id",
     supportsProgress: true,
@@ -211,7 +211,7 @@ export const PLAYER_SOURCES = [
   },
   {
     id: "allmanga",
-    label: "AllManga",
+    label: "NsManga",
     tag: "ANIME",
     note: null,
     supportsProgress: true,

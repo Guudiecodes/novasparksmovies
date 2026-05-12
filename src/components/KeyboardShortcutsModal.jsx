@@ -149,15 +149,15 @@ export default function KeyboardShortcutsModal({ onClose }) {
               Need help or found a bug?
             </div>
             <div style={{ fontSize: 12, color: "var(--text3)" }}>
-              Open an issue or browse the README on GitHub
+              Report 
             </div>
           </div>
           <a
-            href="https://github.com/truelockmc/streambert"
+            href="#"
             onClick={(e) => {
               e.preventDefault();
               window.electron?.openExternal(
-                "https://github.com/truelockmc/streambert",
+                "#",
               );
             }}
             style={{

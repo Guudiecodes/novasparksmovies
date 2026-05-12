@@ -642,7 +642,7 @@ function LibraryPrivacySection() {
   const handleSave = () => {
     storage.set(STORAGE_KEYS.LIBRARY_SORT, sort);
     storage.set(STORAGE_KEYS.HISTORY_ENABLED, historyEnabled ? 1 : 0);
-    window.dispatchEvent(new CustomEvent("streambert:library-sort-changed", { detail: sort }));
+    window.dispatchEvent(new CustomEvent("Novaspark:library-sort-changed", { detail: sort }));
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
