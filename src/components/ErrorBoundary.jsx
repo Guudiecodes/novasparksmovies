@@ -11,7 +11,6 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    // Could send to a logging service here
     console.error("[ErrorBoundary]", error, info);
   }
 
@@ -35,7 +34,6 @@ export default class ErrorBoundary extends Component {
           fontFamily: "var(--font-sans, sans-serif)",
         }}
       >
-        {/* Icon */}
         <div
           style={{
             width: 64,
@@ -71,8 +69,7 @@ export default class ErrorBoundary extends Component {
             maxWidth: 500,
           }}
         >
-          An unexpected error occurred in this section. Your data is safe, you
-          can try reloading the app.
+          An unexpected error occurred. Your data is safe.
         </div>
 
         {error && (

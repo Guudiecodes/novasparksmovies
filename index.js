@@ -1,7 +1,4 @@
-// -- Streambert main process entry point ---------------------------------------
-// Responsible for: window creation, session setup, ad-blocking, scheduled
-// backup trigger, and app lifecycle. All heavy IPC logic lives in src/ipc/.
-
+// -- NovaSpark main process entry point ----------------------------------------
 const {
   app,
   BrowserWindow,
@@ -9,6 +6,7 @@ const {
   session,
   webContents,
   Notification,
+  shell,
 } = require("electron");
 const path = require("path");
 
@@ -21,14 +19,13 @@ app.commandLine.appendSwitch(
   "disable-features",
   "HardwareMediaKeyHandling,MediaSessionService,UseSandboxedXdgPortal",
 );
-// Run the network stack in the browser process → one less utility process
 app.commandLine.appendSwitch("enable-features", "NetworkServiceInProcess2");
-// NOTE: enable-low-end-device-mode removed, it cuts the GPU texture tile budget
-// and causes visible seams/stripes/dots on large images.
-
-// Cap disk cache and limit renderer processes (prevents RAM growth on multi-page navigation)
 app.commandLine.appendSwitch("disk-cache-size", String(80 * 1024 * 1024));
 app.commandLine.appendSwitch("renderer-process-limit", "3");
+
+// FIX: Prevent SSL handshake reset from killing the renderer
+app.commandLine.appendSwitch('ignore-certificate-errors');
+app.commandLine.appendSwitch('allow-insecure-localhost');
 
 // -- Startup benchmark ---------------------------------------------------------
 const _t0 = Date.now();
@@ -105,6 +102,10 @@ const getMainWindow = () => mainWindow;
 const playerWcIds = new Set();
 let sessionsConfigured = false;
 
+// FIX: track whether the user intentionally closed the app
+// so window-all-closed doesn't quit on webview crashes
+let intentionalQuit = false;
+
 function setupSession(playerSession, trailerSession) {
   const stripHeaders = (details, callback) => {
     const headers = { ...details.responseHeaders };
@@ -130,12 +131,10 @@ function setupSession(playerSession, trailerSession) {
     stripHeaders,
   );
 
-  // Trailer: block ads only (no media intercept needed)
   trailerSession.webRequest.onBeforeRequest({ urls: BLOCKED_HOSTS }, (_, cb) =>
     cb({ cancel: true }),
   );
 
-  // Player session: block ads + intercept m3u8/vtt URLs for renderer
   const MEDIA_URLS = [
     "*://*/*.m3u8*",
     "*://*/*.m3u8",
@@ -152,7 +151,6 @@ function setupSession(playerSession, trailerSession) {
         callback({ cancel: true });
         return;
       }
-      // Media URL: check if it also happens to be on a blocked domain
       try {
         const host = new URL(url).hostname;
         const blocked = BLOCKED_HOSTS.some((pat) => {
@@ -167,7 +165,6 @@ function setupSession(playerSession, trailerSession) {
           return;
         }
       } catch {}
-      // Pass through + notify renderer
       const mw = getMainWindow();
       if (mw && !mw.isDestroyed()) {
         if (url.includes(".m3u8")) {
@@ -184,7 +181,13 @@ function setupSession(playerSession, trailerSession) {
     },
   );
 
-  // YouTube consent cookie → suppress consent gate in both sessions
+  // FIX: Log network errors on player session without crashing
+  playerSession.webRequest.onErrorOccurred((details) => {
+    if (details.error && !details.error.includes('ERR_ABORTED')) {
+      console.error('[PLAYER-NET]', details.url, '=>', details.error);
+    }
+  });
+
   const ytCookie = {
     url: "https://www.youtube.com",
     name: "SOCS",
@@ -222,28 +225,69 @@ function createWindow() {
       webviewTag: true,
       backgroundThrottling: true,
       spellcheck: false,
-      // Caps the renderer's V8 heap + exposes gc() for manual GC hints after navigation
       additionalArguments: ["--js-flags=--max-old-space-size=256 --expose-gc"],
     },
   });
 
-  // Force long-lived disk caching for TMDB images in the default session.
+  // FIX: if the renderer crashes, reload instead of closing the window
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[main] renderer gone:", details.reason);
+    intentionalQuit = false;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadFile(path.join(__dirname, "dist/index.html"));
+    }
+  });
+
+  // FIX: Catch unresponsive renderer (hanging on SSL handshake)
+  mainWindow.webContents.on("unresponsive", () => {
+    console.error("[main] renderer unresponsive");
+    intentionalQuit = false;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadFile(path.join(__dirname, "dist/index.html"));
+    }
+  });
+
+  // FIX: Catch page load failures
+  mainWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL) => {
+    if (errorCode !== -3) { // -3 = aborted (normal)
+      console.error("[LOAD-FAIL]", validatedURL, errorCode, errorDescription);
+    }
+  });
+
+  // Force long-lived disk caching for TMDB images
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: ["*://image.tmdb.org/*"] },
     (details, callback) => {
       const headers = { ...details.responseHeaders };
-      headers["cache-control"] = ["public, max-age=604800, immutable"]; // 7 days
+      headers["cache-control"] = ["public, max-age=604800, immutable"];
       delete headers["pragma"];
       delete headers["expires"];
       callback({ responseHeaders: headers });
     },
   );
 
-  // -- Lazy session setup ----------------------------------------------------
-  // Player/trailer sessions are configured on the first webview attach or
-  // when the pop-out window opens, whichever comes first.
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const isLocal =
+      url.startsWith("file://") ||
+      url.startsWith("http://localhost") ||
+      url.startsWith("https://localhost");
+    if (!isLocal) {
+      event.preventDefault();
+      shell.openExternal(url).catch(() => {});
+    }
+  });
 
-  // Block popups from webviews, intercept fullscreen, lazy-init sessions
+  mainWindow.webContents.on("will-redirect", (event, url) => {
+    const isLocal =
+      url.startsWith("file://") ||
+      url.startsWith("http://localhost") ||
+      url.startsWith("https://localhost");
+    if (!isLocal) {
+      event.preventDefault();
+      shell.openExternal(url).catch(() => {});
+    }
+  });
+
   mainWindow.webContents.on("did-attach-webview", (_, wc) => {
     if (!sessionsConfigured) {
       sessionsConfigured = true;
@@ -252,7 +296,6 @@ function createWindow() {
       setupSession(playerSession, trailerSession);
     }
 
-    // Track player webviews for cleanup on player-stopped
     try {
       if (wc.session === session.fromPartition("persist:player")) {
         playerWcIds.add(wc.id);
@@ -261,6 +304,28 @@ function createWindow() {
     } catch {}
 
     wc.setWindowOpenHandler(() => ({ action: "deny" }));
+    wc.on("close", () => {});
+
+    // FIX: webview renderer crash must NOT propagate to close the main window
+    wc.on("render-process-gone", (_event, details) => {
+      console.error("[webview] renderer gone:", details.reason);
+      intentionalQuit = false;
+    });
+
+    wc.on("will-navigate", (event, url) => {
+      const adPatterns = [
+        "doubleclick", "googlesyndication", "adservice",
+        "adexchange", "tracking", "click.", "redirect",
+      ];
+      try {
+        const host = new URL(url).hostname.toLowerCase();
+        const isAd = adPatterns.some((p) => host.includes(p));
+        if (isAd) {
+          event.preventDefault();
+        }
+      } catch {}
+    });
+
     wc.on("enter-html-full-screen", () =>
       mainWindow.webContents.send("webview-enter-fullscreen"),
     );
@@ -271,7 +336,6 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, "dist/index.html"));
 
-  // Trigger scheduled backup after load
   mainWindow.webContents.once("did-finish-load", () => {
     _bench("renderer loaded");
     const sbSettings = storageIpc.loadScheduledBackupSettings();
@@ -280,30 +344,9 @@ function createWindow() {
     }
   });
 
-  // Intercept close if downloads are active
-  let closeResponsePending = false;
-  mainWindow.on("close", (e) => {
-    const running = downloadsIpc
-      .getDownloads()
-      .filter((d) => d.status === "downloading");
-    if (running.length === 0) return;
-    e.preventDefault();
-    if (closeResponsePending) return;
-    closeResponsePending = true;
-    mainWindow.webContents.send("confirm-close", { count: running.length });
-  });
-
-  ipcMain.on("close-response", (_, confirmed) => {
-    closeResponsePending = false;
-    if (confirmed) {
-      downloadsIpc.killAllDownloads();
-      mainWindow.destroy();
-    }
-  });
-
-  mainWindow.on("closed", () => {
+mainWindow.on("closed", () => {
     mainWindow = null;
-    app.quit();
+    if (intentionalQuit) app.quit();
   });
 }
 
@@ -320,57 +363,42 @@ playerIpc.register(getMainWindow, {
 });
 blockStats.init(getMainWindow);
 
-// get-block-stats lives with its data
 ipcMain.handle("get-block-stats", () => blockStats.getBlockStats());
 
-// -- Player memory cleanup ---------------------------------------------
-// Called by MoviePage / TVPage on component unmount.
-// Destroys the player webview WebContents by tracked ID, then flushes caches and GCs.
+// -- Player memory cleanup -----------------------------------------------------
 ipcMain.on("player-stopped", () => {
-  // Step 1: Mute + destroy all tracked player WebContents by ID.
-  for (const id of playerWcIds) {
+  // FIX: Destroy player webviews safely without crashing main renderer
+  for (const id of [...playerWcIds]) {
     try {
       const wc = webContents.fromId(id);
       if (wc && !wc.isDestroyed()) {
-        try {
-          wc.setAudioMuted(true);
-        } catch {}
-        wc.destroy();
+        try { wc.stop(); } catch {}
+        setTimeout(() => {
+          try { if (!wc.isDestroyed()) wc.destroy(); } catch {}
+        }, 100);
       }
     } catch {}
+    playerWcIds.delete(id);
   }
-  playerWcIds.clear();
 
-  // Step 2: Flush HTTP + shader caches from the player session.
   try {
     const ps = session.fromPartition("persist:player");
     ps.clearCache().catch(() => {});
-    ps.clearStorageData({ storages: ["shadercache", "cachestorage"] }).catch(
-      () => {},
-    );
+    ps.clearStorageData({ storages: ["shadercache", "cachestorage"] }).catch(() => {});
   } catch {}
 
-  // Step 3: GC hints
   if (typeof global.gc === "function") global.gc();
   const mw = mainWindow;
   if (mw && !mw.isDestroyed()) {
-    mw.webContents
-      .executeJavaScript("if(typeof gc==='function') gc();")
-      .catch(() => {});
+    mw.webContents.executeJavaScript("if(typeof gc==='function') gc();").catch(() => {});
   }
 });
 
-// -- Wyzie API Key Redemption Window ------------------------------------------
-// Opens https://sub.wyzie.io/redeem in a child BrowserWindow, watches the DOM
-// for the api-key-display element, extracts the key, and sends it back.
+// -- Wyzie API Key Redemption Window -------------------------------------------
 ipcMain.handle("wyzie-open-redeem", async () => {
   return new Promise((resolve) => {
     const { BrowserWindow: BW, session: electronSession } = require("electron");
-    // Use a non-persistent session so NO cookies/storage are saved after the window closes
-    const redeemSession = electronSession.fromPartition(
-      "partition:wyzie-redeem",
-    );
-    // Strip restrictive CSP so the page styles load correctly
+    const redeemSession = electronSession.fromPartition("partition:wyzie-redeem");
     redeemSession.webRequest.onHeadersReceived((details, callback) => {
       const headers = { ...details.responseHeaders };
       delete headers["content-security-policy"];
@@ -407,14 +435,12 @@ ipcMain.handle("wyzie-open-redeem", async () => {
       clearTimeout(timeout);
     });
 
-    // Start the 20 s timer only once the page has finished loading
     win.webContents.once("did-finish-load", () => {
       timeout = setTimeout(() => {
         finish({ ok: false, key: null, timeout: true });
       }, 20000);
     });
 
-    // The redeem page redirects to /notice?key=wyzie-... after captcha success
     const checkUrl = (url) => {
       try {
         const u = new URL(url);
@@ -442,7 +468,6 @@ ipcMain.handle("wyzie-validate-key", async (_, key) => {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    // Key goes as query-param, not Authorization header
     const res = await fetch(
       `https://sub.wyzie.io/search?id=550&format=srt&key=${encodeURIComponent(key)}`,
       { signal: controller.signal },
@@ -456,7 +481,6 @@ ipcMain.handle("wyzie-validate-key", async (_, key) => {
 });
 
 // -- Desktop notifications -----------------------------------------------------
-// Called from the renderer whenever it wants a native OS notification.
 ipcMain.handle(
   "show-notification",
   (_event, { title, body, silent = false }) => {
@@ -472,16 +496,13 @@ ipcMain.handle(
   },
 );
 
-// -- Picture-in-Picture / Pop-Out window --------------------------------------
-// Opens the player URL in a small always-on-top BrowserWindow (full site UI,
-// with subtitles and controls). The Main Window closes the stream to avoid duplication.
+// -- Picture-in-Picture / Pop-Out window ---------------------------------------
 let pipWindow = null;
 const getPipWindow = () => pipWindow;
 
 ipcMain.handle("open-pip-window", (_, { url, title }) => {
   if (!url || url === "about:blank") return { ok: false, reason: "no-url" };
 
-  // Guarantee tracker/ad blocking is active in persist:player before any load
   if (!sessionsConfigured) {
     sessionsConfigured = true;
     const playerSession = session.fromPartition("persist:player");
@@ -503,29 +524,36 @@ ipcMain.handle("open-pip-window", (_, { url, title }) => {
     alwaysOnTop: true,
     title: title ? `${title} - Pop-out` : "Pop-out Player",
     backgroundColor: "#000000",
-    // Same custom title bar as the main window
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     frame: process.platform !== "win32",
     webPreferences: {
       partition: "persist:player",
       nodeIntegration: false,
       contextIsolation: true,
-      // Injects the custom title bar and wires window-control IPC
       preload: path.join(__dirname, "popout-preload.js"),
     },
   });
 
-  // Block all popup windows from the streaming site and any nested frames
   pipWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  pipWindow.webContents.on("close", () => {});
 
-  // If the site uses <webview> elements (unlikely but safe), block there too
+  pipWindow.webContents.on("will-navigate", (event, url) => {
+    const isLocal =
+      url.startsWith("file://") ||
+      url.startsWith("http://localhost") ||
+      url.startsWith("https://localhost");
+    if (!isLocal) {
+      event.preventDefault();
+    }
+  });
+
   pipWindow.webContents.on("did-attach-webview", (_, wc) => {
     wc.setWindowOpenHandler(() => ({ action: "deny" }));
+    wc.on("close", () => {});
   });
 
   pipWindow.loadURL(url);
 
-  // Push maximize state into the popout renderer so the title bar icon updates
   pipWindow.on("maximize", () => {
     if (!pipWindow.isDestroyed())
       pipWindow.webContents.send("popout-window-maximized", true);
@@ -558,7 +586,7 @@ ipcMain.handle("get-pip-webcontents-id", () => {
   return null;
 });
 
-// -- Popout window controls (used by popout-preload.js title bar buttons) -----
+// -- Popout window controls ----------------------------------------------------
 ipcMain.handle("popout-window-minimize", () => {
   if (pipWindow && !pipWindow.isDestroyed()) pipWindow.minimize();
 });
@@ -593,8 +621,29 @@ if (!gotTheLock) {
     _bench("app ready");
     createWindow();
   });
-  app.on("window-all-closed", () => app.quit());
+
+  // FIX: Handle certificate errors globally
+  app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+    console.warn('[SSL] Certificate error for:', url, error);
+    event.preventDefault();
+    callback(true);
+  });
+
+  // FIX: only quit when the user intentionally closed — not on webview/renderer crashes
+  app.on("window-all-closed", () => {
+    if (intentionalQuit) app.quit();
+  });
+
   app.on("activate", () => {
     if (mainWindow === null) createWindow();
   });
 }
+
+// CRASH RECEIVER
+const _fs = require('fs');
+const _os = require('os');
+ipcMain.on('renderer-error', function(_, data) {
+  const line = new Date().toISOString() + ' MSG=' + data.msg + ' SRC=' + (data.src||'') + ' STACK=' + (data.stack||'') + '\n';
+  _fs.appendFileSync(_os.homedir() + '/novaspark-crash.log', line);
+  console.error('[RENDERER CRASH]', data.msg, data.src);
+});

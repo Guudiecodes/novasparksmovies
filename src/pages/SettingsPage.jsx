@@ -21,6 +21,11 @@ import {
 } from "../utils/homeLayout";
 import { collectBackupData, restoreBackupData } from "../utils/backup";
 import { formatBytes } from "../utils/storage";
+import {
+  setAdminGlobalPlan,
+  getAdminGlobalPlan,
+  GATES,
+} from "../utils/gate";
 
 // ── NovaSpark Admin Gate ──────────────────────────────────────────────────────
 const NS_ADMIN_EMAIL = "jokesonyou146@gmail.com";
@@ -66,49 +71,26 @@ function AdminLoginModal({ onSuccess, onClose }) {
         <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 28, lineHeight: 1.6 }}>
           This area is restricted to the app administrator.
         </div>
-
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}>Email</div>
-          <input
-            className="apikey-input"
-            type="email"
-            placeholder="admin@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+          <input className="apikey-input" type="email" placeholder="admin@example.com"
+            value={email} onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && attempt()}
-            style={{ marginBottom: 0, width: "100%" }}
-            autoFocus
-          />
+            style={{ marginBottom: 0, width: "100%" }} autoFocus />
         </div>
-
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}>Password</div>
-          <input
-            className="apikey-input"
-            type="password"
-            placeholder="••••••••"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
+          <input className="apikey-input" type="password" placeholder="••••••••"
+            value={pass} onChange={(e) => setPass(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && attempt()}
-            style={{ marginBottom: 0, width: "100%" }}
-          />
+            style={{ marginBottom: 0, width: "100%" }} />
         </div>
-
         {err && (
-          <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 14, textAlign: "center", fontWeight: 600 }}>
-            {err}
-          </div>
+          <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 14, textAlign: "center", fontWeight: 600 }}>{err}</div>
         )}
-
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            style={{ flex: 1 }}
-            onClick={attempt}
-          >
-            Login
-          </button>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={attempt}>Login</button>
         </div>
       </div>
     </div>
@@ -119,22 +101,17 @@ function AdminLoginModal({ onSuccess, onClose }) {
 function SettingsSelect({ value, onChange, options, style }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const selectedLabel =
-    options.find((o) => String(o.value) === String(value))?.label ?? value;
+  const selectedLabel = options.find((o) => String(o.value) === String(value))?.label ?? value;
 
   useEffect(() => {
-    const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block", ...style }}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
+      <button type="button" onClick={() => setOpen((o) => !o)}
         style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           gap: 28, padding: "9px 14px",
@@ -154,7 +131,6 @@ function SettingsSelect({ value, onChange, options, style }) {
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
-
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 999,
@@ -165,9 +141,7 @@ function SettingsSelect({ value, onChange, options, style }) {
           {options.map((o) => {
             const active = String(o.value) === String(value);
             return (
-              <div
-                key={o.value}
-                onMouseDown={() => { onChange(o.value); setOpen(false); }}
+              <div key={o.value} onMouseDown={() => { onChange(o.value); setOpen(false); }}
                 style={{
                   padding: "8px 12px", fontSize: 14, borderRadius: 7, cursor: "pointer",
                   color: active ? "var(--red)" : "var(--text)",
@@ -189,14 +163,22 @@ function SettingsSelect({ value, onChange, options, style }) {
 
 const AGE_LIMIT_OPTIONS = [
   { value: "", label: "No restriction" },
-  { value: "0", label: "0 — All audiences (G / FSK 0)" },
-  { value: "7", label: "7 — Family friendly (PG / FSK 6)" },
+  { value: "0",  label: "0 — All audiences (G / FSK 0)" },
+  { value: "7",  label: "7 — Family friendly (PG / FSK 6)" },
   { value: "12", label: "12 — Teens and up" },
   { value: "13", label: "13 — PG-13 and equivalent" },
   { value: "15", label: "15 — Older teens" },
   { value: "16", label: "16 — FSK 16 and equivalent" },
   { value: "17", label: "17 — R / 17+ and equivalent" },
   { value: "18", label: "18 — Adults only (NC-17 / FSK 18)" },
+];
+
+const GLOBAL_PLAN_OPTIONS = [
+  { value: "free",     label: "No override (each user's own plan)" },
+  { value: "mobile",   label: "Mobile — unlock source switching for all" },
+  { value: "basic",    label: "Basic — unlock downloads + subtitles for all" },
+  { value: "standard", label: "Standard — unlock PiP + multi-device for all" },
+  { value: "premium",  label: "Premium — unlock everything for all" },
 ];
 
 function ResetConfirmDialog({ onConfirm, onCancel }) {
@@ -215,9 +197,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
         </div>
         <div style={{ display: "flex", gap: 12 }}>
           <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onCancel}>Cancel</button>
-          <button className="btn" style={{ flex: 1, background: "var(--red)", color: "#fff", border: "none", fontWeight: 600 }} onClick={onConfirm}>
-            Yes, Reset Everything
-          </button>
+          <button className="btn" style={{ flex: 1, background: "var(--red)", color: "#fff", border: "none", fontWeight: 600 }} onClick={onConfirm}>Yes, Reset Everything</button>
         </div>
       </div>
     </div>
@@ -300,6 +280,191 @@ function CleanRow({ title, description, buttonLabel, onAction, danger, sizeLabel
   );
 }
 
+// ── Admin Global Settings Section ─────────────────────────────────────────────
+function AdminGlobalSettingsSection() {
+  // ── Wyzie global key ──────────────────────────────────────────────────────
+  const [wyzieKey,     setWyzieKey]     = useState("");
+  const [showWyzie,    setShowWyzie]    = useState(false);
+  const [wyzieSaved,   setWyzieSaved]   = useState(false);
+  const [wyzieChecking,setWyzieChecking]= useState(false);
+  const [wyzieStatus,  setWyzieStatus]  = useState(null);
+
+  // ── Global plan floor ─────────────────────────────────────────────────────
+  const [globalPlan,   setGlobalPlan]   = useState(() => getAdminGlobalPlan() || "free");
+  const [planSaved,    setPlanSaved]    = useState(false);
+
+  // ── Load stored Wyzie key on mount ────────────────────────────────────────
+  useEffect(() => {
+    secureStorage.get("ns_wyzie_global_key").then((val) => {
+      if (val) setWyzieKey(val);
+    });
+  }, []);
+
+  const handleSaveWyzie = async () => {
+    await secureStorage.set("ns_wyzie_global_key", wyzieKey.trim());
+    setWyzieSaved(true);
+    setTimeout(() => setWyzieSaved(false), 2500);
+  };
+
+  const handleTestWyzie = async () => {
+    const key = wyzieKey.trim();
+    if (!key) { setWyzieStatus({ ok: false, msg: "Enter a key first." }); return; }
+    setWyzieChecking(true); setWyzieStatus(null);
+    try {
+      const url = `https://sub.wyzie.io/search?id=550&format=srt&key=${encodeURIComponent(key)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        setWyzieStatus({ ok: true, msg: "✓ Key is valid and working." });
+      } else if (res.status === 401 || res.status === 403) {
+        setWyzieStatus({ ok: false, msg: `✕ Key rejected by Wyzie (${res.status}).` });
+      } else {
+        setWyzieStatus({ ok: false, msg: `✕ Unexpected status ${res.status}.` });
+      }
+    } catch (e) {
+      setWyzieStatus({ ok: false, msg: "✕ Could not reach Wyzie. Check internet." });
+    } finally { setWyzieChecking(false); }
+  };
+
+  const handleSavePlan = () => {
+    setAdminGlobalPlan(globalPlan === "free" ? null : globalPlan);
+    setPlanSaved(true);
+    setTimeout(() => setPlanSaved(false), 2500);
+  };
+
+  // What features does the selected floor unlock?
+  const PLAN_RANK = { free: 0, mobile: 1, basic: 2, standard: 3, premium: 4 };
+  const floorRank = PLAN_RANK[globalPlan] ?? 0;
+  const unlockedFeatures = Object.entries(GATES).filter(
+    ([, g]) => (PLAN_RANK[g.required] ?? 999) <= floorRank
+  );
+
+  return (
+    <div style={{ marginBottom: 40 }}>
+      <div className="settings-section-title">Global Settings</div>
+      <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 24, lineHeight: 1.7 }}>
+        These settings apply to <strong style={{ color: "var(--text)" }}>all users</strong> of this
+        app instance. The Wyzie key is stored securely and used as a fallback when a user has not
+        set their own key. The plan floor grants all users access to features up to that tier.
+      </div>
+
+      {/* ── Wyzie Global API Key ──────────────────────────────────────────── */}
+      <div style={{
+        background: "var(--surface2)", border: "1px solid var(--border)",
+        borderRadius: 12, padding: "20px 22px", marginBottom: 20,
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+          Wyzie Subtitle API Key
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
+            background: wyzieKey.trim() ? "rgba(72,199,116,0.12)" : "rgba(255,180,80,0.12)",
+            color:      wyzieKey.trim() ? "#48c774" : "#ffb450",
+            border:     `1px solid ${wyzieKey.trim() ? "rgba(72,199,116,0.3)" : "rgba(255,180,80,0.3)"}`,
+          }}>
+            {wyzieKey.trim() ? "ACTIVE" : "NOT SET"}
+          </span>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 14, lineHeight: 1.6 }}>
+          This key is used by <strong style={{ color: "var(--text)" }}>all users</strong> when they
+          search or download subtitles. Set your key{" "}
+          <code style={{ fontSize: 11, background: "var(--surface)", padding: "1px 5px", borderRadius: 4 }}>
+            wyzie-9dead27c20b3aee6e14f62ebd66206ba
+          </code>{" "}
+          here and it will be active for everyone immediately after saving.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: wyzieStatus ? 10 : 0 }}>
+          <input
+            className="apikey-input"
+            type={showWyzie ? "text" : "password"}
+            placeholder="wyzie-..."
+            value={wyzieKey}
+            onChange={(e) => { setWyzieKey(e.target.value); setWyzieStatus(null); }}
+            style={{ flex: 1, minWidth: 260, marginBottom: 0 }}
+          />
+          <button className="btn btn-ghost" style={{ padding: "7px 12px", fontSize: 12 }}
+            onClick={() => setShowWyzie((v) => !v)}>
+            {showWyzie ? "Hide" : "Show"}
+          </button>
+          <button className="btn btn-ghost" style={{ padding: "7px 12px", fontSize: 12 }}
+            disabled={wyzieChecking} onClick={handleTestWyzie}>
+            {wyzieChecking ? "Testing…" : "Test Key"}
+          </button>
+          <button className="btn btn-primary" style={{ padding: "7px 18px" }}
+            onClick={handleSaveWyzie}>
+            Save Key
+          </button>
+          {wyzieSaved && <span style={{ fontSize: 13, color: "#48c774", fontWeight: 600 }}>✓ Saved</span>}
+        </div>
+        {wyzieStatus && (
+          <div style={{
+            marginTop: 10, fontSize: 13, fontWeight: 500,
+            color: wyzieStatus.ok ? "#48c774" : "var(--red)",
+            padding: "8px 12px", borderRadius: 8,
+            background: wyzieStatus.ok ? "rgba(72,199,116,0.08)" : "rgba(229,9,20,0.08)",
+            border: `1px solid ${wyzieStatus.ok ? "rgba(72,199,116,0.25)" : "rgba(229,9,20,0.2)"}`,
+          }}>
+            {wyzieStatus.msg}
+          </div>
+        )}
+      </div>
+
+      {/* ── Global Plan Floor ─────────────────────────────────────────────── */}
+      <div style={{
+        background: "var(--surface2)", border: "1px solid var(--border)",
+        borderRadius: 12, padding: "20px 22px",
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>
+          Global Feature Unlock (Plan Floor)
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
+          Grant all users access to features up to a minimum plan tier — regardless of whether
+          they have paid. Individual users with higher plans keep their own access. Set to{" "}
+          <strong style={{ color: "var(--text)" }}>No override</strong> to enforce plans normally.
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+          <SettingsSelect
+            value={globalPlan}
+            onChange={(v) => setGlobalPlan(v)}
+            options={GLOBAL_PLAN_OPTIONS}
+            style={{ minWidth: 320 }}
+          />
+          <button className="btn btn-primary" onClick={handleSavePlan}>
+            Save Plan Floor
+          </button>
+          {planSaved && <span style={{ fontSize: 13, color: "#48c774", fontWeight: 600 }}>✓ Saved & Active</span>}
+        </div>
+
+        {/* Preview of what gets unlocked */}
+        {globalPlan !== "free" && (
+          <div style={{
+            background: "rgba(72,199,116,0.06)", border: "1px solid rgba(72,199,116,0.2)",
+            borderRadius: 8, padding: "12px 16px",
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#48c774", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Features unlocked for all users:
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {unlockedFeatures.map(([key, gate]) => (
+                <span key={key} style={{
+                  fontSize: 12, padding: "4px 10px", borderRadius: 20,
+                  background: "rgba(72,199,116,0.12)", color: "#48c774",
+                  border: "1px solid rgba(72,199,116,0.25)", fontWeight: 600,
+                }}>
+                  ✓ {gate.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {globalPlan === "free" && (
+          <div style={{ fontSize: 12, color: "var(--text3)", fontStyle: "italic" }}>
+            No override active — each user's own plan is enforced.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function VersionSection() {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
@@ -366,32 +531,29 @@ function VersionSection() {
 }
 
 function HomeLayoutSection() {
-  const [order, setOrder] = useState(() => { const { order: o } = loadHomeLayout(); return o; });
+  const [order, setOrder]     = useState(() => { const { order: o } = loadHomeLayout(); return o; });
   const [visible, setVisible] = useState(() => { const { visible: v } = loadHomeLayout(); return v; });
   const [viewMode, setViewMode] = useState(() => loadHomeViewMode());
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved]     = useState(false);
   const dragItem = useRef(null);
   const dragOver = useRef(null);
 
   const handleDragStart = (idx) => { dragItem.current = idx; };
   const handleDragEnter = (idx) => { dragOver.current = idx; };
-  const handleDragEnd = () => {
+  const handleDragEnd   = () => {
     const newOrder = [...order];
-    const dragged = newOrder.splice(dragItem.current, 1)[0];
+    const dragged  = newOrder.splice(dragItem.current, 1)[0];
     newOrder.splice(dragOver.current, 0, dragged);
     dragItem.current = null; dragOver.current = null;
     setOrder(newOrder);
   };
-
   const toggleVisible = (id) => setVisible((prev) => ({ ...prev, [id]: !prev[id] }));
-
   const handleSave = () => {
-    storage.set(STORAGE_KEYS.HOME_ROW_ORDER, order);
+    storage.set(STORAGE_KEYS.HOME_ROW_ORDER,   order);
     storage.set(STORAGE_KEYS.HOME_ROW_VISIBLE, visible);
     saveHomeViewMode(viewMode);
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
-
   const rowLabels = Object.fromEntries(HOME_ROWS.map((r) => [r.id, r.label]));
 
   return (
@@ -438,12 +600,12 @@ const FREQUENCY_OPTIONS = [
 ];
 
 function ScheduledBackupSection() {
-  const [enabled, setEnabled] = useState(false);
-  const [backupPath, setBackupPath] = useState("");
+  const [enabled,   setEnabled]   = useState(false);
+  const [backupPath,setBackupPath]= useState("");
   const [keepCount, setKeepCount] = useState(5);
   const [frequency, setFrequency] = useState("startup");
-  const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [saved,     setSaved]     = useState(false);
+  const [loading,   setLoading]   = useState(true);
 
   useEffect(() => {
     if (!isElectron) { setLoading(false); return; }
@@ -513,11 +675,10 @@ function BackupRestoreSection({ onRestored }) {
 
   const handleExport = () => {
     const backup = { version: 1, exportedAt: new Date().toISOString(), data: collectBackupData() };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `novaspark-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const blob   = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url    = URL.createObjectURL(blob);
+    const a      = document.createElement("a");
+    a.href = url; a.download = `novaspark-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click(); URL.revokeObjectURL(url);
   };
 
@@ -562,17 +723,17 @@ function BackupRestoreSection({ onRestored }) {
 }
 
 function AppearanceSection() {
-  const [accent, setAccent]   = useState(() => storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red");
+  const [accent,   setAccent]   = useState(() => storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red");
   const [fontSize, setFontSize] = useState(() => storage.get(STORAGE_KEYS.FONT_SIZE) || "normal");
-  const [compact, setCompact] = useState(() => !!storage.get(STORAGE_KEYS.COMPACT_MODE));
-  const [noAnim, setNoAnim]   = useState(() => !!storage.get(STORAGE_KEYS.REDUCE_ANIMATIONS));
-  const [saved, setSaved]     = useState(false);
+  const [compact,  setCompact]  = useState(() => !!storage.get(STORAGE_KEYS.COMPACT_MODE));
+  const [noAnim,   setNoAnim]   = useState(() => !!storage.get(STORAGE_KEYS.REDUCE_ANIMATIONS));
+  const [saved,    setSaved]    = useState(false);
 
   const handleSave = () => {
-    storage.set(STORAGE_KEYS.ACCENT_COLOR, accent);
-    storage.set(STORAGE_KEYS.FONT_SIZE, fontSize);
-    storage.set(STORAGE_KEYS.COMPACT_MODE, compact ? 1 : 0);
-    storage.set(STORAGE_KEYS.REDUCE_ANIMATIONS, noAnim ? 1 : 0);
+    storage.set(STORAGE_KEYS.ACCENT_COLOR,       accent);
+    storage.set(STORAGE_KEYS.FONT_SIZE,          fontSize);
+    storage.set(STORAGE_KEYS.COMPACT_MODE,       compact ? 1 : 0);
+    storage.set(STORAGE_KEYS.REDUCE_ANIMATIONS,  noAnim  ? 1 : 0);
     applyAccentColor(accent);
     const zoomMap = { sm: 0.85, normal: 1, lg: 1.15 };
     if (window.electron?.setZoomFactor) window.electron.setZoomFactor(zoomMap[fontSize] ?? 1);
@@ -640,8 +801,8 @@ function LibraryPrivacySection() {
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
-    storage.set(STORAGE_KEYS.LIBRARY_SORT, sort);
-    storage.set(STORAGE_KEYS.HISTORY_ENABLED, historyEnabled ? 1 : 0);
+    storage.set(STORAGE_KEYS.LIBRARY_SORT,     sort);
+    storage.set(STORAGE_KEYS.HISTORY_ENABLED,  historyEnabled ? 1 : 0);
     window.dispatchEvent(new CustomEvent("Novaspark:library-sort-changed", { detail: sort }));
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
@@ -658,7 +819,7 @@ function LibraryPrivacySection() {
       <div className="settings-section-title">Library &amp; Privacy</div>
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Watchlist sort order</div>
-        <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 12, lineHeight: 1.6 }}>How titles in your watchlist are sorted. "Custom order" keeps your drag-and-drop arrangement.</div>
+        <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 12, lineHeight: 1.6 }}>How titles in your watchlist are sorted.</div>
         <SettingsSelect value={sort} onChange={(v) => setSort(v)} options={SORT_OPTIONS} />
       </div>
       <div style={{ marginBottom: 24 }}>
@@ -702,16 +863,16 @@ function StartPageSection() {
 }
 
 function SubtitleSettingsSection() {
-  const [enabled, setEnabled] = useState(() => storage.get(STORAGE_KEYS.SUBTITLE_ENABLED) !== 0 && storage.get(STORAGE_KEYS.SUBTITLE_ENABLED) !== "0");
-  const [lang, setLang] = useState(() => storage.get(STORAGE_KEYS.SUBTITLE_LANG) || "en");
-  const [subdlApiKey, setSubdlApiKey] = useState("");
+  const [enabled,      setEnabled]      = useState(() => storage.get(STORAGE_KEYS.SUBTITLE_ENABLED) !== 0 && storage.get(STORAGE_KEYS.SUBTITLE_ENABLED) !== "0");
+  const [lang,         setLang]         = useState(() => storage.get(STORAGE_KEYS.SUBTITLE_LANG) || "en");
+  const [subdlApiKey,  setSubdlApiKey]  = useState("");
   const [showSubdlKey, setShowSubdlKey] = useState(false);
-  const [wyzieApiKey, setWyzieApiKey] = useState("");
+  const [wyzieApiKey,  setWyzieApiKey]  = useState("");
   const [showWyzieKey, setShowWyzieKey] = useState(false);
-  const [wyzieCopied, setWyzieCopied] = useState(false);
-  const [wyzieRedeeming, setWyzieRedeeming] = useState(false);
-  const [wyzieError, setWyzieError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [wyzieCopied,  setWyzieCopied]  = useState(false);
+  const [wyzieRedeeming,setWyzieRedeeming]=useState(false);
+  const [wyzieError,   setWyzieError]   = useState("");
+  const [saved,        setSaved]        = useState(false);
 
   useEffect(() => {
     secureStorage.get(STORAGE_KEYS.SUBDL_API_KEY).then((val) => { if (val) setSubdlApiKey(val); });
@@ -727,7 +888,7 @@ function SubtitleSettingsSection() {
     try {
       const res = await window.electron.wyzieOpenRedeem();
       if (res.cancelled) { setWyzieRedeeming(false); return; }
-      if (res.timeout) { setWyzieError("No key received within 10 seconds. Try again or enter it manually."); setWyzieRedeeming(false); return; }
+      if (res.timeout)   { setWyzieError("No key received within 10 seconds. Try again or enter it manually."); setWyzieRedeeming(false); return; }
       if (res.ok && res.key) { setWyzieApiKey(res.key); await secureStorage.set(STORAGE_KEYS.WYZIE_API_KEY, res.key); setWyzieError(""); }
       else { setWyzieError("Could not extract key automatically. Try entering it manually."); }
     } catch (e) { setWyzieError(e.message); }
@@ -740,7 +901,7 @@ function SubtitleSettingsSection() {
 
   const handleSave = () => {
     storage.set(STORAGE_KEYS.SUBTITLE_ENABLED, enabled ? 1 : 0);
-    storage.set(STORAGE_KEYS.SUBTITLE_LANG, lang);
+    storage.set(STORAGE_KEYS.SUBTITLE_LANG,    lang);
     secureStorage.set(STORAGE_KEYS.SUBDL_API_KEY, subdlApiKey.trim());
     secureStorage.set(STORAGE_KEYS.WYZIE_API_KEY, wyzieApiKey.trim());
     setSaved(true); setTimeout(() => setSaved(false), 2000);
@@ -806,7 +967,7 @@ function SubtitleSettingsSection() {
 
 function NotificationsSection() {
   const [notifyDownload, setNotifyDownload] = useState(() => storage.get(STORAGE_KEYS.NOTIFY_DOWNLOAD_COMPLETE) !== false);
-  const [notifyEpisode, setNotifyEpisode] = useState(() => {
+  const [notifyEpisode,  setNotifyEpisode]  = useState(() => {
     const stored = storage.get(STORAGE_KEYS.NOTIFY_NEW_EPISODE);
     return stored === null || stored === undefined ? true : !!stored;
   });
@@ -814,7 +975,7 @@ function NotificationsSection() {
 
   const saveSettings = () => {
     storage.set(STORAGE_KEYS.NOTIFY_DOWNLOAD_COMPLETE, notifyDownload);
-    storage.set(STORAGE_KEYS.NOTIFY_NEW_EPISODE, notifyEpisode);
+    storage.set(STORAGE_KEYS.NOTIFY_NEW_EPISODE,       notifyEpisode);
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -860,37 +1021,38 @@ function Divider() { return <div style={{ height: 1, background: "var(--border)"
 
 // ── Section nav arrays ─────────────────────────────────────────────────────────
 const USER_NAV = [
-  { id: "interface",    label: "Interface",    icon: "✦", keywords: ["appearance","accent","colour","color","font","compact","animation","theme","rows","hero","home","layout","start","page"] },
-  { id: "library",      label: "Library",      icon: "📚", keywords: ["library","watchlist","sort","history","privacy","watch history","continue"] },
-  { id: "notifications",label: "Notifications",icon: "🔔", keywords: ["notification","notify","alert","desktop","episode","download","watchlist","new episode","release"] },
+  { id: "interface",     label: "Interface",     icon: "✦", keywords: ["appearance","accent","colour","color","font","compact","animation","theme","rows","hero","home","layout","start","page"] },
+  { id: "library",       label: "Library",       icon: "📚", keywords: ["library","watchlist","sort","history","privacy","watch history","continue"] },
+  { id: "notifications", label: "Notifications", icon: "🔔", keywords: ["notification","notify","alert","desktop","episode","download","watchlist","new episode","release"] },
 ];
 
 const ADMIN_NAV = [
-  { id: "updates",      label: "Updates & API",  icon: "↑",  keywords: ["update","version","tmdb","api","token","key","check","startup","auto","app"] },
-  { id: "content",      label: "Age Rating",     icon: "🔞", keywords: ["age","rating","parental","content","country","restriction","pg","fsk","adults"] },
-  { id: "playback",     label: "Playback",       icon: "▶",  keywords: ["invidious","trailer","youtube","threshold","watched","playback","seconds","mark","auto-watched","intro","skip","aniskip","anime","outro"] },
-  { id: "subtitles",    label: "Subtitles",      icon: "CC", keywords: ["subtitle","subdl","wyzie","language","caption","srt","download","cc"] },
-  { id: "downloads",    label: "Downloads",      icon: "⬇",  keywords: ["download","folder","path","save","video","movies","files"] },
-  { id: "backup",       label: "Backup",         icon: "💾", keywords: ["backup","restore","export","import","scheduled","json"] },
-  { id: "storage",      label: "Storage & Data", icon: "🗄", keywords: ["storage","cache","clear","reset","delete","data","wipe","progress","factory"] },
+  { id: "global",     label: "Global Settings", icon: "🌐", keywords: ["global","wyzie","plan","floor","unlock","all users","api key","subtitle key"] },
+  { id: "updates",    label: "Updates & API",   icon: "↑",  keywords: ["update","version","tmdb","api","token","key","check","startup","auto","app"] },
+  { id: "content",    label: "Age Rating",      icon: "🔞", keywords: ["age","rating","parental","content","country","restriction","pg","fsk","adults"] },
+  { id: "playback",   label: "Playback",        icon: "▶",  keywords: ["invidious","trailer","youtube","threshold","watched","playback","seconds","mark","auto-watched","intro","skip","aniskip","anime","outro"] },
+  { id: "subtitles",  label: "Subtitles",       icon: "CC", keywords: ["subtitle","subdl","wyzie","language","caption","srt","download","cc"] },
+  { id: "downloads",  label: "Downloads",       icon: "⬇",  keywords: ["download","folder","path","save","video","movies","files"] },
+  { id: "backup",     label: "Backup",          icon: "💾", keywords: ["backup","restore","export","import","scheduled","json"] },
+  { id: "storage",    label: "Storage & Data",  icon: "🗄", keywords: ["storage","cache","clear","reset","delete","data","wipe","progress","factory"] },
 ];
 
 const SUPPORTS_HIGHLIGHT = typeof CSS !== "undefined" && typeof CSS.highlights !== "undefined";
 
 function SettingsTopBar({ sectionRefs, contentRef, navItems }) {
   const [searchOpen, setSearchOpen] = useState(false);
-  const [navOpen, setNavOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [matchCount, setMatchCount] = useState(0);
-  const [currentMatch, setCurrentMatch] = useState(0);
-  const matchRanges = useRef([]);
-  const currentMatchRef = useRef(0);
-  const matchCountRef = useRef(0);
-  const inputRef = useRef(null);
-  const navRef = useRef(null);
-  const searchBarRef = useRef(null);
-  const debounceTimer = useRef(null);
-  const rafHandle = useRef(null);
+  const [navOpen,    setNavOpen]    = useState(false);
+  const [query,      setQuery]      = useState("");
+  const [matchCount,    setMatchCount]    = useState(0);
+  const [currentMatch,  setCurrentMatch]  = useState(0);
+  const matchRanges      = useRef([]);
+  const currentMatchRef  = useRef(0);
+  const matchCountRef    = useRef(0);
+  const inputRef         = useRef(null);
+  const navRef           = useRef(null);
+  const searchBarRef     = useRef(null);
+  const debounceTimer    = useRef(null);
+  const rafHandle        = useRef(null);
 
   const clearHighlights = () => {
     if (SUPPORTS_HIGHLIGHT) { CSS.highlights.delete("settings-search"); CSS.highlights.delete("settings-search-active"); }
@@ -976,8 +1138,8 @@ function SettingsTopBar({ sectionRefs, contentRef, navItems }) {
   const scrollTo = (id) => { const el = sectionRefs[id]?.current; if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); setNavOpen(false); };
   const handleQueryChange = (e) => { const val = e.target.value; setQuery(val); findMatches(val); };
 
-  const noMatch = query.trim().length > 0 && matchCount === 0;
-  const hasQuery = query.trim().length > 0;
+  const noMatch   = query.trim().length > 0 && matchCount === 0;
+  const hasQuery  = query.trim().length > 0;
   const navBtnStyle = { background: "none", border: "none", cursor: "pointer", color: "var(--text2)", display: "flex", alignItems: "center", padding: "4px 5px", borderRadius: 5, transition: "background 0.1s", flexShrink: 0 };
 
   return (
@@ -996,8 +1158,8 @@ function SettingsTopBar({ sectionRefs, contentRef, navItems }) {
               )}
               {matchCount > 0 && (
                 <>
-                  <button onClick={goPrev} title="Previous (Shift+Enter)" style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg></button>
-                  <button onClick={goNext} title="Next (Enter)" style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg></button>
+                  <button onClick={goPrev} title="Previous" style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg></button>
+                  <button onClick={goNext}  title="Next"     style={navBtnStyle} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg></button>
                 </>
               )}
               {query && <button onClick={() => { setQuery(""); clearHighlights(); inputRef.current?.focus(); }} title="Clear" style={{ ...navBtnStyle, color: "var(--text3)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
@@ -1039,17 +1201,17 @@ function SettingsTopBar({ sectionRefs, contentRef, navItems }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function SettingsPage({ apiKey, onChangeApiKey, initialSection }) {
-  const [downloadPath, setDownloadPath] = useState(() => storage.get(STORAGE_KEYS.DOWNLOAD_PATH) || "");
-  const [watchedThreshold, setWatchedThreshold] = useState(() => storage.get(STORAGE_KEYS.WATCHED_THRESHOLD) ?? 20);
-  const [introSkipMode, setIntroSkipMode] = useState(() => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "off");
-  const [saved, setSaved] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [resetHovered, setResetHovered] = useState(false);
-  const [showProgressConfirm, setShowProgressConfirm] = useState(false);
-  const [showDeleteDlConfirm, setShowDeleteDlConfirm] = useState(false);
+  const [downloadPath,      setDownloadPath]      = useState(() => storage.get(STORAGE_KEYS.DOWNLOAD_PATH) || "");
+  const [watchedThreshold,  setWatchedThreshold]  = useState(() => storage.get(STORAGE_KEYS.WATCHED_THRESHOLD) ?? 20);
+  const [introSkipMode,     setIntroSkipMode]     = useState(() => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "off");
+  const [saved,             setSaved]             = useState(false);
+  const [showResetConfirm,  setShowResetConfirm]  = useState(false);
+  const [resetHovered,      setResetHovered]      = useState(false);
+  const [showProgressConfirm,  setShowProgressConfirm]  = useState(false);
+  const [showDeleteDlConfirm,  setShowDeleteDlConfirm]  = useState(false);
 
   // ── Admin gate ──────────────────────────────────────────────────────────────
-  const [isAdmin, setIsAdmin] = useState(() => isAdminSession());
+  const [isAdmin,        setIsAdmin]        = useState(() => isAdminSession());
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const adminTriggerCount = useRef(0);
   const adminTriggerTimer = useRef(null);
@@ -1065,20 +1227,17 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
     }
   };
 
-  const handleAdminSuccess = () => {
-    setIsAdmin(true);
-    setShowAdminLogin(false);
-  };
-
-  const handleAdminLogout = () => {
+  const handleAdminSuccess = () => { setIsAdmin(true); setShowAdminLogin(false); };
+  const handleAdminLogout  = () => {
     try { sessionStorage.removeItem(NS_ADMIN_KEY); } catch {}
     setIsAdmin(false);
   };
 
-  // ── Section refs ─────────────────────────────────────────────────────────
+  // ── Section refs ────────────────────────────────────────────────────────────
   const secInterface     = useRef(null);
   const secLibrary       = useRef(null);
   const secNotifications = useRef(null);
+  const secGlobal        = useRef(null);
   const secUpdates       = useRef(null);
   const secContent       = useRef(null);
   const secPlayback      = useRef(null);
@@ -1089,9 +1248,17 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
   const contentRef       = useRef(null);
 
   const sectionRefs = {
-    interface: secInterface, library: secLibrary, notifications: secNotifications,
-    updates: secUpdates, content: secContent, playback: secPlayback,
-    subtitles: secSubtitles, downloads: secDownloads, backup: secBackup, storage: secStorage,
+    interface:     secInterface,
+    library:       secLibrary,
+    notifications: secNotifications,
+    global:        secGlobal,
+    updates:       secUpdates,
+    content:       secContent,
+    playback:      secPlayback,
+    subtitles:     secSubtitles,
+    downloads:     secDownloads,
+    backup:        secBackup,
+    storage:       secStorage,
   };
 
   useEffect(() => {
@@ -1104,8 +1271,8 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
 
   // Age Rating
   const [ratingCountry, setRatingCountry] = useState(() => storage.get(STORAGE_KEYS.RATING_COUNTRY) || "US");
-  const [ageLimit, setAgeLimit] = useState(() => { const v = storage.get(STORAGE_KEYS.AGE_LIMIT); return v === null || v === undefined ? "" : String(v); });
-  const [ageSaved, setAgeSaved] = useState(false);
+  const [ageLimit,      setAgeLimit]      = useState(() => { const v = storage.get(STORAGE_KEYS.AGE_LIMIT); return v === null || v === undefined ? "" : String(v); });
+  const [ageSaved,      setAgeSaved]      = useState(false);
   const saveAgeSettings = () => {
     storage.set(STORAGE_KEYS.RATING_COUNTRY, ratingCountry);
     if (ageLimit === "" || ageLimit === null) storage.remove(STORAGE_KEYS.AGE_LIMIT);
@@ -1114,16 +1281,16 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
   };
 
   // Invidious
-  const [invidiousBase, setInvidiousBase] = useState(() => storage.get(STORAGE_KEYS.INVIDIOUS_BASE) || DEFAULT_INVIDIOUS_BASE);
-  const [invidiousStatus, setInvidiousStatus] = useState(null);
+  const [invidiousBase,     setInvidiousBase]     = useState(() => storage.get(STORAGE_KEYS.INVIDIOUS_BASE) || DEFAULT_INVIDIOUS_BASE);
+  const [invidiousStatus,   setInvidiousStatus]   = useState(null);
   const [invidiousChecking, setInvidiousChecking] = useState(false);
-  const [invidiousSaved, setInvidiousSaved] = useState(false);
+  const [invidiousSaved,    setInvidiousSaved]    = useState(false);
 
   const checkInvidious = async (baseUrl) => {
     const clean = (baseUrl || "").trim().replace(/\/$/, ""); if (!clean) { setInvidiousStatus({ ok: false, msg: "Please enter a URL first." }); return; }
     setInvidiousChecking(true); setInvidiousStatus(null);
     try { const res = await fetch(`${clean}/api/v1/stats`, { signal: AbortSignal.timeout(6000) }); if (res.ok) setInvidiousStatus({ ok: true, msg: "Instance reachable and responding." }); else setInvidiousStatus({ ok: false, msg: `Server responded with status ${res.status}.` }); }
-    catch (e) { setInvidiousStatus({ ok: false, msg: "Could not reach instance. Check the URL or try another." }); }
+    catch { setInvidiousStatus({ ok: false, msg: "Could not reach instance. Check the URL or try another." }); }
     finally { setInvidiousChecking(false); }
   };
 
@@ -1151,7 +1318,7 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
     if (folder) { setDownloadPath(folder); storage.set(STORAGE_KEYS.DOWNLOAD_PATH, folder); flash(); }
   };
 
-  const handleSavePath = () => { storage.set(STORAGE_KEYS.DOWNLOAD_PATH, downloadPath); flash(); };
+  const handleSavePath      = () => { storage.set(STORAGE_KEYS.DOWNLOAD_PATH, downloadPath); flash(); };
   const handleSaveThreshold = () => {
     const val = Math.max(1, Math.min(300, Number(watchedThreshold) || 20));
     setWatchedThreshold(val); storage.set(STORAGE_KEYS.WATCHED_THRESHOLD, val); flash();
@@ -1187,12 +1354,10 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
 
   return (
     <>
-      {/* ── Admin login modal ── */}
       {showAdminLogin && !isAdmin && (
         <AdminLoginModal onSuccess={handleAdminSuccess} onClose={() => setShowAdminLogin(false)} />
       )}
 
-      {/* ── Confirm dialogs ── */}
       {showProgressConfirm && (
         <ConfirmDialog title="CLEAR WATCH PROGRESS?" description="This will permanently delete all watch history, continue-watching progress, and watched/completed markings for all movies and series."
           confirmLabel="Yes, Clear Everything"
@@ -1207,16 +1372,13 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
       )}
       {showResetConfirm && <ResetConfirmDialog onConfirm={handleResetApp} onCancel={() => setShowResetConfirm(false)} />}
 
-      {/* ── Sticky search & nav bar ── */}
       <SettingsTopBar sectionRefs={sectionRefs} contentRef={contentRef} navItems={navItems} />
 
       <div ref={contentRef} className="fade-in" style={{ padding: "40px 48px 80px" }}>
-        {/* Page title */}
         <div style={{ fontFamily: "var(--font-display)", fontSize: 48, letterSpacing: 1, marginBottom: 6 }}>SETTINGS</div>
         <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>NovaSpark configuration</div>
 
-        {/* ══════════════════ USER SECTIONS — always visible ══════════════════ */}
-
+        {/* ══ USER SECTIONS ══ */}
         <div ref={secInterface} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader title="Interface" subtitle="Home layout, start page, appearance, and display options" />
           <HomeLayoutSection />
@@ -1236,7 +1398,7 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
           <NotificationsSection />
         </div>
 
-        {/* ══════════════════ ADMIN SECTIONS — hidden behind login ══════════════════ */}
+        {/* ══ ADMIN SECTIONS ══ */}
         {isAdmin && (
           <>
             {/* Admin banner */}
@@ -1245,10 +1407,16 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
                 <span style={{ fontSize: 18 }}>🔐</span>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: "var(--red)" }}>Admin Mode Active</div>
-                  <div style={{ fontSize: 12, color: "var(--text3)" }}>You are viewing admin-only settings. These are hidden from regular users.</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)" }}>You are viewing admin-only settings. These affect all users globally.</div>
                 </div>
               </div>
               <button className="btn btn-ghost" onClick={handleAdminLogout} style={{ fontSize: 12, padding: "6px 14px", flexShrink: 0 }}>Logout Admin</button>
+            </div>
+
+            {/* ── Global Settings (NEW — first admin section) ── */}
+            <div ref={secGlobal} style={{ scrollMarginTop: 80 }}>
+              <SectionGroupHeader title="Global Settings" subtitle="Wyzie API key and plan floor that apply to every user of this app" />
+              <AdminGlobalSettingsSection />
             </div>
 
             <div ref={secUpdates} style={{ scrollMarginTop: 80 }}>
@@ -1408,13 +1576,11 @@ export default function SettingsPage({ apiKey, onChangeApiKey, initialSection })
           </>
         )}
 
-        {/* ── Hidden admin trigger — triple-click the dot ── */}
+        {/* Hidden admin trigger — triple-click the dot */}
         <div style={{ textAlign: "center", paddingTop: 56, paddingBottom: 24 }}>
-          <span
-            onClick={handleAdminTrigger}
+          <span onClick={handleAdminTrigger}
             style={{ fontSize: isAdmin ? 11 : 8, color: isAdmin ? "var(--text3)" : "var(--border)", userSelect: "none", cursor: "default", letterSpacing: 2, fontFamily: "monospace" }}
-            title=""
-          >
+            title="">
             {isAdmin ? "· admin mode ·" : "·"}
           </span>
         </div>

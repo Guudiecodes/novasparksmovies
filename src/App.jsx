@@ -32,10 +32,15 @@ const TVPage       = lazy(() => import("./pages/TVPage"));
 const LibraryPage  = lazy(() => import("./pages/LibraryPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage= lazy(() => import("./pages/DownloadsPage"));
-// ── ADDED: standalone player page ──────────────────────────────────────────
+// ── Standalone player page ──────────────────────────────────────────────────
 const WatchPage    = lazy(() => import("./pages/WatchPage"));
+// ── ADDED: Premium pricing / subscription page ──────────────────────────────
+const PricingPage  = lazy(() => import("./pages/PricingPage"));
 
 import { checkForUpdates } from "./utils/updates";
+
+// ── Premium storage key (shared with PricingPage) ───────────────────────────
+const NS_PREMIUM_KEY = "ns_premium";
 
 export default function App() {
   // ── CHANGED: pre-load NS key so setup screen never shows ─────────────────
@@ -53,6 +58,12 @@ export default function App() {
   );
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [platform, setPlatform] = useState(null);
+
+  // ── ADDED: Premium state — read on mount, re-sync after PricingPage changes
+  const [isPremium, setIsPremium] = useState(() => !!storage.get(NS_PREMIUM_KEY));
+  const handlePremiumUpdate = useCallback(() => {
+    setIsPremium(!!storage.get(NS_PREMIUM_KEY));
+  }, []);
 
   // Navigation history stack for Ctrl+Z back navigation
   const [navStack, setNavStack] = useState([]);
@@ -504,12 +515,21 @@ export default function App() {
     if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
   }, []);
 
-  // ── ADDED: navigate to standalone watch page ─────────────────────────────
+  // ── Navigate to standalone watch page ────────────────────────────────────
   // Called from MoviePage/TVPage with: { item, season, episode, episodeName, sourceId }
   const handleWatch = useCallback(
     (watchData) => navigate("watch", watchData),
     [navigate],
   );
+
+  // ── Listen for upgrade events dispatched by PremiumGate components ────────
+  // PremiumGate calls window.dispatchEvent(new CustomEvent("novaspark:upgrade"))
+  // when the user clicks "Upgrade Now". This catches it and opens PricingPage.
+  useEffect(() => {
+    const handler = () => navigate("pricing");
+    window.addEventListener("novaspark:upgrade", handler);
+    return () => window.removeEventListener("novaspark:upgrade", handler);
+  }, [navigate]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
@@ -725,8 +745,9 @@ export default function App() {
     onMarkUnwatched:   markUnwatched,
     downloads,
     onGoToDownloads:   handleGoToDownloads,
-    // ── ADDED: standalone watch page handler ────────────────────────────────
     onWatch:           handleWatch,
+    // ── ADDED: premium state available to all pages ──────────────────────
+    isPremium,
   };
 
   return (
@@ -744,6 +765,9 @@ export default function App() {
           canGoBack={navStack.length > 0}
           onBack={navigateBack}
           onShowShortcuts={() => setShowShortcuts(true)}
+          // ── ADDED: premium props ─────────────────────────────────────
+          isPremium={isPremium}
+          onUpgrade={() => navigate("pricing")}
         />
 
         <div className="main">
@@ -784,6 +808,7 @@ export default function App() {
                 onMarkUnwatched={markUnwatched}
                 history={history}
                 apiKey={apiKey}
+                isPremium={isPremium}
               />
             )}
 
@@ -808,7 +833,7 @@ export default function App() {
               />
             )}
 
-            {/* ── ADDED: standalone watch page ─────────────────────────── */}
+            {/* ── Standalone watch page ─────────────────────────────────── */}
             {page === "watch" && selected && (
               <WatchPage
                 item={selected.item}
@@ -830,6 +855,16 @@ export default function App() {
                 downloads={downloads}
                 onDownloadStarted={handleDownloadStarted}
                 onGoToDownloads={handleGoToDownloads}
+                isPremium={isPremium}
+              />
+            )}
+
+            {/* ── ADDED: Pricing / subscription page ───────────────────── */}
+            {page === "pricing" && (
+              <PricingPage
+                isPremium={isPremium}
+                onPremiumUpdate={handlePremiumUpdate}
+                onBack={navigateBack}
               />
             )}
 
@@ -851,6 +886,8 @@ export default function App() {
                 apiKey={apiKey}
                 onChangeApiKey={changeApiKey}
                 initialSection={selected?.section}
+                isPremium={isPremium}
+                onUpgrade={() => navigate("pricing")}
               />
             )}
 

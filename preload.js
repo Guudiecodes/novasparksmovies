@@ -1,3 +1,12 @@
+// CRASH LOGGER
+const { ipcRenderer: _crashIpc } = require('electron');
+window.addEventListener('error', function(e) {
+  _crashIpc.send('renderer-error', { msg: e.message, stack: e.error ? e.error.stack : '', src: e.filename + ':' + e.lineno });
+});
+window.addEventListener('unhandledrejection', function(e) {
+  _crashIpc.send('renderer-error', { msg: String(e.reason), stack: e.reason && e.reason.stack ? e.reason.stack : '' });
+});
+
 const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 contextBridge.exposeInMainWorld("electron", {
@@ -111,6 +120,7 @@ contextBridge.exposeInMainWorld("electron", {
   clearWatchData: () => ipcRenderer.invoke("clear-watch-data"),
   deleteAllDownloads: () => ipcRenderer.invoke("delete-all-downloads"),
   resetApp: () => ipcRenderer.invoke("reset-app"),
+
   // Subtitles
   searchSubtitles: (args) => ipcRenderer.invoke("search-subtitles", args),
   getSubtitleUrl: (args) => ipcRenderer.invoke("get-subtitle-url", args),
@@ -118,15 +128,18 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("download-subtitles-for-file", args),
   deleteSubtitleFile: (args) =>
     ipcRenderer.invoke("delete-subtitle-file", args),
+
   // Wyzie API key redemption
   wyzieOpenRedeem: () => ipcRenderer.invoke("wyzie-open-redeem"),
   wyzieValidateKey: (key) => ipcRenderer.invoke("wyzie-validate-key", key),
+
   // Secure key store (OS-encrypted via safeStorage)
   secureGet: (key) =>
     ipcRenderer.invoke("secure-store-get", key).then((r) => r.value ?? null),
   secureSet: (key, value) =>
     ipcRenderer.invoke("secure-store-set", { key, value }),
-  // Picture-in-Picture pop-out (full player UI, only one stream active at a time)
+
+  // Picture-in-Picture pop-out
   openPipWindow: (url, title) =>
     ipcRenderer.invoke("open-pip-window", { url, title }),
   closePipWindow: () => ipcRenderer.invoke("close-pip-window"),
@@ -143,22 +156,24 @@ contextBridge.exposeInMainWorld("electron", {
     return h;
   },
   offPipClosed: (h) => ipcRenderer.removeListener("pip-window-closed", h),
+
   // Window controls (Windows custom titlebar)
   windowMinimize: () => ipcRenderer.invoke("window-minimize"),
   windowToggleMaximize: () => ipcRenderer.invoke("window-toggle-maximize"),
   windowClose: () => ipcRenderer.invoke("window-close"),
   windowIsMaximized: () => ipcRenderer.invoke("window-is-maximized"),
   getPlatform: () => ipcRenderer.invoke("get-platform"),
-  // Push events: main process emits "window-maximized" with a boolean payload
   onWindowMaximize: (cb) => {
     const h = (_, v) => cb(v);
     ipcRenderer.on("window-maximized", h);
     return h;
   },
   offWindowMaximize: (h) => ipcRenderer.removeListener("window-maximized", h),
+
   getVideoDuration: (filePath) =>
     ipcRenderer.invoke("get-video-duration", filePath),
   setZoomFactor: (factor) => webFrame.setZoomFactor(factor),
+
   // Auto-updater
   detectUpdateFormat: () => ipcRenderer.invoke("detect-update-format"),
   downloadAndInstallUpdate: (args) =>
@@ -170,6 +185,7 @@ contextBridge.exposeInMainWorld("electron", {
     return h;
   },
   offUpdateProgress: (h) => ipcRenderer.removeListener("update-progress", h),
+
   // Scheduled backups
   getScheduledBackupSettings: () =>
     ipcRenderer.invoke("get-scheduled-backup-settings"),

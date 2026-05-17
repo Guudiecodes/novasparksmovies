@@ -1,215 +1,267 @@
-// ── NovaSpark Premium — plans, state, feature gates ─────────────────────────
+/**
+ * premium.js — NovaSpark subscription management
+ *
+ * Stores plan data in localStorage under "ns_premium".
+ * Shape: { planId, email, password (hashed), ref, activatedAt, expiresAt }
+ *
+ * Plans (ascending):
+ *   free → mobile → basic → standard → premium
+ */
 
-export const NS_PLANS = [
-  {
+// ── Your Paystack public key ──────────────────────────────────────────────────
+// Replace with your live key (pk_live_...) before going live
+export const PAYSTACK_PUBLIC_KEY = "pk_test_5ff5879e892b24e0a2d0e1b3c4f5a6b7c8d9e0f"; // ← replace with real key
+
+// ── Crypto wallet addresses ───────────────────────────────────────────────────
+// Replace placeholders with your real wallet addresses
+export const CRYPTO_WALLETS = {
+  USDT_TRC: "YOUR_USDT_TRC20_WALLET_ADDRESS",
+  USDT_ERC: "YOUR_USDT_ERC20_WALLET_ADDRESS",
+  BTC:      "YOUR_BITCOIN_WALLET_ADDRESS",
+  ETH:      "YOUR_ETHEREUM_WALLET_ADDRESS",
+};
+
+// ── Plan definitions ──────────────────────────────────────────────────────────
+export const PLANS = {
+  free: {
     id:       "free",
     name:     "Free",
-    badge:    null,
     price:    0,
-    currency: "NGN",
+    color:    "#6b7280",
     devices:  1,
-    quality:  "SD",
-    qualityLabel: "Standard Definition",
-    color:    "#7a9ab0",
-    features: [
-      "Stream movies & TV shows",
-      "Standard Definition (SD)",
-      "1 device at a time",
-      "Watch history & watchlist",
-      "Basic search",
-    ],
-    locked: [
-      "HD / Full HD / 4K streaming",
-      "Multiple devices",
-      "Offline downloads",
-      "Early access to new titles",
-      "Priority stream sources",
-    ],
+    quality:  "SD 480p",
+    features: {
+      hd:               false,
+      fullHd:           false,
+      uhd4k:            false,
+      multiDevice:      false,
+      downloads:        false,
+      unlimitedDl:      false,
+      adFree:           true,   // always — no ads ever
+      prioritySources:  false,
+      earlyAccess:      false,
+      vipSupport:       false,
+    },
   },
-  {
+  mobile: {
     id:       "mobile",
     name:     "Mobile",
-    badge:    "STARTER",
     price:    1000,
-    currency: "NGN",
+    color:    "#10b981",
     devices:  1,
-    quality:  "SD",
-    qualityLabel: "Standard Definition",
-    color:    "#48c774",
-    popular:  false,
-    features: [
-      "Everything in Free",
-      "Ad-free experience",
-      "Standard Definition (SD)",
-      "1 device at a time",
-      "Email support",
-    ],
-    locked: [
-      "HD / Full HD / 4K streaming",
-      "Multiple devices",
-      "Offline downloads",
-    ],
+    quality:  "SD 480p",
+    features: {
+      hd:               false,
+      fullHd:           false,
+      uhd4k:            false,
+      multiDevice:      false,
+      downloads:        false,
+      unlimitedDl:      false,
+      adFree:           true,
+      prioritySources:  false,
+      earlyAccess:      false,
+      vipSupport:       false,
+    },
+    // What mobile UNLOCKS vs free:
+    // → source switching (30+ providers)
   },
-  {
+  basic: {
     id:       "basic",
     name:     "Basic",
-    badge:    "VALUE",
     price:    1500,
-    currency: "NGN",
+    color:    "#3b82f6",
     devices:  1,
-    quality:  "HD",
-    qualityLabel: "High Definition",
-    color:    "#3273dc",
-    popular:  false,
-    features: [
-      "Everything in Mobile",
-      "High Definition (HD)",
-      "1 device at a time",
-      "Download 10 titles/month",
-      "Priority customer support",
-    ],
-    locked: [
-      "Multiple devices",
-      "Full HD / 4K streaming",
-      "Unlimited downloads",
-    ],
+    quality:  "HD 720p",
+    features: {
+      hd:               true,
+      fullHd:           false,
+      uhd4k:            false,
+      multiDevice:      false,
+      downloads:        true,
+      unlimitedDl:      false,
+      adFree:           true,
+      prioritySources:  false,
+      earlyAccess:      false,
+      vipSupport:       false,
+    },
   },
-  {
+  standard: {
     id:       "standard",
     name:     "Standard",
-    badge:    "POPULAR",
     price:    3500,
-    currency: "NGN",
+    color:    "#8b5cf6",
     devices:  2,
-    quality:  "FHD",
-    qualityLabel: "Full HD 1080p",
-    color:    "#00a8e1",
-    popular:  true,
-    features: [
-      "Everything in Basic",
-      "Full HD 1080p streaming",
-      "2 devices simultaneously",
-      "Download 30 titles/month",
-      "Exclusive Standard content",
-      "Early access to new releases",
-    ],
-    locked: [
-      "4K Ultra HD streaming",
-      "4 simultaneous devices",
-    ],
+    quality:  "Full HD 1080p",
+    features: {
+      hd:               true,
+      fullHd:           true,
+      uhd4k:            false,
+      multiDevice:      true,
+      downloads:        true,
+      unlimitedDl:      false,
+      adFree:           true,
+      prioritySources:  true,
+      earlyAccess:      false,
+      vipSupport:       false,
+    },
   },
-  {
+  premium: {
     id:       "premium",
     name:     "Premium",
-    badge:    "BEST",
     price:    6500,
-    currency: "NGN",
-    devices:  4,
-    quality:  "4K",
-    qualityLabel: "4K Ultra HD",
     color:    "#f5c518",
-    popular:  false,
-    features: [
-      "Everything in Standard",
-      "4K Ultra HD streaming",
-      "4 devices simultaneously",
-      "Unlimited downloads",
-      "Dolby Audio support",
-      "Exclusive Premium content",
-      "Priority stream sources",
-      "Dedicated VIP support",
-    ],
-    locked: [],
+    devices:  4,
+    quality:  "4K Ultra HD",
+    features: {
+      hd:               true,
+      fullHd:           true,
+      uhd4k:            true,
+      multiDevice:      true,
+      downloads:        true,
+      unlimitedDl:      true,
+      adFree:           true,
+      prioritySources:  true,
+      earlyAccess:      true,
+      vipSupport:       true,
+    },
   },
-];
+};
 
-// ── Storage key ──────────────────────────────────────────────────────────────
-const PREMIUM_KEY = "ns_premium";
+export const PLAN_ORDER = ["free", "mobile", "basic", "standard", "premium"];
 
-// ── Read / Write ─────────────────────────────────────────────────────────────
-export function getPremiumStatus() {
+export const FEATURE_LABELS = {
+  hd:              "HD Streaming",
+  fullHd:          "Full HD Streaming",
+  uhd4k:           "4K Ultra HD Streaming",
+  multiDevice:     "Multiple Devices",
+  downloads:       "Downloads",
+  unlimitedDl:     "Unlimited Downloads",
+  adFree:          "Ad-Free Experience",
+  prioritySources: "Priority Sources",
+  earlyAccess:     "Early Access",
+  vipSupport:      "VIP Support",
+};
+
+const NS_PREMIUM_KEY = "ns_premium";
+
+// ── Simple hash (not crypto — just obfuscation for localStorage) ──────────────
+// We don't store the real password, only a derived token
+function simpleHash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function hashPassword(email, password) {
+  // Combine email + password so the hash is unique per account
+  return simpleHash(`ns::${email.toLowerCase()}::${password}`);
+}
+
+// ── Storage helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Returns the stored premium record or null.
+ * Shape: { planId, email, pwHash, ref, activatedAt, expiresAt }
+ */
+export function getPremiumPlan() {
   try {
-    const raw = localStorage.getItem(PREMIUM_KEY);
+    const raw = localStorage.getItem(NS_PREMIUM_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    // Check expiry
-    if (data.expiresAt && Date.now() > data.expiresAt) {
-      localStorage.removeItem(PREMIUM_KEY);
-      return null;
-    }
-    return data;
+    // Backward compat — old records had planId at root
+    return data?.planId ? data : null;
   } catch {
     return null;
   }
 }
 
-export function setPremiumStatus({ planId, email, reference, method, expiresAt }) {
-  const plan = NS_PLANS.find((p) => p.id === planId);
-  if (!plan) return;
-  const data = {
-    planId,
-    planName:  plan.name,
-    email,
-    reference,
-    method,
-    activatedAt: Date.now(),
-    expiresAt:   expiresAt || Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
-  };
-  localStorage.setItem(PREMIUM_KEY, JSON.stringify(data));
-}
-
-export function clearPremiumStatus() {
-  localStorage.removeItem(PREMIUM_KEY);
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-export function isPremiumActive() {
-  return !!getPremiumStatus();
-}
-
+/** Returns just the planId string ("free" when nothing stored). */
 export function getCurrentPlan() {
-  const status = getPremiumStatus();
-  if (!status) return NS_PLANS[0]; // free
-  return NS_PLANS.find((p) => p.id === status.planId) ?? NS_PLANS[0];
+  return getPremiumPlan()?.planId || "free";
 }
 
-export function getPlanById(id) {
-  return NS_PLANS.find((p) => p.id === id) ?? NS_PLANS[0];
-}
-
-export function formatPrice(price) {
-  if (price === 0) return "Free";
-  return `₦${price.toLocaleString()}`;
-}
-
-export function getDaysRemaining() {
-  const status = getPremiumStatus();
-  if (!status || !status.expiresAt) return 0;
-  const ms = status.expiresAt - Date.now();
-  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
-}
-
-// ── Feature gates ─────────────────────────────────────────────────────────────
-// planRank: free=0, mobile=1, basic=2, standard=3, premium=4
-function planRank(planId) {
-  const order = ["free", "mobile", "basic", "standard", "premium"];
-  return order.indexOf(planId ?? "free");
-}
-
-export function canAccess(feature) {
-  const current = getCurrentPlan();
-  const rank    = planRank(current.id);
-  const gates   = {
-    hd_streaming:        rank >= 2, // basic+
-    fhd_streaming:       rank >= 3, // standard+
-    uhd_streaming:       rank >= 4, // premium only
-    multi_device:        rank >= 3, // standard+
-    downloads:           rank >= 2, // basic+
-    unlimited_downloads: rank >= 4, // premium only
-    ad_free:             rank >= 1, // mobile+
-    priority_sources:    rank >= 4, // premium only
-    early_access:        rank >= 3, // standard+
-    vip_support:         rank >= 4, // premium only
+/**
+ * Activate / upgrade a plan.
+ * Called after successful Paystack payment or crypto confirmation.
+ *
+ * @param {string} planId      — plan key ("mobile","basic","standard","premium")
+ * @param {string} email       — user email
+ * @param {string} password    — user's chosen password (stored as hash)
+ * @param {string} ref         — payment reference
+ * @param {number} [days=31]   — subscription length in days
+ */
+export function setPremiumPlan(planId, email, password, ref, days = 31) {
+  const now        = Date.now();
+  const expiresAt  = now + days * 24 * 60 * 60 * 1000;
+  const record = {
+    planId,
+    email:       email.trim().toLowerCase(),
+    pwHash:      hashPassword(email.trim().toLowerCase(), password),
+    ref,
+    activatedAt: now,
+    expiresAt,
   };
-  return gates[feature] ?? false;
+  localStorage.setItem(NS_PREMIUM_KEY, JSON.stringify(record));
+  // Dispatch so App.jsx and Sidebar react immediately
+  window.dispatchEvent(new CustomEvent("ns:plan-changed", { detail: record }));
+}
+
+/**
+ * Verify credentials — used to show account info or manage subscription.
+ * Returns true if email + password match the stored record.
+ */
+export function verifyCredentials(email, password) {
+  const record = getPremiumPlan();
+  if (!record) return false;
+  const inputEmail = email.trim().toLowerCase();
+  const inputHash  = hashPassword(inputEmail, password);
+  return record.email === inputEmail && record.pwHash === inputHash;
+}
+
+/**
+ * Check if the current plan is still active (not expired).
+ */
+export function isPlanActive() {
+  const record = getPremiumPlan();
+  if (!record || record.planId === "free") return false;
+  return Date.now() < record.expiresAt;
+}
+
+/**
+ * Get the effective plan — returns "free" if expired.
+ */
+export function getEffectivePlan() {
+  const record = getPremiumPlan();
+  if (!record) return "free";
+  if (record.planId === "free") return "free";
+  if (Date.now() > record.expiresAt) return "free"; // expired
+  return record.planId;
+}
+
+/** Cancel subscription — downgrades to free. */
+export function clearPremium() {
+  localStorage.removeItem(NS_PREMIUM_KEY);
+  window.dispatchEvent(new CustomEvent("ns:plan-changed", { detail: { planId: "free" } }));
+}
+
+// ── Plan logic helpers ────────────────────────────────────────────────────────
+
+const PLAN_RANK = { free: 0, mobile: 1, basic: 2, standard: 3, premium: 4 };
+
+export function canUpgradeTo(targetPlanId) {
+  const current = getEffectivePlan();
+  return (PLAN_RANK[targetPlanId] ?? 0) > (PLAN_RANK[current] ?? 0);
+}
+
+export function formatPrice(ngn) {
+  if (!ngn) return "Free";
+  const usd = (ngn / 1600).toFixed(2);
+  return `₦${ngn.toLocaleString()} / mo  (~$${usd} USD)`;
+}
+
+export function getPlanFeatures(planId) {
+  return PLANS[planId]?.features || PLANS.free.features;
 }

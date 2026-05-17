@@ -10,7 +10,7 @@ const http = require("http");
 const os = require("os");
 const zlib = require("zlib");
 
-// ── Robust fetch with timeout (AbortSignal.timeout is unreliable in some Electron versions) ──
+// ── Robust fetch with timeout ─────────────────────────────────────────────────
 function fetchWithTimeout(url, options = {}, ms = 15000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
@@ -20,7 +20,6 @@ function fetchWithTimeout(url, options = {}, ms = 15000) {
 }
 
 // ── ZIP subtitle extractor ────────────────────────────────────────────────────
-
 function extractFirstSubtitleFromZip(buf) {
   let offset = 0;
   while (offset < buf.length - 30) {
@@ -30,30 +29,21 @@ function extractFirstSubtitleFromZip(buf) {
       buf[offset + 2] === 0x03 &&
       buf[offset + 3] === 0x04
     ) {
-      const compression = buf.readUInt16LE(offset + 8);
+      const compression    = buf.readUInt16LE(offset + 8);
       const compressedSize = buf.readUInt32LE(offset + 18);
-      const fileNameLen = buf.readUInt16LE(offset + 26);
-      const extraLen = buf.readUInt16LE(offset + 28);
-      const fileName = buf
-        .slice(offset + 30, offset + 30 + fileNameLen)
-        .toString("utf8");
-      const dataOffset = offset + 30 + fileNameLen + extraLen;
-      const ext = fileName.toLowerCase().split(".").pop();
+      const fileNameLen    = buf.readUInt16LE(offset + 26);
+      const extraLen       = buf.readUInt16LE(offset + 28);
+      const fileName       = buf.slice(offset + 30, offset + 30 + fileNameLen).toString("utf8");
+      const dataOffset     = offset + 30 + fileNameLen + extraLen;
+      const ext            = fileName.toLowerCase().split(".").pop();
       if (ext === "srt" || ext === "vtt" || ext === "ass" || ext === "ssa") {
-        const compressedData = buf.slice(
-          dataOffset,
-          dataOffset + compressedSize,
-        );
+        const compressedData = buf.slice(dataOffset, dataOffset + compressedSize);
         let data;
         if (compression === 0) {
           data = compressedData;
         } else if (compression === 8) {
-          try {
-            data = zlib.inflateRawSync(compressedData);
-          } catch {
-            offset = dataOffset + compressedSize;
-            continue;
-          }
+          try { data = zlib.inflateRawSync(compressedData); }
+          catch { offset = dataOffset + compressedSize; continue; }
         } else {
           offset = dataOffset + compressedSize;
           continue;
@@ -69,7 +59,6 @@ function extractFirstSubtitleFromZip(buf) {
 }
 
 // ── Subtitle language extractor (from URL) ────────────────────────────────────
-
 function extractSubtitleLang(url) {
   try {
     const u = new URL(url);
@@ -90,8 +79,7 @@ function extractSubtitleLang(url) {
 }
 
 // ── IPC registration ──────────────────────────────────────────────────────────
-
-function register({ getDownloads, saveDownloads }) {
+function register({ getDownloads, saveDownloads, secureStoreGet }) {
   // ── Subtitle search ────────────────────────────────────────────────────────
   ipcMain.handle(
     "search-subtitles",
@@ -107,6 +95,18 @@ function register({ getDownloads, saveDownloads }) {
         wyzieApiKey,
       },
     ) => {
+      // ── Resolve Wyzie key: user key → admin global key → no key ──────────
+      // Admin sets "ns_wyzie_global_key" via the admin panel (secureStoreGet).
+      // If the user has their own key it takes priority.
+      // If not, fall back to the admin-set global key.
+      let resolvedWyzieKey = wyzieApiKey || "";
+      if (!resolvedWyzieKey && secureStoreGet) {
+        try {
+          const adminKey = secureStoreGet("ns_wyzie_global_key");
+          if (adminKey) resolvedWyzieKey = adminKey;
+        } catch {}
+      }
+
       function toSubDLLang(lang) {
         if (!lang) return "";
         return lang.split("-")[0].toUpperCase();
@@ -115,15 +115,13 @@ function register({ getDownloads, saveDownloads }) {
       async function searchSubDL() {
         try {
           const params = new URLSearchParams({
-            api_key: subdlApiKey,
-            tmdb_id: String(tmdbId),
-            type: mediaType === "tv" ? "tv" : "movie",
-            subs_per_page: "30",
+            api_key:      subdlApiKey,
+            tmdb_id:      String(tmdbId),
+            type:         mediaType === "tv" ? "tv" : "movie",
+            subs_per_page:"30",
           });
-          if (mediaType === "tv" && season != null)
-            params.set("season_number", String(season));
-          if (mediaType === "tv" && episode != null)
-            params.set("episode_number", String(episode));
+          if (mediaType === "tv" && season   != null) params.set("season_number",  String(season));
+          if (mediaType === "tv" && episode  != null) params.set("episode_number", String(episode));
           if (languages) params.set("languages", toSubDLLang(languages));
 
           const res = await fetchWithTimeout(
@@ -133,56 +131,46 @@ function register({ getDownloads, saveDownloads }) {
           );
           if (!res.ok) {
             const errText = await res.text().catch(() => "");
-            return {
-              ok: false,
-              error: `SubDL error ${res.status}: ${errText}`,
-            };
+            return { ok: false, error: `SubDL error ${res.status}: ${errText}` };
           }
           const data = await res.json();
-          if (!data.status)
-            return { ok: false, error: "SubDL returned no results" };
+          if (!data.status) return { ok: false, error: "SubDL returned no results" };
           const results = (data.subtitles || []).map((s) => ({
-            file_id: `subdl_${s.sd_id}_${encodeURIComponent(s.url)}`,
-            file_name: s.name || s.release_name || "",
-            language: (s.lang || "").toLowerCase(),
-            release: s.release_name || s.name || "",
-            uploader: s.author || "SubDL",
-            download_count: s.downloads || 0,
+            file_id:          `subdl_${s.sd_id}_${encodeURIComponent(s.url)}`,
+            file_name:        s.name || s.release_name || "",
+            language:         (s.lang || "").toLowerCase(),
+            release:          s.release_name || s.name || "",
+            uploader:         s.author || "SubDL",
+            download_count:   s.downloads || 0,
             hearing_impaired: !!s.hi,
-            ai_translated: false,
+            ai_translated:    false,
             machine_translated: false,
-            ratings: 0,
-            fps: null,
-            from_trusted: false,
-            via_subdl: true,
+            ratings:          0,
+            fps:              null,
+            from_trusted:     false,
+            via_subdl:        true,
           }));
-          if (results.length === 0)
-            return { ok: false, error: "SubDL: no results" };
+          if (results.length === 0) return { ok: false, error: "SubDL: no results" };
           return { ok: true, results, via_subdl: true };
         } catch (e) {
-          const msg =
-            e.name === "AbortError"
-              ? "SubDL timed out, server may be temporarily unavailable"
-              : e.message;
+          const msg = e.name === "AbortError"
+            ? "SubDL timed out, server may be temporarily unavailable"
+            : e.message;
           return { ok: false, error: msg };
         }
       }
 
       async function searchWyzie() {
         try {
-          const params = new URLSearchParams({
-            id: String(tmdbId),
-            format: "srt",
-          });
-          if (languages) params.set("language", languages);
-          if (mediaType === "tv" && season != null)
-            params.set("season", String(season));
-          if (mediaType === "tv" && episode != null)
-            params.set("episode", String(episode));
+          const params = new URLSearchParams({ id: String(tmdbId), format: "srt" });
+          if (languages)  params.set("language", languages);
+          if (mediaType === "tv" && season  != null) params.set("season",  String(season));
+          if (mediaType === "tv" && episode != null) params.set("episode", String(episode));
 
-          if (wyzieApiKey) params.set("key", wyzieApiKey);
+          // Use resolved key (user key or admin global key)
+          if (resolvedWyzieKey) params.set("key", resolvedWyzieKey);
 
-          const baseUrl = wyzieApiKey
+          const baseUrl = resolvedWyzieKey
             ? "https://sub.wyzie.io/search"
             : "https://subs.wyzie.ru/search";
 
@@ -201,52 +189,46 @@ function register({ getDownloads, saveDownloads }) {
           const results = (Array.isArray(data) ? data : [])
             .filter((r) => r.url)
             .map((r, i) => {
-              const rawUrl = r.url || "";
-              const fullUrl = rawUrl.startsWith("http")
+              const rawUrl   = r.url || "";
+              const fullUrl  = rawUrl.startsWith("http")
                 ? rawUrl
                 : `https://subs.wyzie.ru${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
               const displayName =
-                r.display_name ||
-                r.name ||
-                r.release_name ||
-                r.title ||
-                r.SubFileName ||
-                r.fileName ||
-                "";
-              const lang = (r.language || "").toUpperCase();
-              const hiTag = r.isHearingImpaired ? " [HI]" : "";
-              const aiTag = r.isAiTranslated ? " [AI]" : "";
-              const src = r.source ? ` · ${r.source}` : "";
+                r.display_name || r.name || r.release_name || r.title ||
+                r.SubFileName   || r.fileName || "";
+              const lang    = (r.language || "").toUpperCase();
+              const hiTag   = r.isHearingImpaired ? " [HI]" : "";
+              const aiTag   = r.isAiTranslated    ? " [AI]" : "";
+              const src     = r.source ? ` · ${r.source}` : "";
               const fallback = `${lang} subtitle${hiTag}${aiTag}${src} #${i + 1}`;
               return {
-                file_id: `wyzie_${i}_${encodeURIComponent(fullUrl)}`,
-                direct_url: fullUrl,
-                file_name: displayName || fallback,
-                language: r.language || "",
-                release: displayName || fallback,
-                uploader: "Wyzie",
-                download_count: 0,
+                file_id:          `wyzie_${i}_${encodeURIComponent(fullUrl)}`,
+                direct_url:       fullUrl,
+                file_name:        displayName || fallback,
+                language:         r.language || "",
+                release:          displayName || fallback,
+                uploader:         "Wyzie",
+                download_count:   0,
                 hearing_impaired: !!r.isHearingImpaired,
-                ai_translated: !!r.isAiTranslated,
+                ai_translated:    !!r.isAiTranslated,
                 machine_translated: false,
-                ratings: 0,
-                fps: null,
-                from_trusted: false,
-                via_wyzie: true,
-                original_source: r.source || "",
+                ratings:          0,
+                fps:              null,
+                from_trusted:     false,
+                via_wyzie:        true,
+                original_source:  r.source || "",
               };
             });
-          if (results.length === 0)
-            return { ok: false, error: "Wyzie: no results" };
+          if (results.length === 0) return { ok: false, error: "Wyzie: no results" };
           return { ok: true, results, via_wyzie: true };
         } catch (e) {
-          const msg =
-            e.name === "AbortError"
-              ? "Subtitle service timed out, it may be temporarily down. Try adding a free SubDL API key in Settings for reliable results."
-              : e.message;
+          const msg = e.name === "AbortError"
+            ? "Subtitle service timed out, it may be temporarily down. Try adding a free SubDL API key in Settings for reliable results."
+            : e.message;
           return { ok: false, error: msg };
         }
       }
+
       const errors = [];
       if (subdlApiKey) {
         const r = await searchSubDL();
@@ -272,47 +254,26 @@ function register({ getDownloads, saveDownloads }) {
   ipcMain.handle("get-subtitle-url", async (_, { fileId }) => {
     try {
       if (String(fileId).startsWith("subdl_")) {
-        const parts = String(fileId).split("_");
-        const subdlPath = decodeURIComponent(parts.slice(2).join("_"));
+        const parts      = String(fileId).split("_");
+        const subdlPath  = decodeURIComponent(parts.slice(2).join("_"));
         const downloadUrl = `https://dl.subdl.com${subdlPath}`;
         const res = await fetchWithTimeout(
           downloadUrl,
           { headers: { "User-Agent": "Streambert" } },
           30000,
         );
-        if (!res.ok)
-          return { ok: false, error: `SubDL download error ${res.status}` };
-        const zipBuffer = Buffer.from(await res.arrayBuffer());
-        const extracted = extractFirstSubtitleFromZip(zipBuffer);
-        if (!extracted)
-          return { ok: false, error: "No subtitle file found in SubDL ZIP" };
-        const tmpPath = path.join(
-          os.tmpdir(),
-          `streambert_sub_${Date.now()}_${extracted.name}`,
-        );
+        if (!res.ok) return { ok: false, error: `SubDL download error ${res.status}` };
+        const zipBuffer  = Buffer.from(await res.arrayBuffer());
+        const extracted  = extractFirstSubtitleFromZip(zipBuffer);
+        if (!extracted) return { ok: false, error: "No subtitle file found in SubDL ZIP" };
+        const tmpPath = path.join(os.tmpdir(), `streambert_sub_${Date.now()}_${extracted.name}`);
         fs.writeFileSync(tmpPath, extracted.data);
-        return {
-          ok: true,
-          url: `file://${tmpPath}`,
-          file_name: extracted.name,
-          remaining: null,
-          reset_time: null,
-          via_subdl: true,
-        };
+        return { ok: true, url: `file://${tmpPath}`, file_name: extracted.name, remaining: null, reset_time: null, via_subdl: true };
       }
 
       if (String(fileId).startsWith("wyzie_")) {
-        const url = decodeURIComponent(
-          String(fileId).split("_").slice(2).join("_"),
-        );
-        return {
-          ok: true,
-          url,
-          file_name: "",
-          remaining: null,
-          reset_time: null,
-          via_wyzie: true,
-        };
+        const url = decodeURIComponent(String(fileId).split("_").slice(2).join("_"));
+        return { ok: true, url, file_name: "", remaining: null, reset_time: null, via_wyzie: true };
       }
 
       return { ok: false, error: "Unknown subtitle source" };
@@ -326,21 +287,18 @@ function register({ getDownloads, saveDownloads }) {
     "download-subtitles-for-file",
     async (_, { filePath, selectedSubs }) => {
       try {
-        const dir = path.dirname(filePath);
-        const baseName = path.basename(filePath, path.extname(filePath));
-        const results = [];
+        const dir         = path.dirname(filePath);
+        const baseName    = path.basename(filePath, path.extname(filePath));
+        const results     = [];
         const langCounter = {};
 
         for (const sub of selectedSubs) {
           try {
-            const langCode = (sub.language || sub.lang || "unknown").replace(
-              /[^a-z0-9_-]/gi,
-              "",
-            );
+            const langCode = (sub.language || sub.lang || "unknown").replace(/[^a-z0-9_-]/gi, "");
             let fileData, ext;
 
             if (String(sub.file_id).startsWith("subdl_")) {
-              const parts = String(sub.file_id).split("_");
+              const parts    = String(sub.file_id).split("_");
               const subdlPath = decodeURIComponent(parts.slice(2).join("_"));
               const res = await fetchWithTimeout(
                 `https://dl.subdl.com${subdlPath}`,
@@ -348,43 +306,36 @@ function register({ getDownloads, saveDownloads }) {
                 30000,
               );
               if (!res.ok) continue;
-              const zipBuf = Buffer.from(await res.arrayBuffer());
+              const zipBuf   = Buffer.from(await res.arrayBuffer());
               const extracted = extractFirstSubtitleFromZip(zipBuf);
               if (!extracted) continue;
               fileData = extracted.data;
-              ext = extracted.name.split(".").pop().toLowerCase();
+              ext      = extracted.name.split(".").pop().toLowerCase();
             } else {
               const url =
                 sub.direct_url ||
                 (String(sub.file_id).startsWith("wyzie_")
-                  ? decodeURIComponent(
-                      String(sub.file_id).split("_").slice(2).join("_"),
-                    )
+                  ? decodeURIComponent(String(sub.file_id).split("_").slice(2).join("_"))
                   : null);
               if (!url) continue;
               const res = await fetchWithTimeout(url, {}, 30000);
               if (!res.ok) continue;
               fileData = Buffer.from(await res.arrayBuffer());
               const urlExt = url.split("?")[0].split(".").pop().toLowerCase();
-              ext = ["srt", "vtt", "ass", "ssa"].includes(urlExt)
-                ? urlExt
-                : "srt";
+              ext = ["srt", "vtt", "ass", "ssa"].includes(urlExt) ? urlExt : "srt";
             }
 
-            const lIdx = langCounter[langCode] ?? 0;
+            const lIdx   = langCounter[langCode] ?? 0;
             langCounter[langCode] = lIdx + 1;
-            const suffix = lIdx > 0 ? `.${lIdx}` : "";
-            const destPath = path.join(
-              dir,
-              `${baseName}.${langCode}${suffix}.${ext}`,
-            );
+            const suffix   = lIdx > 0 ? `.${lIdx}` : "";
+            const destPath = path.join(dir, `${baseName}.${langCode}${suffix}.${ext}`);
             fs.writeFileSync(destPath, fileData);
             results.push({
-              lang: langCode,
-              path: destPath,
+              lang:    langCode,
+              path:    destPath,
               file_id: sub.file_id || null,
               release: sub.release || sub.file_name || null,
-              source: sub.via_subdl ? "subdl" : "wyzie",
+              source:  sub.via_subdl ? "subdl" : "wyzie",
             });
           } catch (subErr) {
             console.error("Subtitle download error:", subErr);
@@ -396,15 +347,11 @@ function register({ getDownloads, saveDownloads }) {
           const downloads = getDownloads();
           const idx = downloads.findIndex((d) => d.filePath === filePath);
           if (idx >= 0) {
-            const existing = downloads[idx].subtitlePaths || [];
-            const existingFileIds = new Set(
-              existing.map((s) => s.file_id).filter(Boolean),
-            );
+            const existing        = downloads[idx].subtitlePaths || [];
+            const existingFileIds = new Set(existing.map((s) => s.file_id).filter(Boolean));
             downloads[idx].subtitlePaths = [
               ...existing,
-              ...results.filter(
-                (r) => !r.file_id || !existingFileIds.has(r.file_id),
-              ),
+              ...results.filter((r) => !r.file_id || !existingFileIds.has(r.file_id)),
             ];
             saveDownloads();
           }
@@ -424,7 +371,7 @@ function register({ getDownloads, saveDownloads }) {
       const idx = downloads.findIndex((d) => d.id === downloadId);
       if (idx < 0) return { ok: true, subtitlePaths: [] };
       const before = downloads[idx].subtitlePaths || [];
-      const after = before.filter((sp) => {
+      const after  = before.filter((sp) => {
         const p = typeof sp === "string" ? sp : sp?.path;
         return p && fs.existsSync(p);
       });
@@ -441,15 +388,13 @@ function register({ getDownloads, saveDownloads }) {
   // ── Delete a single subtitle file ─────────────────────────────────────────
   ipcMain.handle("delete-subtitle-file", (_, { downloadId, subtitlePath }) => {
     try {
-      if (subtitlePath && fs.existsSync(subtitlePath))
-        fs.unlinkSync(subtitlePath);
+      if (subtitlePath && fs.existsSync(subtitlePath)) fs.unlinkSync(subtitlePath);
       if (downloadId) {
         const downloads = getDownloads();
         const idx = downloads.findIndex((d) => d.id === downloadId);
         if (idx >= 0) {
-          downloads[idx].subtitlePaths = (
-            downloads[idx].subtitlePaths || []
-          ).filter((sp) => sp.path !== subtitlePath);
+          downloads[idx].subtitlePaths = (downloads[idx].subtitlePaths || [])
+            .filter((sp) => sp.path !== subtitlePath);
           saveDownloads();
         }
       }

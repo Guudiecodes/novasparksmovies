@@ -49,7 +49,7 @@
 /* ── NovaSpark Design Tokens — Prime Video palette ─────────────────────── */
 :root {
     /* Backgrounds — dark navy, not pure black */
-    --bg: #0a0e14;
+    --bg: #000;
     --surface: #111820;
     --surface2: #1a2430;
     --surface3: #222f3e;

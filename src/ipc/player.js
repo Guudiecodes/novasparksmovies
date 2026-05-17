@@ -138,7 +138,6 @@ function register(getMainWindow, { writeSecretMigration }) {
     if (!filePath) return { ok: false };
     const platform = process.platform;
 
-    // Probe paths for ffprobe
     const probePaths =
       platform === "win32"
         ? ["ffprobe", "C:\\ffmpeg\\bin\\ffprobe.exe"]
@@ -168,7 +167,6 @@ function register(getMainWindow, { writeSecretMigration }) {
       } catch {}
     }
 
-    // Fallback: try ffmpeg -i and parse Duration line
     const ffmpegPaths =
       platform === "win32"
         ? ["ffmpeg", "C:\\ffmpeg\\bin\\ffmpeg.exe"]
@@ -210,7 +208,6 @@ function register(getMainWindow, { writeSecretMigration }) {
 
       const ext =
         format === "exe" ? ".exe" : format === "deb" ? ".deb" : ".AppImage";
-      // CHANGED: novaspark-update (was streambert-update)
       const destPath = path.join(os.tmpdir(), `novaspark-update${ext}`);
 
       await new Promise((resolve, reject) => {
@@ -222,7 +219,6 @@ function register(getMainWindow, { writeSecretMigration }) {
             reqUrl,
             {
               headers: {
-                // CHANGED: NovaSpark-AutoUpdater (was Streambert-AutoUpdater)
                 "User-Agent": "NovaSpark-AutoUpdater",
                 Accept: "application/octet-stream",
               },
@@ -293,7 +289,6 @@ function register(getMainWindow, { writeSecretMigration }) {
         fs.chmodSync(destPath, 0o755);
         const currentAppImage = process.env.APPIMAGE;
         if (currentAppImage) {
-          // CHANGED: novaspark-update.sh (was streambert-update.sh)
           const scriptPath = path.join(os.tmpdir(), "novaspark-update.sh");
           const pid = process.pid;
           const target = currentAppImage;
@@ -378,14 +373,7 @@ function register(getMainWindow, { writeSecretMigration }) {
       const JS = `
         (() => {
           const v = document.querySelector('video');
-          if (!v || !v.duration || v.duration === Infinity || v.paused) return null;
-          if (!v._seekTracked) {
-            v._seekTracked = true;
-            v.addEventListener('seeked', () => {
-              v._lastUserSeek = Date.now();
-              v._lastUserSeekTo = v.currentTime;
-            });
-          }
+          if (!v) return null;
           return {
             currentTime: v.currentTime,
             duration: v.duration,
