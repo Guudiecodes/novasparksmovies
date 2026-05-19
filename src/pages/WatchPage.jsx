@@ -9,42 +9,98 @@ import {
 } from "../utils/api";
 import { storage } from "../utils/storage";
 import {
-  BackIcon,
-  StarIcon,
-  SourceIcon,
-  PlayIcon,
-  BookmarkIcon,
-  BookmarkFillIcon,
-  TrailerIcon,
-  PopOutIcon,
-  DownloadIcon,
+  BackIcon, StarIcon, SourceIcon, PlayIcon,
+  BookmarkIcon, BookmarkFillIcon, TrailerIcon,
+  PopOutIcon, DownloadIcon,
 } from "../components/Icons";
 import TrailerModal from "../components/TrailerModal";
 import DownloadModal from "../components/DownloadModal";
 import { canDownload, canPopOut, canSwitchSource } from "../utils/gate";
 import PremiumGate from "../components/PremiumGate";
 
+// ─── Embed injection ──────────────────────────────────────────────────────────
+// Runs the moment dom-ready fires — hides ALL embed loading chrome before it paints
+const _EMBED_CSS = `
+[class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
+[id*="loading"i],[id*="loader"i],[id*="fetching"i],
+.spinner,.preloader,.lds-ring,.lds-spinner,.vjs-loading-spinner,
+.jw-icon-loading,.plyr__loading {
+  display:none!important;opacity:0!important;visibility:hidden!important;
+}
+video{opacity:1!important;visibility:visible!important;display:block!important;}
+`;
+
+// Text-node walker — kills "FETCHING, ONE MOMENT..." regardless of how it's rendered
+const _EMBED_JS = `(function(){
+  if(window.__ns)return;window.__ns=true;
+  var BAD=['FETCHING, ONE MOMENT...','FETCHING','ONE MOMENT...','PLEASE WAIT','LOADING...','LOADING'];
+  function run(){try{document.querySelectorAll('body *').forEach(function(el){
+    if(!el.childElementCount){
+      var t=(el.textContent||'').trim().toUpperCase();
+      if(BAD.some(function(k){return t===k||t.startsWith(k);})){
+        var p=el;for(var i=0;i<4;i++){var par=p.parentElement;if(par&&par!==document.body)p=par;else break;}
+        p.style.cssText='display:none!important;opacity:0!important;pointer-events:none!important;';
+      }
+    }
+  });}catch(e){}}
+  run();
+  var obs=new MutationObserver(run);
+  obs.observe(document.body,{childList:true,subtree:true});
+  setTimeout(function(){obs.disconnect();},12000);
+})()`;
+
+// ─── Server toast ─────────────────────────────────────────────────────────────
+function ServerToast({ status, sourceLabel }) {
+  const [show,  setShow]  = useState(false);
+  const [fade,  setFade]  = useState(false);
+  const timerRef          = useRef(null);
+
+  useEffect(() => {
+    clearTimeout(timerRef.current);
+    if (status === "testing" || status === "retrying") {
+      setShow(true); setFade(false);
+    } else if (status === "found") {
+      setFade(false);
+      timerRef.current = setTimeout(() => { setFade(true); timerRef.current = setTimeout(() => setShow(false), 500); }, 2500);
+    } else if (status === "failed") {
+      setFade(false);
+      timerRef.current = setTimeout(() => { setFade(true); timerRef.current = setTimeout(() => setShow(false), 500); }, 4000);
+    }
+    return () => clearTimeout(timerRef.current);
+  }, [status, sourceLabel]);
+
+  if (!show) return null;
+  return (
+    <div style={{
+      position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",
+      zIndex:9999,background:"rgba(8,8,8,0.97)",border:"1px solid rgba(255,255,255,0.08)",
+      borderRadius:12,padding:"11px 22px",display:"flex",alignItems:"center",gap:10,
+      color:"#fff",fontSize:13,fontWeight:500,backdropFilter:"blur(12px)",
+      WebkitBackdropFilter:"blur(12px)",boxShadow:"0 6px 32px rgba(0,0,0,0.7)",
+      opacity:fade?0:1,transition:"opacity 0.45s ease",pointerEvents:"none",
+    }}>
+      {(status === "testing" || status === "retrying") ? (<>
+        <div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.15)",
+          borderTopColor:"#fff",animation:"spin 0.7s linear infinite",flexShrink:0}}/>
+        <span>{status === "retrying" ? "Trying another server…" : "Please wait, finding best server…"}</span>
+      </>) : status === "found" ? (<>
+        <span style={{color:"#4caf50",fontSize:17,lineHeight:1}}>✓</span>
+        <span>Playing on <strong>{sourceLabel}</strong></span>
+      </>) : (<>
+        <span style={{color:"#ff5252",fontSize:17,lineHeight:1}}>⚠</span>
+        <span>Could not load — check your connection</span>
+      </>)}
+    </div>
+  );
+}
+
 export default function WatchPage({
-  item,
-  apiKey,
-  onBack,
-  onSelect,
-  progress,
-  saveProgress,
-  onHistory,
-  watched,
-  onMarkWatched,
-  onMarkUnwatched,
-  onSave,
-  isSaved,
-  downloads,
-  onDownloadStarted,
-  onGoToDownloads,
-  sourceId: preFoundSource,
-  isPremium,
+  item, apiKey, onBack, onSelect, progress, saveProgress, onHistory,
+  watched, onMarkWatched, onMarkUnwatched, onSave, isSaved,
+  downloads, onDownloadStarted, onGoToDownloads,
+  sourceId: preFoundSource, isPremium,
 }) {
   const isElectron = !!window?.electron;
-
   const type    = item?.media_type === "tv" || !!item?.first_air_date ? "tv" : "movie";
   const title   = item?.title || item?.name || "";
   const season  = item?.season  ?? 1;
@@ -66,9 +122,40 @@ export default function WatchPage({
   const [pipOpen,          setPipOpen]          = useState(false);
   const [downloaderFolder, setDownloaderFolder] = useState(() => storage.get("downloaderFolder") || "");
 
-  const webviewRef = useRef(null);
-  const iframeRef  = useRef(null);
-  const sourceRef  = useRef(null);
+  // Beast engine refs
+  const webviewRef    = useRef(null);
+  const iframeRef     = useRef(null);
+  const sourceRef     = useRef(null);
+  const pollRef       = useRef(null);   // video-ready poll interval
+  const retryQueueRef = useRef([]);     // ordered source ids to try
+  const retryIdxRef   = useRef(0);      // next index in queue
+
+  // ── Build retry queue once per content item ─────────────────────────────
+  useEffect(() => {
+    const all = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
+    const start = all.indexOf(playerSource);
+    const ordered = start >= 0
+      ? [...all.slice(start), ...all.slice(0, start)]
+      : [playerSource, ...all.filter((id) => id !== playerSource)];
+    retryQueueRef.current = ordered;
+    retryIdxRef.current = 1; // 0 is already loading
+  }, [item?.id, season, episode]); // reset on actual content change only
+
+  // ── Silent auto-retry: pick next source, chain fires automatically ───────
+  const tryNextSource = useCallback(() => {
+    const idx = retryIdxRef.current;
+    if (idx >= retryQueueRef.current.length) {
+      setAutoSourceStatus("failed");
+      setWebviewLoading(false);
+      return;
+    }
+    const nextId = retryQueueRef.current[idx];
+    retryIdxRef.current += 1;
+    setAutoSourceStatus("retrying");
+    setPlayerSource(nextId);
+    storage.set("playerSource", nextId);
+    // webviewLoading resets to true via the embedUrl-change effect below
+  }, []);
 
   // ── Fetch details + trailer ──────────────────────────────────────────────
   useEffect(() => {
@@ -97,163 +184,157 @@ export default function WatchPage({
     return () => { mounted = false; };
   }, [item?.id, type, apiKey]);
 
-  // ── Auto source detection — respects stored preference ──────────────────
+  // ── Initial source detection (runs once, respects stored preference) ─────
   useEffect(() => {
     if (!item?.id) return;
-    if (preFoundSource) {
-      setPlayerSource(preFoundSource);
-      setAutoSourceStatus("found");
-      return;
-    }
+    if (preFoundSource) { setPlayerSource(preFoundSource); setAutoSourceStatus("found"); return; }
     let cancelled = false;
     setAutoSourceStatus("testing");
     if (typeof findWorkingSource === "function") {
       findWorkingSource(type, item.id, season, episode, playerSource).then((id) => {
         if (cancelled) return;
-        // Only switch if our stored source is actually dead
         if (id && id !== playerSource) { setPlayerSource(id); storage.set("playerSource", id); }
         setAutoSourceStatus(id ? "found" : "failed");
       });
-    } else {
-      setAutoSourceStatus("found");
-    }
+    } else { setAutoSourceStatus("found"); }
     return () => { cancelled = true; };
   }, [item?.id, type, season, episode, preFoundSource]);
 
-  // ── Push to history once ─────────────────────────────────────────────────
+  // ── History ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!item) return;
     onHistory?.({ ...item, media_type: type, season, episode });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
 
-  // ── Reset intercepted data on source/content change ──────────────────────
+  // ── Reset on URL change ──────────────────────────────────────────────────
   useEffect(() => {
-    setM3u8Url(null);
-    setInterceptedSubs([]);
+    setM3u8Url(null); setInterceptedSubs([]);
   }, [playerSource, item?.id, season, episode]);
 
-  // ── Electron M3U8 / subtitle listeners ───────────────────────────────────
+  // ── Electron listeners ───────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
-    const handler = window.electron.onM3u8Found((url) => {
-      setM3u8Url((prev) => (prev !== url ? url : prev));
-    });
-    return () => window.electron.offM3u8Found(handler);
+    const h = window.electron.onM3u8Found((url) => setM3u8Url((p) => p !== url ? url : p));
+    return () => window.electron.offM3u8Found(h);
   }, []);
-
   useEffect(() => {
     if (!window.electron) return;
-    const handler = window.electron.onSubtitleFound(({ url, lang }) => {
+    const h = window.electron.onSubtitleFound(({ url, lang }) => {
       if (!url || !url.toLowerCase().includes(".vtt")) return;
-      setInterceptedSubs((prev) => {
-        const filtered = prev.filter((s) => s.lang !== lang);
-        return [...filtered, { url, lang: lang || "unknown" }];
-      });
+      setInterceptedSubs((prev) => [...prev.filter((s) => s.lang !== lang), { url, lang: lang || "unknown" }]);
     });
-    return () => window.electron.offSubtitleFound(handler);
+    return () => window.electron.offSubtitleFound(h);
   }, []);
-
-  // ── PiP listeners ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isElectron) return;
-    const openH  = window.electron?.onPipOpened?.(() => setPipOpen(true));
-    const closeH = window.electron?.onPipClosed?.(() => setPipOpen(false));
+    const h1 = window.electron?.onPipOpened?.(() => setPipOpen(true));
+    const h2 = window.electron?.onPipClosed?.(() => setPipOpen(false));
     return () => {
-      if (openH)  window.electron?.offPipOpened?.(openH);
-      if (closeH) window.electron?.offPipClosed?.(closeH);
+      if (h1) window.electron?.offPipOpened?.(h1);
+      if (h2) window.electron?.offPipClosed?.(h2);
     };
   }, [isElectron]);
 
-  // ── Build embed URL ───────────────────────────────────────────────────────
+  // ── Embed URL ────────────────────────────────────────────────────────────
   const embedUrl = useMemo(() => {
     if (!item?.id) return "about:blank";
     return getSourceUrl(playerSource, type, item.id, season, episode);
   }, [playerSource, type, item?.id, season, episode]);
 
-  // ── Reset loading state on any content/source change ─────────────────────
+  // ── Reset overlay whenever URL changes ──────────────────────────────────
   useEffect(() => {
     setWebviewLoading(true);
-  }, [playerSource, item?.id, season, episode]);
+  }, [embedUrl]);
 
-  // ── Electron webview: CSS injection to kill embed loading screens + 1.5s timeout ──
+  // ─── BEAST ENGINE — Electron ──────────────────────────────────────────────
+  // 1. On dom-ready: inject CSS + JS (kills embed loading screens)
+  // 2. Poll every 300ms for video.readyState >= 2 + duration > 0
+  // 3. On video network error: immediately retry next source (no waiting)
+  // 4. Hard timeout 12s: retry next source silently
+  // 5. Repeat until video plays or all sources exhausted
   useEffect(() => {
     if (!isElectron) return;
     const wv = webviewRef.current;
     if (!wv) return;
-    let active = true;
-    const done = () => { if (active) setWebviewLoading(false); };
 
-    const onDomReady = () => {
-      try {
-        wv.executeJavaScript(`
-          (function() {
-            if (window.__novasparkInjected) return;
-            window.__novasparkInjected = true;
-            var css = [
-              '[class*="loading" i],[class*="loader" i],[class*="fetching" i],[class*="spinner" i],',
-              '[id*="loading" i],[id*="loader" i],[id*="fetching" i],[id*="spinner" i],',
-              '.loading,.loader,.fetching,.spinner,.preloader,.preload,',
-              '.vidfast-loader,.vidfast-loading,.vf-loader,.videasy-loader,.videasy-preloader,',
-              '.autoembed-loader,.ae-loader { display:none !important; opacity:0 !important; visibility:hidden !important; }',
-              'video,iframe,.player,#player,.video-player,#video-player { opacity:1 !important; visibility:visible !important; display:block !important; }'
-            ].join('');
-            var s = document.createElement('style');
-            s.id = '__novaspark-hide';
-            s.textContent = css;
-            document.head.appendChild(s);
-            var hideText = function() {
-              document.querySelectorAll('*').forEach(function(el) {
-                if (el.children.length === 0 && el.textContent) {
-                  var t = el.textContent.toUpperCase();
-                  if (t.includes('FETCHING') || t.includes('ONE MOMENT') || t.includes('LOADING') || t.includes('PLEASE WAIT')) {
-                    el.style.display = 'none';
-                  }
-                }
-              });
-            };
-            hideText();
-            var obs = new MutationObserver(hideText);
-            obs.observe(document.body, { childList: true, subtree: true });
-            setTimeout(function() { obs.disconnect(); }, 5000);
-            document.querySelectorAll('video').forEach(function(v) {
-              v.style.opacity = '1'; v.style.visibility = 'visible'; v.style.display = 'block';
-              if (v.paused && v.readyState >= 2) v.play().catch(function(){});
-            });
-          })()
-        `).catch(() => {});
-      } catch (_) {}
+    let active = true;
+    clearInterval(pollRef.current);
+
+    const markReady = () => {
+      if (!active) return;
+      active = false;
+      clearInterval(pollRef.current);
+      setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
+      setWebviewLoading(false);
+    };
+
+    const onFail = () => {
+      if (!active) return;
+      active = false;
+      clearInterval(pollRef.current);
+      clearTimeout(hardTimeout); // eslint-disable-line no-use-before-define
+      tryNextSource();
+    };
+
+    const onDomReady = async () => {
+      // Kill embed loading chrome before it paints
+      try { await wv.insertCSS(_EMBED_CSS); } catch (_) {}
+      try { await wv.executeJavaScript(_EMBED_JS); } catch (_) {}
+
+      // Poll for genuine video readiness
+      pollRef.current = setInterval(async () => {
+        if (!active) { clearInterval(pollRef.current); return; }
+        try {
+          const r = await wv.executeJavaScript(
+            `(()=>{const v=document.querySelector('video');` +
+            `if(!v)return{ready:false,err:false};` +
+            `return{` +
+            `ready:v.readyState>=2&&v.duration>0&&!isNaN(v.duration),` +
+            `err:v.networkState===3||!!(v.error&&v.error.code>0)` +
+            `};})()`
+          );
+          if (r.ready)     markReady();
+          else if (r.err)  onFail(); // instant retry on video network error
+        } catch { markReady(); }
+      }, 300);
     };
 
     wv.addEventListener("dom-ready", onDomReady);
-    wv.addEventListener("did-stop-loading", done);
-    wv.addEventListener("did-fail-load", done);
-    // 1.5s hard cap so overlay never lingers
-    const tid = setTimeout(() => { if (active) setWebviewLoading(false); }, 1500);
+    wv.addEventListener("did-fail-load", onFail);
+
+    // 12 s hard cap — if video never started, try next source
+    const hardTimeout = setTimeout(onFail, 12000);
 
     return () => {
       active = false;
-      clearTimeout(tid);
+      clearInterval(pollRef.current);
+      clearTimeout(hardTimeout);
       try { wv.removeEventListener("dom-ready", onDomReady); } catch (_) {}
-      try { wv.removeEventListener("did-stop-loading", done); } catch (_) {}
-      try { wv.removeEventListener("did-fail-load", done); } catch (_) {}
+      try { wv.removeEventListener("did-fail-load", onFail); } catch (_) {}
     };
-  }, [embedUrl, isElectron]);
+  }, [embedUrl, isElectron, tryNextSource]);
 
-  // ── Web iframe: 3s fallback timeout ──────────────────────────────────────
+  // ─── Web iframe fallback ─────────────────────────────────────────────────
   useEffect(() => {
     if (isElectron) return;
     let active = true;
-    const tid = setTimeout(() => { if (active) setWebviewLoading(false); }, 3000);
+    const tid = setTimeout(() => { if (active) setWebviewLoading(false); }, 8000);
     return () => { active = false; clearTimeout(tid); };
   }, [embedUrl, isElectron]);
 
-  // ── Source menu close on outside click ───────────────────────────────────
+  // ── Source menu ───────────────────────────────────────────────────────────
   const switchSource = useCallback((id) => {
     setShowSourceMenu(false);
     if (id === playerSource) return;
-    setPlayerSource(id);
-    storage.set("playerSource", id);
+    // Manual switch: rebuild queue from this source
+    const all = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
+    const start = all.indexOf(id);
+    retryQueueRef.current = start >= 0
+      ? [...all.slice(start), ...all.slice(0, start)]
+      : [id, ...all.filter((x) => x !== id)];
+    retryIdxRef.current = 1;
+    setPlayerSource(id); storage.set("playerSource", id);
   }, [playerSource]);
 
   useEffect(() => {
@@ -266,74 +347,59 @@ export default function WatchPage({
     return () => document.removeEventListener("mousedown", close);
   }, [showSourceMenu]);
 
-  // ── Derived display values ────────────────────────────────────────────────
-  const d       = details || item || {};
-  const year    = (d.release_date || d.first_air_date || "").slice(0, 4);
-  const rating  = d.vote_average ? d.vote_average.toFixed(1) : null;
-  const runtime = d.runtime
-    ? `${d.runtime} min`
-    : d.episode_run_time?.[0]
-      ? `${d.episode_run_time[0]} min/ep`
-      : null;
-
+  // ── Derived values ────────────────────────────────────────────────────────
+  const d           = details || item || {};
+  const year        = (d.release_date || d.first_air_date || "").slice(0, 4);
+  const rating      = d.vote_average ? d.vote_average.toFixed(1) : null;
+  const runtime     = d.runtime ? `${d.runtime} min` : d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min/ep` : null;
   const currentLabel = PLAYER_SOURCES?.find((s) => s.id === playerSource)?.label ?? playerSource;
-  const planId = isPremium?.planId || (isPremium ? "premium" : "free");
+  const planId       = isPremium?.planId || (isPremium ? "premium" : "free");
 
   const currentDownload = useMemo(() => {
     if (!downloads?.length) return null;
     if (type === "movie") {
-      return downloads.find(
-        (dl) =>
-          dl.mediaType === "movie" &&
-          (dl.tmdbId === item.id || dl.mediaId === item.id) &&
-          (dl.status === "completed" || dl.status === "local" || dl.status === "downloading"),
-      );
-    }
-    return downloads.find(
-      (dl) =>
-        dl.mediaType === "tv" &&
+      return downloads.find((dl) => dl.mediaType === "movie" &&
         (dl.tmdbId === item.id || dl.mediaId === item.id) &&
-        dl.season === season &&
-        dl.episode === episode &&
-        (dl.status === "completed" || dl.status === "local" || dl.status === "downloading"),
-    );
+        (dl.status === "completed" || dl.status === "local" || dl.status === "downloading"));
+    }
+    return downloads.find((dl) => dl.mediaType === "tv" &&
+      (dl.tmdbId === item.id || dl.mediaId === item.id) &&
+      dl.season === season && dl.episode === episode &&
+      (dl.status === "completed" || dl.status === "local" || dl.status === "downloading"));
   }, [downloads, item?.id, type, season, episode]);
 
   const mediaName = useMemo(() => {
     const base = `${title}${year ? " (" + year + ")" : ""}`;
-    return type === "tv"
-      ? `${base} S${String(season).padStart(2, "0")} E${String(episode).padStart(2, "0")}`
-      : base;
+    return type === "tv" ? `${base} S${String(season).padStart(2,"0")} E${String(episode).padStart(2,"0")}` : base;
   }, [title, year, type, season, episode]);
 
-  const handleUpgrade = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("novaspark:upgrade"));
-  }, []);
+  const handleUpgrade = useCallback(() => window.dispatchEvent(new CustomEvent("novaspark:upgrade")), []);
 
   if (!item) return null;
 
   return (
     <div className="watch-page fade-in">
+
+      {/* ── Server status toast ──────────────────────────────────────────── */}
+      <ServerToast status={autoSourceStatus} sourceLabel={currentLabel} />
+
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="watch-topbar">
         <button className="btn btn-ghost" onClick={onBack} style={{ gap: 6 }}><BackIcon /> Back</button>
         <div className="watch-topbar-title">
           {title}
-          {type === "tv" && (
-            <span className="watch-topbar-ep">&nbsp;·&nbsp;S{season} E{episode}</span>
-          )}
+          {type === "tv" && <span className="watch-topbar-ep">&nbsp;·&nbsp;S{season} E{episode}</span>}
         </div>
       </div>
 
       {/* ── Player ───────────────────────────────────────────────────────── */}
       <div className="watch-player-wrap" style={{ background: "#000", position: "relative" }}>
 
-        {/* Solid black spinner overlay — no text ever */}
+        {/* Black overlay — only lifts when video.readyState >= 2 */}
         {webviewLoading && (
           <div style={{
-            position: "absolute", inset: 0, zIndex: 5,
-            background: "#000",
-            display: "flex", alignItems: "center", justifyContent: "center",
+            position:"absolute",inset:0,zIndex:5,background:"#000",
+            display:"flex",alignItems:"center",justifyContent:"center",
           }}>
             <div className="spinner" />
           </div>
@@ -350,10 +416,9 @@ export default function WatchPage({
             webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
             useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
             style={{
-              position: "absolute", inset: 0, width: "100%", height: "100%",
-              border: "none", background: "#000",
-              opacity: webviewLoading ? 0 : 1,
-              transition: "opacity 0.25s ease",
+              position:"absolute",inset:0,width:"100%",height:"100%",
+              border:"none",background:"#000",
+              opacity:webviewLoading?0:1,transition:"opacity 0.3s ease",
             }}
           />
         ) : (
@@ -364,33 +429,33 @@ export default function WatchPage({
             allowFullScreen
             onLoad={() => setWebviewLoading(false)}
             style={{
-              position: "absolute", inset: 0, width: "100%", height: "100%",
-              border: "none", background: "#000",
-              opacity: webviewLoading ? 0 : 1,
-              transition: "opacity 0.25s ease",
+              position:"absolute",inset:0,width:"100%",height:"100%",
+              border:"none",background:"#000",
+              opacity:webviewLoading?0:1,transition:"opacity 0.3s ease",
             }}
           />
         )}
 
-        {/* PiP overlay */}
         {pipOpen && (
           <div style={{
-            position: "absolute", inset: 0, zIndex: 20,
-            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.92)", gap: 16,
+            position:"absolute",inset:0,zIndex:20,
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+            background:"rgba(0,0,0,0.92)",gap:16,
           }}>
             <PopOutIcon size={36} />
-            <span style={{ fontSize: 15, color: "var(--text1)", fontWeight: 600 }}>Playing in pop-out window</span>
-            <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()}>Close pop-out &amp; return</button>
+            <span style={{fontSize:15,color:"var(--text1)",fontWeight:600}}>Playing in pop-out window</span>
+            <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()}>
+              Close pop-out &amp; return
+            </button>
           </div>
         )}
 
-        {/* Source / PiP control bar */}
-        <div className="watch-source-bar" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {/* Controls bar */}
+        <div className="watch-source-bar" style={{ display:"flex",gap:8,alignItems:"center" }}>
           <button
             ref={sourceRef}
             className="player-overlay-btn"
-            style={{ position: "static" }}
+            style={{ position:"static" }}
             onClick={() => {
               if (!canSwitchSource(planId)) { setGateModal("source"); return; }
               const rect = sourceRef.current?.getBoundingClientRect();
@@ -400,7 +465,6 @@ export default function WatchPage({
           >
             <SourceIcon /> {currentLabel}
           </button>
-
           {isElectron && (
             <button
               className="player-overlay-btn"
@@ -410,18 +474,17 @@ export default function WatchPage({
                 window.electron?.openPipWindow?.(embedUrl, title);
               }}
               title={pipOpen ? "Close pop-out" : "Pop out player"}
-              style={pipOpen ? { color: "var(--red)" } : undefined}
+              style={pipOpen ? { color:"var(--red)" } : undefined}
             >
               <PopOutIcon />
             </button>
           )}
         </div>
 
-        {/* Source dropdown */}
         {showSourceMenu && menuPos && PLAYER_SOURCES && (
           <div
             className="source-dropdown source-dropdown--fixed watch-source-dropdown"
-            style={{ top: menuPos.top, left: menuPos.left }}
+            style={{ top:menuPos.top, left:menuPos.left }}
             onClick={(e) => e.stopPropagation()}
           >
             {PLAYER_SOURCES.map((src) => (
@@ -439,12 +502,12 @@ export default function WatchPage({
         )}
       </div>
 
-      {/* ── Meta row ─────────────────────────────────────────────────────── */}
+      {/* ── Meta ─────────────────────────────────────────────────────────── */}
       <div className="watch-meta">
         <div className="watch-meta-left">
           <div className="watch-meta-title">{title}</div>
           <div className="watch-meta-info">
-            {rating && <span className="detail-rating"><StarIcon /> {rating}</span>}
+            {rating  && <span className="detail-rating"><StarIcon /> {rating}</span>}
             {year    && <span>{year}</span>}
             {runtime && <span>{runtime}</span>}
             {type === "tv" && (
@@ -454,9 +517,7 @@ export default function WatchPage({
               </span>
             )}
           </div>
-          {(details || item)?.overview && (
-            <p className="watch-meta-overview">{(details || item).overview}</p>
-          )}
+          {(details || item)?.overview && <p className="watch-meta-overview">{(details || item).overview}</p>}
         </div>
         <div className="watch-meta-actions">
           {trailerKey && (
@@ -477,31 +538,23 @@ export default function WatchPage({
               if (!canDownload(planId)) { setGateModal("download"); return; }
               setShowDownload(true);
             }}
-            title={
-              currentDownload
-                ? (currentDownload.status === "downloading" ? "Downloading… click to view" : "Downloaded — click to view")
-                : "Download for offline"
-            }
-            style={
-              currentDownload
-                ? {
-                    color: currentDownload.status === "downloading" ? "var(--red)" : "#4caf50",
-                    borderColor: currentDownload.status === "downloading" ? "rgba(229,9,20,0.3)" : "rgba(76,175,80,0.3)",
-                  }
-                : undefined
-            }
+            title={currentDownload
+              ? (currentDownload.status === "downloading" ? "Downloading… click to view" : "Downloaded — click to view")
+              : "Download for offline"}
+            style={currentDownload ? {
+              color: currentDownload.status === "downloading" ? "var(--red)" : "#4caf50",
+              borderColor: currentDownload.status === "downloading" ? "rgba(229,9,20,0.3)" : "rgba(76,175,80,0.3)",
+            } : undefined}
           >
-            {currentDownload ? (
-              currentDownload.status === "downloading" ? "↓ Downloading…" : "✓ Downloaded"
-            ) : (
-              <><DownloadIcon /> Download</>
-            )}
+            {currentDownload
+              ? (currentDownload.status === "downloading" ? "↓ Downloading…" : "✓ Downloaded")
+              : <><DownloadIcon /> Download</>}
           </button>
           <button className="btn btn-ghost" onClick={onBack}><BackIcon /> Back</button>
         </div>
       </div>
 
-      {/* ── Related ──────────────────────────────────────────────────────── */}
+      {/* ── More Like This ───────────────────────────────────────────────── */}
       {related.length > 0 && (
         <div className="section" style={{ paddingTop: 8 }}>
           <div className="section-title">More Like This</div>
@@ -509,22 +562,14 @@ export default function WatchPage({
             {related.map((rel) => {
               const rType = rel.title ? "movie" : "tv";
               return (
-                <div
-                  key={`${rType}_${rel.id}`}
-                  className="card"
-                  onClick={() => onSelect?.({ ...rel, media_type: rType })}
-                  style={{ cursor: "pointer" }}
-                >
+                <div key={`${rType}_${rel.id}`} className="card"
+                  onClick={() => onSelect?.({ ...rel, media_type: rType })} style={{ cursor:"pointer" }}>
                   <div className="card-poster">
-                    {rel.poster_path ? (
-                      <img src={imgUrl(rel.poster_path)} alt={rel.title || rel.name} loading="lazy" />
-                    ) : (
-                      <div className="no-poster"><PlayIcon /></div>
-                    )}
+                    {rel.poster_path
+                      ? <img src={imgUrl(rel.poster_path)} alt={rel.title || rel.name} loading="lazy" />
+                      : <div className="no-poster"><PlayIcon /></div>}
                     <div className="card-overlay"><div className="card-play"><PlayIcon /></div></div>
-                    {rel.vote_average > 0 && (
-                      <div className="card-badge">★ {rel.vote_average.toFixed(1)}</div>
-                    )}
+                    {rel.vote_average > 0 && <div className="card-badge">★ {rel.vote_average.toFixed(1)}</div>}
                   </div>
                   <div className="card-info">
                     <div className="card-title">{rel.title || rel.name}</div>
@@ -541,7 +586,6 @@ export default function WatchPage({
       {showTrailer && trailerKey && (
         <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />
       )}
-
       {showDownload && (
         <DownloadModal
           onClose={() => setShowDownload(false)}
@@ -560,13 +604,8 @@ export default function WatchPage({
           tmdbId={item.id}
         />
       )}
-
       {gateModal && (
-        <PremiumGate
-          feature={gateModal}
-          onUpgrade={handleUpgrade}
-          onClose={() => setGateModal(null)}
-        />
+        <PremiumGate feature={gateModal} onUpgrade={handleUpgrade} onClose={() => setGateModal(null)} />
       )}
     </div>
   );

@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import MediaCard from "../components/MediaCard";
-import TrendingCarousel from "../components/TrendingCarousel";
+import { memo, useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { PlayIcon, StarIcon } from "../components/Icons";
+import TrendingCarousel from "../components/TrendingCarousel";
 import { imgUrl, tmdbFetch } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
@@ -20,18 +19,36 @@ function getRecentHistoryItem(history) {
 }
 
 // ── Infinite scroll row ───────────────────────────────────────────────────────
-function InfiniteRow({ title, titleHighlight, items, onSelect, ratingsMap, onLoadMore, hasMore, loadingMore }) {
-  const sentinelRef = useRef(null);
+// Key fix: no inline overflow styles — let .ns-row class handle it exclusively.
+// onLoadMore is passed as a stable ref callback to avoid IntersectionObserver
+// re-registration on every parent re-render.
+const InfiniteRow = memo(function InfiniteRow({
+  title,
+  titleHighlight,
+  items,
+  onSelect,
+  ratingsMap,
+  onLoadMore,
+  hasMore,
+  loadingMore,
+}) {
+  const sentinelRef   = useRef(null);
+  const onLoadMoreRef = useRef(onLoadMore);
+
+  // keep ref in sync without triggering observer re-registration
+  useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
 
   useEffect(() => {
     if (!hasMore || !sentinelRef.current) return;
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) onLoadMore?.(); },
+      (entries) => { if (entries[0].isIntersecting) onLoadMoreRef.current?.(); },
       { threshold: 0.1 }
     );
     obs.observe(sentinelRef.current);
     return () => obs.disconnect();
-  }, [hasMore, onLoadMore]);
+  // Only re-register when hasMore changes, not every render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMore]);
 
   if (!items || items.length === 0) return null;
 
@@ -43,7 +60,8 @@ function InfiniteRow({ title, titleHighlight, items, onSelect, ratingsMap, onLoa
           <span style={{ color: "var(--red)", marginLeft: 6 }}>{titleHighlight}</span>
         )}
       </div>
-      <div className="ns-row" style={{ overflowX: "auto", display: "flex", gap: 12, paddingBottom: 12 }}>
+      {/* No inline style overrides — .ns-row in global.css owns all overflow/layout */}
+      <div className="ns-row">
         {items.map((item) => {
           const type = item.media_type === "tv" ? "tv" : "movie";
           const rk   = `${type}_${item.id}`;
@@ -56,7 +74,12 @@ function InfiniteRow({ title, titleHighlight, items, onSelect, ratingsMap, onLoa
             >
               <div className="ns-row-card-poster">
                 {item.poster_path ? (
-                  <img src={imgUrl(item.poster_path, "w300")} alt={item.title || item.name} loading="lazy" />
+                  <img
+                    src={imgUrl(item.poster_path, "w300")}
+                    alt={item.title || item.name}
+                    loading="lazy"
+                    draggable={false}
+                  />
                 ) : (
                   <div className="ns-row-card-noposter"><PlayIcon /></div>
                 )}
@@ -79,16 +102,22 @@ function InfiniteRow({ title, titleHighlight, items, onSelect, ratingsMap, onLoa
             </div>
           );
         })}
+
         {/* Infinite scroll sentinel */}
         {hasMore && (
-          <div ref={sentinelRef} style={{ flexShrink: 0, width: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {loadingMore && <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />}
+          <div
+            ref={sentinelRef}
+            style={{ flexShrink: 0, width: 40, display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            {loadingMore && (
+              <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+            )}
           </div>
         )}
       </div>
     </div>
   );
-}
+});
 
 export default function HomePage({
   trending,
@@ -140,7 +169,6 @@ export default function HomePage({
   const [similarSource,  setSimilarSource]  = useState(null);
   const [topRatedItems,  setTopRatedItems]  = useState([]);
 
-  // New infinite sections
   const [popularMovies,     setPopularMovies]     = useState([]);
   const [popularMoviesPage, setPopularMoviesPage] = useState(1);
   const [popularMoviesMore, setPopularMoviesMore] = useState(true);
@@ -215,15 +243,21 @@ export default function HomePage({
     return out;
   }, [ratingsMap, ageLimitSetting]);
 
-  const getRating    = useCallback((item) => getRatingForItem(item, ratingsMap), [ratingsMap]);
-  const itemRestricted = useCallback((item) => isRestricted(getRatingForItem(item, ratingsMap).minAge, ageLimitSetting), [ratingsMap, ageLimitSetting]);
+  const getRating      = useCallback((item) => getRatingForItem(item, ratingsMap), [ratingsMap]);
+  const itemRestricted = useCallback(
+    (item) => isRestricted(getRatingForItem(item, ratingsMap).minAge, ageLimitSetting),
+    [ratingsMap, ageLimitSetting]
+  );
 
-  // ── Fetch helpers ─────────────────────────────────────────────────────────
-  const fetchPage = useCallback(async (endpoint, page, mediaType, setter, setPage, setMore, setLoading) => {
+  // ── Stable fetch helper ───────────────────────────────────────────────────
+  const fetchPage = useCallback(async (
+    endpoint, page, mediaType,
+    setter, setPage, setMore, setLoading
+  ) => {
     if (!apiKey || offline) return;
     setLoading(true);
     try {
-      const data = await tmdbFetch(`${endpoint}?page=${page}`, apiKey);
+      const data    = await tmdbFetch(`${endpoint}?page=${page}`, apiKey);
       const results = (data.results || []).map((i) => ({ ...i, media_type: mediaType }));
       setter((prev) => {
         const existingIds = new Set(prev.map((i) => i.id));
@@ -231,7 +265,7 @@ export default function HomePage({
       });
       setPage(page + 1);
       setMore(page < (data.total_pages || 1) && page < 10);
-    } catch {}
+    } catch { /* silent */ }
     finally { setLoading(false); }
   }, [apiKey, offline]);
 
@@ -239,19 +273,19 @@ export default function HomePage({
   useEffect(() => {
     if (!apiKey || offline) return;
 
-    // Similar
     if (history && history.length > 0) {
       const source = getRecentHistoryItem(history);
       if (source) {
         setSimilarSource(source);
         const type = source.media_type === "tv" ? "tv" : "movie";
         tmdbFetch(`/${type}/${source.id}/similar`, apiKey)
-          .then((d) => setSimilarItems((d.results || []).slice(0, 20).map((i) => ({ ...i, media_type: type }))))
+          .then((d) => setSimilarItems(
+            (d.results || []).slice(0, 20).map((i) => ({ ...i, media_type: type }))
+          ))
           .catch(() => {});
       }
     }
 
-    // Top rated
     Promise.all([
       tmdbFetch("/movie/top_rated?page=1", apiKey),
       tmdbFetch("/tv/top_rated?page=1", apiKey),
@@ -266,24 +300,40 @@ export default function HomePage({
       setTopRatedItems(merged);
     }).catch(() => {});
 
-    // Popular sections
-    fetchPage("/movie/popular",                   1, "movie", setPopularMovies,   setPopularMoviesPage, setPopularMoviesMore, setPopularMoviesLoad);
-    fetchPage("/tv/popular",                       1, "tv",    setPopularTV,       setPopularTVPage,     setPopularTVMore,     setPopularTVLoad);
-    fetchPage("/movie/now_playing",                1, "movie", setNowPlaying,      setNowPlayingPage,    setNowPlayingMore,    setNowPlayingLoad);
-    fetchPage("/tv/airing_today",                  1, "tv",    setAiringToday,     setAiringTodayPage,   setAiringTodayMore,   setAiringTodayLoad);
-    fetchPage("/movie/upcoming",                   1, "movie", setUpcomingMovies,  setUpcomingMoviesPage,setUpcomingMoviesMore,setUpcomingMoviesLoad);
-    fetchPage("/discover/movie?with_genres=28",    1, "movie", setActionMovies,    setActionMoviesPage,  setActionMoviesMore,  setActionMoviesLoad);
-    fetchPage("/discover/movie?with_genres=35",    1, "movie", setComedyMovies,    setComedyMoviesPage,  setComedyMoviesMore,  setComedyMoviesLoad);
-    fetchPage("/discover/movie?with_genres=27",    1, "movie", setHorrorMovies,    setHorrorMoviesPage,  setHorrorMoviesMore,  setHorrorMoviesLoad);
-    fetchPage("/discover/movie?with_genres=878",   1, "movie", setScifiMovies,     setScifiMoviesPage,   setScifiMoviesMore,   setScifiMoviesLoad);
-    fetchPage("/discover/tv?with_genres=16&with_original_language=ja", 1, "tv", setAnimeTV, setAnimeTVPage, setAnimeTVMore, setAnimeTVLoad);
+    fetchPage("/movie/popular",                                       1, "movie", setPopularMovies,  setPopularMoviesPage, setPopularMoviesMore, setPopularMoviesLoad);
+    fetchPage("/tv/popular",                                          1, "tv",    setPopularTV,       setPopularTVPage,     setPopularTVMore,     setPopularTVLoad);
+    fetchPage("/movie/now_playing",                                   1, "movie", setNowPlaying,      setNowPlayingPage,    setNowPlayingMore,    setNowPlayingLoad);
+    fetchPage("/tv/airing_today",                                     1, "tv",    setAiringToday,     setAiringTodayPage,   setAiringTodayMore,   setAiringTodayLoad);
+    fetchPage("/movie/upcoming",                                      1, "movie", setUpcomingMovies,  setUpcomingMoviesPage,setUpcomingMoviesMore,setUpcomingMoviesLoad);
+    fetchPage("/discover/movie?with_genres=28",                       1, "movie", setActionMovies,    setActionMoviesPage,  setActionMoviesMore,  setActionMoviesLoad);
+    fetchPage("/discover/movie?with_genres=35",                       1, "movie", setComedyMovies,    setComedyMoviesPage,  setComedyMoviesMore,  setComedyMoviesLoad);
+    fetchPage("/discover/movie?with_genres=27",                       1, "movie", setHorrorMovies,    setHorrorMoviesPage,  setHorrorMoviesMore,  setHorrorMoviesLoad);
+    fetchPage("/discover/movie?with_genres=878",                      1, "movie", setScifiMovies,     setScifiMoviesPage,   setScifiMoviesMore,   setScifiMoviesLoad);
+    fetchPage("/discover/tv?with_genres=16&with_original_language=ja",1, "tv",    setAnimeTV,         setAnimeTVPage,       setAnimeTVMore,       setAnimeTVLoad);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey, offline]);
 
-  const trendingMovieItems = useMemo(() => trending.slice(0, 10).map((i) => ({ ...i, media_type: "movie" })), [trending]);
-  const trendingTVItems    = useMemo(() => trendingTV.slice(0, 10).map((i) => ({ ...i, media_type: "tv" })), [trendingTV]);
+  const trendingMovieItems = useMemo(
+    () => trending.slice(0, 10).map((i) => ({ ...i, media_type: "movie" })),
+    [trending]
+  );
+  const trendingTVItems = useMemo(
+    () => trendingTV.slice(0, 10).map((i) => ({ ...i, media_type: "tv" })),
+    [trendingTV]
+  );
 
-  const getRating_ = useCallback((item) => getRating(item), [getRating]);
+  // ── Stable onLoadMore callbacks (one per section) ─────────────────────────
+  // These are memoized so InfiniteRow never re-registers its IntersectionObserver
+  const loadMorePopularMovies  = useCallback(() => fetchPage("/movie/popular",                                       popularMoviesPage, "movie", setPopularMovies,  setPopularMoviesPage, setPopularMoviesMore, setPopularMoviesLoad),  [fetchPage, popularMoviesPage]);
+  const loadMorePopularTV      = useCallback(() => fetchPage("/tv/popular",                                          popularTVPage,     "tv",    setPopularTV,       setPopularTVPage,     setPopularTVMore,     setPopularTVLoad),      [fetchPage, popularTVPage]);
+  const loadMoreNowPlaying     = useCallback(() => fetchPage("/movie/now_playing",                                   nowPlayingPage,    "movie", setNowPlaying,      setNowPlayingPage,    setNowPlayingMore,    setNowPlayingLoad),     [fetchPage, nowPlayingPage]);
+  const loadMoreAiringToday    = useCallback(() => fetchPage("/tv/airing_today",                                     airingTodayPage,   "tv",    setAiringToday,     setAiringTodayPage,   setAiringTodayMore,   setAiringTodayLoad),    [fetchPage, airingTodayPage]);
+  const loadMoreUpcoming       = useCallback(() => fetchPage("/movie/upcoming",                                      upcomingMoviesPage,"movie", setUpcomingMovies,  setUpcomingMoviesPage,setUpcomingMoviesMore,setUpcomingMoviesLoad), [fetchPage, upcomingMoviesPage]);
+  const loadMoreAction         = useCallback(() => fetchPage("/discover/movie?with_genres=28",                       actionMoviesPage,  "movie", setActionMovies,    setActionMoviesPage,  setActionMoviesMore,  setActionMoviesLoad),   [fetchPage, actionMoviesPage]);
+  const loadMoreComedy         = useCallback(() => fetchPage("/discover/movie?with_genres=35",                       comedyMoviesPage,  "movie", setComedyMovies,    setComedyMoviesPage,  setComedyMoviesMore,  setComedyMoviesLoad),   [fetchPage, comedyMoviesPage]);
+  const loadMoreHorror         = useCallback(() => fetchPage("/discover/movie?with_genres=27",                       horrorMoviesPage,  "movie", setHorrorMovies,    setHorrorMoviesPage,  setHorrorMoviesMore,  setHorrorMoviesLoad),   [fetchPage, horrorMoviesPage]);
+  const loadMoreScifi          = useCallback(() => fetchPage("/discover/movie?with_genres=878",                      scifiMoviesPage,   "movie", setScifiMovies,     setScifiMoviesPage,   setScifiMoviesMore,   setScifiMoviesLoad),    [fetchPage, scifiMoviesPage]);
+  const loadMoreAnime          = useCallback(() => fetchPage("/discover/tv?with_genres=16&with_original_language=ja",animeTVPage,       "tv",    setAnimeTV,         setAnimeTVPage,       setAnimeTVMore,       setAnimeTVLoad),        [fetchPage, animeTVPage]);
 
   return (
     <div className="fade-in">
@@ -300,10 +350,30 @@ export default function HomePage({
 
       {/* ── Cinematic hero ── */}
       {!loading && hero && (
-        <div className="hero" onMouseEnter={() => setHeroPaused(true)} onMouseLeave={() => setHeroPaused(false)}>
-          <div className="hero-bg" key={heroIdx} style={{ backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})`, opacity: heroFading ? 0 : 1, transition: "opacity 0.35s ease" }} />
+        <div
+          className="hero"
+          onMouseEnter={() => setHeroPaused(true)}
+          onMouseLeave={() => setHeroPaused(false)}
+        >
+          <div
+            className="hero-bg"
+            key={heroIdx}
+            style={{
+              backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})`,
+              opacity: heroFading ? 0 : 1,
+              transition: "opacity 0.35s ease",
+            }}
+          />
           <div className="hero-gradient" />
-          <div className="hero-content" style={{ opacity: heroFading ? 0 : 1, transform: heroFading ? "translateY(6px)" : "translateY(0)", transition: "opacity 0.35s ease, transform 0.35s ease" }}>
+          <div
+            className="hero-content"
+            style={{
+              opacity: heroFading ? 0 : 1,
+              // translateZ(0) keeps hero content on its own GPU layer — no scroll bleed
+              transform: heroFading ? "translateZ(0) translateY(6px)" : "translateZ(0)",
+              transition: "opacity 0.35s ease, transform 0.35s ease",
+            }}
+          >
             <div className="hero-type">Trending&nbsp;·&nbsp;{hero.media_type === "tv" ? "Series" : "Movie"}</div>
             <div className="hero-title">{hero.title || hero.name}</div>
             <div className="hero-meta">
@@ -319,7 +389,12 @@ export default function HomePage({
           {heroItems.length > 1 && (
             <div className="hero-dots">
               {heroItems.map((_, i) => (
-                <button key={i} className={`hero-dot${i === heroIdx ? " active" : ""}`} onClick={() => goToHero(i)} aria-label={`Hero ${i + 1}`} />
+                <button
+                  key={i}
+                  className={`hero-dot${i === heroIdx ? " active" : ""}`}
+                  onClick={() => goToHero(i)}
+                  aria-label={`Hero ${i + 1}`}
+                />
               ))}
             </div>
           )}
@@ -332,7 +407,9 @@ export default function HomePage({
           <div className="section-title">Continue Watching</div>
           <div className="cards-grid">
             {inProgress.map((item) => {
-              const pk = item.media_type === "movie" ? `movie_${item.id}` : `tv_${item.id}_s${item.season}e${item.episode}`;
+              const pk = item.media_type === "movie"
+                ? `movie_${item.id}`
+                : `tv_${item.id}_s${item.season}e${item.episode}`;
               return (
                 <MediaCard
                   key={`${item.media_type}_${item.id}`}
@@ -342,7 +419,7 @@ export default function HomePage({
                   watched={watched}
                   onMarkWatched={onMarkWatched}
                   onMarkUnwatched={onMarkUnwatched}
-                  ageRating={getRating_(item).cert}
+                  ageRating={getRating(item).cert}
                   restricted={itemRestricted(item)}
                 />
               );
@@ -360,42 +437,31 @@ export default function HomePage({
       )}
 
       {/* ── Infinite scroll rows ── */}
-      <InfiniteRow title="Popular Movies" items={popularMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularMoviesMore} loadingMore={popularMoviesLoad}
-        onLoadMore={() => fetchPage("/movie/popular", popularMoviesPage, "movie", setPopularMovies, setPopularMoviesPage, setPopularMoviesMore, setPopularMoviesLoad)} />
-
-      <InfiniteRow title="Popular Series" items={popularTV} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularTVMore} loadingMore={popularTVLoad}
-        onLoadMore={() => fetchPage("/tv/popular", popularTVPage, "tv", setPopularTV, setPopularTVPage, setPopularTVMore, setPopularTVLoad)} />
-
-      <InfiniteRow title="Now Playing" items={nowPlaying} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={nowPlayingMore} loadingMore={nowPlayingLoad}
-        onLoadMore={() => fetchPage("/movie/now_playing", nowPlayingPage, "movie", setNowPlaying, setNowPlayingPage, setNowPlayingMore, setNowPlayingLoad)} />
-
-      <InfiniteRow title="Airing Today" items={airingToday} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={airingTodayMore} loadingMore={airingTodayLoad}
-        onLoadMore={() => fetchPage("/tv/airing_today", airingTodayPage, "tv", setAiringToday, setAiringTodayPage, setAiringTodayMore, setAiringTodayLoad)} />
+      <InfiniteRow title="Popular Movies"  items={popularMovies}  onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularMoviesMore}  loadingMore={popularMoviesLoad}  onLoadMore={loadMorePopularMovies} />
+      <InfiniteRow title="Popular Series"  items={popularTV}      onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularTVMore}      loadingMore={popularTVLoad}      onLoadMore={loadMorePopularTV} />
+      <InfiniteRow title="Now Playing"     items={nowPlaying}     onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={nowPlayingMore}     loadingMore={nowPlayingLoad}     onLoadMore={loadMoreNowPlaying} />
+      <InfiniteRow title="Airing Today"    items={airingToday}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={airingTodayMore}    loadingMore={airingTodayLoad}    onLoadMore={loadMoreAiringToday} />
 
       {topRatedItems.length > 0 && (
         <TrendingCarousel key="topRated" items={topRatedItems} title="Top Rated" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
       )}
 
-      <InfiniteRow title="Coming Soon" items={upcomingMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={upcomingMoviesMore} loadingMore={upcomingMoviesLoad}
-        onLoadMore={() => fetchPage("/movie/upcoming", upcomingMoviesPage, "movie", setUpcomingMovies, setUpcomingMoviesPage, setUpcomingMoviesMore, setUpcomingMoviesLoad)} />
-
-      <InfiniteRow title="🔥 Action" items={actionMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={actionMoviesMore} loadingMore={actionMoviesLoad}
-        onLoadMore={() => fetchPage("/discover/movie?with_genres=28", actionMoviesPage, "movie", setActionMovies, setActionMoviesPage, setActionMoviesMore, setActionMoviesLoad)} />
-
-      <InfiniteRow title="😂 Comedy" items={comedyMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={comedyMoviesMore} loadingMore={comedyMoviesLoad}
-        onLoadMore={() => fetchPage("/discover/movie?with_genres=35", comedyMoviesPage, "movie", setComedyMovies, setComedyMoviesPage, setComedyMoviesMore, setComedyMoviesLoad)} />
-
-      <InfiniteRow title="👻 Horror" items={horrorMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={horrorMoviesMore} loadingMore={horrorMoviesLoad}
-        onLoadMore={() => fetchPage("/discover/movie?with_genres=27", horrorMoviesPage, "movie", setHorrorMovies, setHorrorMoviesPage, setHorrorMoviesMore, setHorrorMoviesLoad)} />
-
-      <InfiniteRow title="🚀 Sci-Fi" items={scifiMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={scifiMoviesMore} loadingMore={scifiMoviesLoad}
-        onLoadMore={() => fetchPage("/discover/movie?with_genres=878", scifiMoviesPage, "movie", setScifiMovies, setScifiMoviesPage, setScifiMoviesMore, setScifiMoviesLoad)} />
-
-      <InfiniteRow title="⚡ Anime" items={animeTV} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={animeTVMore} loadingMore={animeTVLoad}
-        onLoadMore={() => fetchPage("/discover/tv?with_genres=16&with_original_language=ja", animeTVPage, "tv", setAnimeTV, setAnimeTVPage, setAnimeTVMore, setAnimeTVLoad)} />
+      <InfiniteRow title="Coming Soon"     items={upcomingMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={upcomingMoviesMore} loadingMore={upcomingMoviesLoad} onLoadMore={loadMoreUpcoming} />
+      <InfiniteRow title="Action"       items={actionMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={actionMoviesMore}   loadingMore={actionMoviesLoad}   onLoadMore={loadMoreAction} />
+      <InfiniteRow title="Comedy"       items={comedyMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={comedyMoviesMore}   loadingMore={comedyMoviesLoad}   onLoadMore={loadMoreComedy} />
+      <InfiniteRow title="Horror"       items={horrorMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={horrorMoviesMore}   loadingMore={horrorMoviesLoad}   onLoadMore={loadMoreHorror} />
+      <InfiniteRow title="Sci-Fi"       items={scifiMovies}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={scifiMoviesMore}    loadingMore={scifiMoviesLoad}    onLoadMore={loadMoreScifi} />
+      <InfiniteRow title="Anime"        items={animeTV}        onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={animeTVMore}        loadingMore={animeTVLoad}        onLoadMore={loadMoreAnime} />
 
       {similarItems.length > 0 && similarSource && (
-        <InfiniteRow title="Because you watched" titleHighlight={similarSource.title || similarSource.name} items={similarItems} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={false} />
+        <InfiniteRow
+          title="Because you watched"
+          titleHighlight={similarSource.title || similarSource.name}
+          items={similarItems}
+          onSelect={onSelect}
+          ratingsMap={enrichedRatingsMap}
+          hasMore={false}
+        />
       )}
     </div>
   );

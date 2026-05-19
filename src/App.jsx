@@ -27,11 +27,13 @@ const NS_TMDB_KEY = "4bea51722649d28dcd5453a94f8f40ad";
 
 // Lazy-loaded pages: each chunk is only downloaded when the user first visits
 const HomePage     = lazy(() => import("./pages/HomePage"));
+// const NsaiPage    = lazy(() => import("./pages/NsaiPage"));
 const MoviePage    = lazy(() => import("./pages/MoviePage"));
 const TVPage       = lazy(() => import("./pages/TVPage"));
 const LibraryPage  = lazy(() => import("./pages/LibraryPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage= lazy(() => import("./pages/DownloadsPage"));
+
 // ── Standalone player page ──────────────────────────────────────────────────
 const WatchPage    = lazy(() => import("./pages/WatchPage"));
 // ── ADDED: Premium pricing / subscription page ──────────────────────────────

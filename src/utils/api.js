@@ -1,22 +1,22 @@
 const TMDB_BASE = "https://api.themoviedb.org/3";
-const IMG_BASE = "https://image.tmdb.org/t/p";
+const IMG_BASE  = "https://image.tmdb.org/t/p";
 
 export const imgUrl = (path, size = "w500") =>
   path ? `${IMG_BASE}/${size}${path}` : null;
 
-let _onAuthError = null;
+let _onAuthError   = null;
 let _onUnreachable = null;
 export const setApiErrorHandlers = (onAuth, onUnreachable) => {
-  _onAuthError = onAuth;
+  _onAuthError   = onAuth;
   _onUnreachable = onUnreachable;
 };
 
-const _tmdbCache = new Map();
+const _tmdbCache   = new Map();
 const TMDB_CACHE_TTL = 5 * 60 * 1000;
 
 let _inflight = 0;
 const MAX_INFLIGHT = 4;
-const _waiters = [];
+const _waiters    = [];
 
 function _acquireSlot() {
   if (_inflight < MAX_INFLIGHT) { _inflight++; return Promise.resolve(); }
@@ -29,7 +29,7 @@ function _releaseSlot() {
 
 export const tmdbFetch = async (path, apiKey) => {
   const cacheKey = `${apiKey}|${path}`;
-  const cached = _tmdbCache.get(cacheKey);
+  const cached   = _tmdbCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
   await _acquireSlot();
   let res;
@@ -53,9 +53,7 @@ export const tmdbFetch = async (path, apiKey) => {
   return data;
 };
 
-// ===== PLAYER SOURCES — fastest / cleanest loaders first =====
-// Tier 1: load player directly, no intermediate "FETCHING ONE MOMENT" screens
-// Tier 2: fallbacks — may show loading text on their own pages
+// ── PLAYER SOURCES ────────────────────────────────────────────────────────
 export const PLAYER_SOURCES = [
   {
     id: "vidlink",
@@ -102,7 +100,6 @@ export const PLAYER_SOURCES = [
     movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
     tvUrl:    (id, season, ep) => `https://player.smashy.stream/tv/${id}?s=${season}&e=${ep}`,
   },
-  // ===== FALLBACKS — kept for manual selection =====
   {
     id: "vidfast",
     label: "Server 6",
@@ -158,63 +155,90 @@ export const getSourceUrl = (sourceId, type, id, season, ep) => {
   return type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
 };
 
-export const sourceSupportsProgress = (sourceId) =>
-  PLAYER_SOURCES.find((s) => s.id === sourceId)?.supportsProgress ?? false;
-
-export const sourceProgressViaFrames = (sourceId) =>
-  PLAYER_SOURCES.find((s) => s.id === sourceId)?.progressViaFrames ?? false;
-
-export const sourceIsAsync = (sourceId) =>
-  PLAYER_SOURCES.find((s) => s.id === sourceId)?.async ?? false;
+export const sourceSupportsProgress  = (sourceId) => PLAYER_SOURCES.find((s) => s.id === sourceId)?.supportsProgress  ?? false;
+export const sourceProgressViaFrames = (sourceId) => PLAYER_SOURCES.find((s) => s.id === sourceId)?.progressViaFrames ?? false;
+export const sourceIsAsync           = (sourceId) => PLAYER_SOURCES.find((s) => s.id === sourceId)?.async             ?? false;
 
 export const NEEDS_INTERCEPT = ["vidsrc_cc", "autoembed", "vidlink"];
 
+// ── Source test with short timeout ────────────────────────────────────────
 async function testUrl(url) {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const tid = setTimeout(() => controller.abort(), 2200); // was 6000 — 3× faster
     await fetch(url, { method: "HEAD", mode: "no-cors", signal: controller.signal });
-    clearTimeout(timeout);
+    clearTimeout(tid);
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
+
+// ── Per-content source cache ──────────────────────────────────────────────
+// Survives re-renders; cleared when app restarts (intentional — sources can go down)
+const _sourceCache   = new Map();
+const SOURCE_CACHE_TTL = 15 * 60 * 1000; // 15 min per title
 
 /**
- * findWorkingSource — only auto-switches if the preferred/stored source fails.
- * If the preferredId source is reachable, it always wins. This prevents the app
- * from jumping to Server 6 when Server 1 is perfectly alive.
+ * findWorkingSource
+ *
+ * Races ALL non-async sources simultaneously with Promise.any.
+ * First source to respond wins — resolves in <2.5 s no matter what.
+ * Preferred source gets a 0 ms head-start; others wait 250 ms,
+ * so existing user preference is respected without blocking the race.
+ *
+ * Results are cached per (type, id, season, episode) for 15 minutes
+ * so repeat visits / episode changes are instant.
  */
-export async function findWorkingSource(type, id, season = null, episode = null, preferredId = null) {
-  const sources = PLAYER_SOURCES.filter((s) => !s.tag || s.tag === "ANIME");
-
-  // Always try the preferred (stored) source first — if alive, use it, done.
-  if (preferredId) {
-    const preferred = sources.find((s) => s.id === preferredId);
-    if (preferred) {
-      const url = type === "movie" ? preferred.movieUrl(id) : preferred.tvUrl(id, season, episode);
-      if (await testUrl(url)) return preferred.id;
-    }
+export async function findWorkingSource(
+  type, id, season = null, episode = null, preferredId = null
+) {
+  // 1. Return cached winner instantly
+  const cacheKey = `${type}|${id}|${season ?? ""}|${episode ?? ""}`;
+  const cached   = _sourceCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.sourceId;
   }
 
-  // Preferred is dead — scan the rest in order (Tier 1 first)
-  const remaining = sources.filter((s) => s.id !== preferredId);
-  const BATCH = 3;
-  for (let i = 0; i < remaining.length; i += BATCH) {
-    const batch = remaining.slice(i, i + BATCH);
-    const results = await Promise.all(
-      batch.map(async (src) => {
-        const url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, episode);
+  // 2. Race all non-async sources simultaneously
+  const sources = PLAYER_SOURCES.filter((s) => !s.async);
+
+  const racePromises = sources.map((src) => {
+    // Give preferred source a head-start so it wins ties
+    const delay = src.id === preferredId ? 0 : (preferredId ? 250 : 0);
+    return new Promise((resolve, reject) => {
+      setTimeout(async () => {
+        const url = type === "movie"
+          ? src.movieUrl(id)
+          : src.tvUrl(id, season, episode);
         const ok = await testUrl(url);
-        return { id: src.id, ok };
-      }),
-    );
-    const winner = results.find((r) => r.ok);
-    if (winner) return winner.id;
-  }
+        if (ok) resolve(src.id);
+        else    reject();
+      }, delay);
+    });
+  });
 
-  return NON_ANIME_DEFAULT_SOURCE;
+  try {
+    // Resolves the instant ANY source responds — no waiting for others
+    const winner = await Promise.any(racePromises);
+    _sourceCache.set(cacheKey, {
+      sourceId: winner,
+      expiresAt: Date.now() + SOURCE_CACHE_TTL,
+    });
+    return winner;
+  } catch {
+    // All sources failed network test — still serve content; never show blank
+    // Fall back to preferred or Server 1. User can switch manually if needed.
+    const fallback = preferredId ?? NON_ANIME_DEFAULT_SOURCE;
+    _sourceCache.set(cacheKey, {
+      sourceId:  fallback,
+      expiresAt: Date.now() + 2 * 60 * 1000, // shorter TTL for failed entries
+    });
+    return fallback;
+  }
 }
 
+// ── Anilist ───────────────────────────────────────────────────────────────
 const ANILIST_API = "https://graphql.anilist.co";
 
 export const cleanAnilistDescription = (desc) => {
@@ -271,7 +295,7 @@ let _anilistCache = null;
 function getAnilistCache() {
   if (_anilistCache) return _anilistCache;
   try {
-    const raw = localStorage.getItem(ANILIST_CACHE_KEY);
+    const raw   = localStorage.getItem(ANILIST_CACHE_KEY);
     _anilistCache = raw ? JSON.parse(raw) : {};
   } catch { _anilistCache = {}; }
   const now = Date.now();
@@ -292,20 +316,20 @@ function flushAnilistCache() {
 
 export const fetchAnilistData = async (title, type = "ANIME", tmdbId = null) => {
   const cacheKey = tmdbId ? `${type}__tmdb_${tmdbId}` : `${type}__${title.toLowerCase().trim()}`;
-  const cache = getAnilistCache();
-  const entry = cache[cacheKey];
+  const cache    = getAnilistCache();
+  const entry    = cache[cacheKey];
   if (entry && Date.now() - entry.ts <= ANILIST_CACHE_TTL) {
     const cachedTitles = [entry.data?.title?.romaji, entry.data?.title?.english, entry.data?.title?.native]
       .filter(Boolean).map((t) => t.toLowerCase());
-    const searchTitle = title.toLowerCase();
-    const isMismatch = entry.data !== null && cachedTitles.length > 0 &&
+    const searchTitle  = title.toLowerCase();
+    const isMismatch   = entry.data !== null && cachedTitles.length > 0 &&
       !cachedTitles.some((t) => t.includes(searchTitle) || searchTitle.includes(t));
     if (!isMismatch) return entry.data;
     delete cache[cacheKey];
     flushAnilistCache();
   }
   try {
-    const res = await fetch(ANILIST_API, {
+    const res  = await fetch(ANILIST_API, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ query: ANILIST_QUERY, variables: { search: title, type } }),
@@ -324,37 +348,38 @@ export const fetchAnilistData = async (title, type = "ANIME", tmdbId = null) => 
 export const buildAnilistSeasons = (anilistData) => {
   if (!anilistData) return null;
   const main = {
-    id: anilistData.id,
-    title: anilistData.title?.english || anilistData.title?.romaji || anilistData.title?.native,
+    id:       anilistData.id,
+    title:    anilistData.title?.english || anilistData.title?.romaji || anilistData.title?.native,
     episodes: anilistData.episodes || null,
-    year: anilistData.startDate?.year || anilistData.seasonYear || 9999,
-    month: anilistData.startDate?.month || 0,
+    year:     anilistData.startDate?.year  || anilistData.seasonYear || 9999,
+    month:    anilistData.startDate?.month || 0,
   };
   const sequels = (anilistData.relations?.edges || [])
     .filter((e) => e.relationType === "SEQUEL" && e.node.type === "ANIME" && (e.node.format === "TV" || e.node.format === "TV_SHORT"))
     .map((e) => ({
-      id: e.node.id,
-      title: e.node.title?.english || e.node.title?.romaji,
+      id:       e.node.id,
+      title:    e.node.title?.english || e.node.title?.romaji,
       episodes: e.node.episodes || null,
-      year: e.node.startDate?.year || e.node.seasonYear || 9999,
-      month: e.node.startDate?.month || 0,
+      year:     e.node.startDate?.year  || e.node.seasonYear || 9999,
+      month:    e.node.startDate?.month || 0,
     }));
   const all = [main, ...sequels].sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month);
   return all.map((s, i) => ({ seasonNum: i + 1, ...s }));
 };
 
 export const isAnimeContent = (item, details) => {
-  const d = details || item;
-  const lang = d.original_language;
-  const countries = d.origin_country || [];
-  const genreIds = d.genre_ids || (d.genres || []).map((g) => g.id);
+  const d        = details || item;
+  const lang     = d.original_language;
+  const countries  = d.origin_country || [];
+  const genreIds   = d.genre_ids || (d.genres || []).map((g) => g.id);
   const hasAnimation = genreIds.includes(16);
   return hasAnimation && (lang === "ja" || countries.includes("JP"));
 };
 
-export const ANIME_DEFAULT_SOURCE = "allmanga";
+export const ANIME_DEFAULT_SOURCE     = "allmanga";
 export const NON_ANIME_DEFAULT_SOURCE = "vidlink";
 
+// ── Episode group cache ───────────────────────────────────────────────────
 const EG_CACHE_KEY = "novaspark_episodeGroupCache";
 const EG_CACHE_TTL = 1000 * 60 * 60 * 24 * 7;
 
@@ -363,7 +388,7 @@ function getEgCache() {
   if (_egCache) return _egCache;
   try {
     const raw = localStorage.getItem(EG_CACHE_KEY);
-    _egCache = raw ? JSON.parse(raw) : {};
+    _egCache  = raw ? JSON.parse(raw) : {};
   } catch { _egCache = {}; }
   const now = Date.now();
   for (const key of Object.keys(_egCache)) {
@@ -385,7 +410,7 @@ export const fetchEpisodeGroup = async (groupId, apiKey) => {
   const cache = getEgCache();
   const entry = cache[groupId];
   if (entry && Date.now() - entry.ts <= EG_CACHE_TTL) return entry.data;
-  const data = await tmdbFetch(`/tv/episode_group/${groupId}`, apiKey);
+  const data  = await tmdbFetch(`/tv/episode_group/${groupId}`, apiKey);
   cache[groupId] = { data, ts: Date.now() };
   flushEgCache();
   return data;

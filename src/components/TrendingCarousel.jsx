@@ -1,6 +1,5 @@
-// TrendingCarousel.jsx — rebuilt as Netflix/Prime horizontal drag row
-// Interface unchanged: same props as before, drop-in replacement
-import { useRef, useCallback, memo, useMemo } from "react";
+// TrendingCarousel.jsx — scroll-jank-free horizontal drag row
+import { memo, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { imgUrl, isAnimeContent } from "../utils/api";
 import { StarIcon, PlayIcon } from "./Icons";
 
@@ -13,12 +12,15 @@ const Card = memo(function Card({ item, onSelect, ageRating, restricted, isAnime
 
   const isUnreleased = useMemo(() => {
     if (!item.release_date && !item.first_air_date) return false;
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     return new Date(item.release_date || item.first_air_date) > today;
   }, [item.release_date, item.first_air_date]);
 
   return (
-    <div className="ns-row-card" onClick={() => !restricted && !isUnreleased && onSelect(item)}>
+    <div
+      className="ns-row-card"
+      onClick={() => !restricted && !isUnreleased && onSelect(item)}
+    >
       <div className="ns-row-card-poster">
         {poster
           ? <img src={poster} alt={title} loading="lazy" draggable={false} />
@@ -32,7 +34,7 @@ const Card = memo(function Card({ item, onSelect, ageRating, restricted, isAnime
         {restricted && <div className="ns-row-card-restricted">🔒</div>}
         {isUnreleased && <div className="ns-row-card-restricted">🔒<span>Soon</span></div>}
         {ageRating && (
-          <div className={`ns-row-card-badge ns-badge-rating${restricted?" ns-badge-restricted":""}`}>
+          <div className={`ns-row-card-badge ns-badge-rating${restricted ? " ns-badge-restricted" : ""}`}>
             {ageRating}
           </div>
         )}
@@ -48,15 +50,31 @@ const Card = memo(function Card({ item, onSelect, ageRating, restricted, isAnime
   );
 });
 
-export default function TrendingCarousel({ items, onSelect, title, titleHighlight, ratingsMap = {} }) {
+export default function TrendingCarousel({
+  items,
+  onSelect,
+  title,
+  titleHighlight,
+  ratingsMap = {},
+}) {
   const rowRef  = useRef(null);
-  const dragRef = useRef({ down: false, sx: 0, sl: 0, moved: false });
+  // drag state lives in a ref — no re-renders, no state updates during scroll
+  const dragRef = useRef({ down: false, sx: 0, sl: 0, moved: false, rafId: null });
 
-  // ── Drag-to-scroll ────────────────────────────────────────────────────────
+  // ── RAF-throttled drag-to-scroll ─────────────────────────────────────────
   const onMouseDown = useCallback((e) => {
     const el = rowRef.current; if (!el) return;
-    dragRef.current = { down: true, sx: e.pageX - el.offsetLeft, sl: el.scrollLeft, moved: false };
-    el.style.cursor = "grabbing"; el.style.userSelect = "none";
+    // cancel any pending RAF before starting new drag
+    if (dragRef.current.rafId) cancelAnimationFrame(dragRef.current.rafId);
+    dragRef.current = {
+      down: true,
+      sx: e.pageX - el.offsetLeft,
+      sl: el.scrollLeft,
+      moved: false,
+      rafId: null,
+    };
+    el.style.cursor = "grabbing";
+    el.style.userSelect = "none";
   }, []);
 
   const onMouseMove = useCallback((e) => {
@@ -64,17 +82,28 @@ export default function TrendingCarousel({ items, onSelect, title, titleHighligh
     const el = rowRef.current; if (!el) return;
     const dx = e.pageX - el.offsetLeft - d.sx;
     if (Math.abs(dx) > 4) d.moved = true;
-    el.scrollLeft = d.sl - dx;
+    // throttle scroll update to once per animation frame
+    if (d.rafId) return;
+    d.rafId = requestAnimationFrame(() => {
+      el.scrollLeft = d.sl - dx;
+      d.rafId = null;
+    });
   }, []);
 
-  const onMouseUp = useCallback(() => {
+  const stopDrag = useCallback(() => {
+    const d = dragRef.current;
     const el = rowRef.current; if (!el) return;
-    dragRef.current.down = false;
-    el.style.cursor = "grab"; el.style.userSelect = "";
+    if (d.rafId) { cancelAnimationFrame(d.rafId); d.rafId = null; }
+    d.down = false;
+    el.style.cursor = "grab";
+    el.style.userSelect = "";
   }, []);
 
   const onClick = useCallback((e) => {
-    if (dragRef.current.moved) { e.stopPropagation(); dragRef.current.moved = false; }
+    if (dragRef.current.moved) {
+      e.stopPropagation();
+      dragRef.current.moved = false;
+    }
   }, []);
 
   if (!items || items.length === 0) return null;
@@ -92,8 +121,8 @@ export default function TrendingCarousel({ items, onSelect, title, titleHighligh
         ref={rowRef}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        onMouseUp={stopDrag}
+        onMouseLeave={stopDrag}
         onClick={onClick}
       >
         {items.map((item) => {

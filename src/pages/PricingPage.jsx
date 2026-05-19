@@ -438,7 +438,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
         display: "flex", alignItems: "center", justifyContent: "center", gap: 12, flexWrap: "wrap",
       }}>
         <span>Pay with:</span>
-        {["💳 Card", "🏦 Bank Transfer", "📱 OPay", "🟢 PalmPay", "💜 Kuda", "📟 USSD", "₿ Crypto"].map((m) => (
+        {["💳 Card", "🏦 Bank Transfer"].map((m) => (
           <span key={m} style={{
             background: "var(--surface2)", border: "1px solid var(--border)",
             borderRadius: 6, padding: "4px 10px", fontSize: 12,
