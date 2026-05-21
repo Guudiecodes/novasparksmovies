@@ -23,7 +23,9 @@ import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } 
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate       from "../components/PremiumGate";
 
-// ── Embed injection ───────────────────────────────────────────────────────
+const TRAILER_TRIM_START = 8;
+const TRAILER_TRIM_END   = 8;
+
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],
@@ -43,7 +45,6 @@ const _EMBED_JS = `(function(){
   setTimeout(function(){obs.disconnect();},12000);
 })()`;
 
-// ── Server toast ──────────────────────────────────────────────────────────
 function ServerToast({ status, sourceLabel }) {
   const [show, setShow] = useState(false);
   const [fade, setFade] = useState(false);
@@ -78,8 +79,211 @@ function ServerToast({ status, sourceLabel }) {
         <span>Playing on <strong>{sourceLabel}</strong></span>
       </>) : (<>
         <span style={{color:"#ff5252",fontSize:17,lineHeight:1}}>⚠</span>
-        <span>Could not load — check your connection</span>
+        <span>Could not load — try another server</span>
       </>)}
+    </div>
+  );
+}
+
+// ── Hero trailer — full bleed, trimmed, all platform branding fully hidden ───
+// Strategy: aggressive iframe oversizing crops the edges where UI chrome lives,
+// then SOLID (not gradient) corner blocks kill any in-video watermarks that
+// survive the crop (Prime Video, Netflix, Disney+, HBO, Apple TV+ logos).
+function HeroTrailer({ trailerKey, trimStart, trimEnd, muted, onEnded, onReady }) {
+  const iframeRef   = useRef(null);
+  const pollRef     = useRef(null);
+  const durationRef = useRef(0);
+  const readyRef    = useRef(false);
+  const endedRef    = useRef(false);
+
+  const src = useMemo(() => {
+    const params = new URLSearchParams({
+      autoplay:       "1",
+      mute:           muted ? "1" : "0",
+      controls:       "0",
+      disablekb:      "1",
+      loop:           "0",
+      rel:            "0",
+      showinfo:       "0",
+      iv_load_policy: "3",
+      modestbranding: "1",
+      playsinline:    "1",
+      enablejsapi:    "1",
+      start:          String(trimStart),
+      playlist:       trailerKey,
+    });
+    return `https://www.youtube.com/embed/${trailerKey}?${params.toString()}`;
+  }, [trailerKey, trimStart, muted]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (!data || data.event !== "infoDelivery" || !data.info) return;
+        const { currentTime, duration } = data.info;
+        if (duration && duration > 0) durationRef.current = duration;
+        if (currentTime && durationRef.current > 0) {
+          const stopAt = durationRef.current - trimEnd;
+          if (!endedRef.current && currentTime >= stopAt && stopAt > 0) {
+            endedRef.current = true;
+            onEnded?.();
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [trimEnd, onEnded]);
+
+  useEffect(() => {
+    const tick = () => {
+      try {
+        iframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "getVideoData", args: [] }), "*"
+        );
+        iframeRef.current?.contentWindow?.postMessage('{"event":"listening"}', "*");
+      } catch {}
+    };
+    pollRef.current = setInterval(tick, 1000);
+    return () => clearInterval(pollRef.current);
+  }, []);
+
+  const handleLoad = () => {
+    if (!readyRef.current) { readyRef.current = true; onReady?.(); }
+  };
+
+  // BG color matching the app dark theme — used for solid corner blocks
+  const BG = "rgba(5,12,15,1)";
+  const BG0 = "rgba(5,12,15,0)";
+
+  return (
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+
+      {/* Iframe: pushed out ~18% on all sides so YouTube chrome is off-screen */}
+      <iframe
+        ref={iframeRef}
+        src={src}
+        allow="autoplay; fullscreen"
+        allowFullScreen
+        onLoad={handleLoad}
+        style={{
+          position:      "absolute",
+          top:           "-18%",
+          left:          "-10%",
+          width:         "120%",
+          height:        "136%",
+          border:        "none",
+          pointerEvents: "none",
+        }}
+        title="Preview"
+      />
+
+      {/*
+        ── SOLID corner blocks ─────────────────────────────────────────────
+        These are NOT gradients. Solid = invisible to user (matches dark bg),
+        completely opaque over any platform watermark (Prime, Netflix, etc.)
+        Each block has a feathered bleed so the edge doesn't look cut off.
+      */}
+
+      {/* TOP-RIGHT solid block — Prime Video / Netflix / Apple logo zone */}
+      <div style={{
+        position: "absolute", top: 0, right: 0,
+        width: "22%", height: "18%",
+        background: BG,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      {/* Feather: left edge of top-right block */}
+      <div style={{
+        position: "absolute", top: 0, right: "22%",
+        width: "8%", height: "18%",
+        background: `linear-gradient(to left, ${BG} 0%, ${BG0} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      {/* Feather: bottom edge of top-right block */}
+      <div style={{
+        position: "absolute", top: "18%", right: 0,
+        width: "22%", height: "7%",
+        background: `linear-gradient(to top, ${BG0} 0%, ${BG} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+
+      {/* TOP-LEFT solid block — YouTube logo / channel name zone */}
+      <div style={{
+        position: "absolute", top: 0, left: 0,
+        width: "20%", height: "18%",
+        background: BG,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      {/* Feather: right edge of top-left block */}
+      <div style={{
+        position: "absolute", top: 0, left: "20%",
+        width: "8%", height: "18%",
+        background: `linear-gradient(to right, ${BG} 0%, ${BG0} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      {/* Feather: bottom edge of top-left block */}
+      <div style={{
+        position: "absolute", top: "18%", left: 0,
+        width: "20%", height: "7%",
+        background: `linear-gradient(to top, ${BG0} 0%, ${BG} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+
+      {/* BOTTOM-LEFT solid block — YouTube watermark / channel icon */}
+      <div style={{
+        position: "absolute", bottom: 0, left: 0,
+        width: "18%", height: "16%",
+        background: BG,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      <div style={{
+        position: "absolute", bottom: 0, left: "18%",
+        width: "7%", height: "16%",
+        background: `linear-gradient(to right, ${BG} 0%, ${BG0} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      <div style={{
+        position: "absolute", bottom: "16%", left: 0,
+        width: "18%", height: "6%",
+        background: `linear-gradient(to bottom, ${BG0} 0%, ${BG} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+
+      {/* BOTTOM-RIGHT solid block — YouTube settings / fullscreen btn */}
+      <div style={{
+        position: "absolute", bottom: 0, right: 0,
+        width: "18%", height: "16%",
+        background: BG,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      <div style={{
+        position: "absolute", bottom: 0, right: "18%",
+        width: "7%", height: "16%",
+        background: `linear-gradient(to left, ${BG} 0%, ${BG0} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+      <div style={{
+        position: "absolute", bottom: "16%", right: 0,
+        width: "18%", height: "6%",
+        background: `linear-gradient(to bottom, ${BG0} 0%, ${BG} 100%)`,
+        pointerEvents: "none", zIndex: 6,
+      }} />
+
+      {/* Full-width top strip — catches any title/info bar YouTube shows on load */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0,
+        height: "12%",
+        background: `linear-gradient(to bottom, ${BG} 0%, rgba(5,12,15,0.6) 65%, ${BG0} 100%)`,
+        pointerEvents: "none", zIndex: 5,
+      }} />
+
+      {/* Bottom cinematic gradient — page blends into video */}
+      <div style={{
+        position: "absolute", bottom: 0, left: 0, right: 0,
+        height: "60%",
+        background: `linear-gradient(to top, var(--bg, #050c0f) 0%, rgba(5,12,15,0.88) 28%, rgba(5,12,15,0.42) 58%, ${BG0} 100%)`,
+        pointerEvents: "none", zIndex: 5,
+      }} />
     </div>
   );
 }
@@ -114,13 +318,11 @@ export default function MoviePage({
   const [pipOpen,           setPipOpen]           = useState(false);
   const [downloaderFolder,  setDownloaderFolder]  = useState(() => storage.get("downloaderFolder") || "");
 
-  // ── Netflix-style preview state ───────────────────────────────────────
-  const [previewActive,  setPreviewActive]  = useState(false); // trailer playing in hero
-  const [previewMuted,   setPreviewMuted]   = useState(true);  // start muted
-  const [previewReady,   setPreviewReady]   = useState(false); // fade in once iframe ready
+  const [previewActive,  setPreviewActive]  = useState(false);
+  const [previewMuted,   setPreviewMuted]   = useState(true);
+  const [previewReady,   setPreviewReady]   = useState(false);
   const previewTimerRef  = useRef(null);
 
-  // refs
   const sourceRef           = useRef(null);
   const playerWrapRef       = useRef(null);
   const webviewRef          = useRef(null);
@@ -175,7 +377,6 @@ export default function MoviePage({
   const lastKnownTimeRef     = useRef(0);
   const seekBackCooldownRef  = useRef(0);
 
-  // ── Build retry queue ─────────────────────────────────────────────────
   useEffect(() => {
     const all   = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
     const start = all.indexOf(playerSource);
@@ -194,7 +395,6 @@ export default function MoviePage({
     setPlayerSource(nextId); storage.set("playerSource", nextId);
   }, []);
 
-  // ── Movie details ─────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     setPreviewActive(false); setPreviewReady(false); clearTimeout(previewTimerRef.current);
@@ -204,20 +404,18 @@ export default function MoviePage({
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Auto-start preview after details + trailerKey load ────────────────
   useEffect(() => {
     clearTimeout(previewTimerRef.current);
     if (trailerKey && !playing && !restricted) {
-      previewTimerRef.current = setTimeout(() => {
-        setPreviewActive(true);
-        // Fade in after 800ms (iframe needs time to start)
-        setTimeout(() => setPreviewReady(true), 800);
-      }, 1800); // 1.8s delay so page settles first
+      previewTimerRef.current = setTimeout(() => { setPreviewActive(true); }, 1500);
     }
     return () => clearTimeout(previewTimerRef.current);
   }, [trailerKey, item.id, playing, restricted]);
 
-  // ── Initial source check ──────────────────────────────────────────────
+  const stopPreview = useCallback(() => {
+    setPreviewActive(false); setPreviewReady(false); clearTimeout(previewTimerRef.current);
+  }, []);
+
   useEffect(() => {
     if (!item?.id) return;
     let cancelled = false;
@@ -226,31 +424,27 @@ export default function MoviePage({
       if (cancelled) return;
       setFoundSource(id);
       setAutoSourceStatus(id ? "found" : "failed");
-    });
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [item.id, playerSource]);
 
-  // ── Age rating ────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     fetchMovieRating(item.id, apiKey, ratingCountry).then((r) => { if (mounted) setRating(r); });
     return () => { mounted = false; };
   }, [item.id, apiKey, ratingCountry]);
 
-  // ── Trailer ───────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     tmdbFetch(`/movie/${item.id}/videos`, apiKey).then((data) => {
       if (!mounted) return;
       const vids    = data.results || [];
       const trailer = vids.find((v) => v.type === "Trailer" && v.site === "YouTube") || vids.find((v) => v.site === "YouTube");
-      if (trailer) setTrailerKey(trailer.key);
-      else setTrailerKey(null);
+      setTrailerKey(trailer ? trailer.key : null);
     }).catch(() => {});
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Collection ────────────────────────────────────────────────────────
   useEffect(() => {
     setCollection(null);
     if (!details?.belongs_to_collection?.id) return;
@@ -265,20 +459,18 @@ export default function MoviePage({
     return () => { mounted = false; };
   }, [details?.belongs_to_collection?.id, apiKey]);
 
-  // ── Reset player on source/content change ─────────────────────────────
   useEffect(() => {
     setM3u8Url(null); setInterceptedSubs([]); setShowSourceMenu(false);
     setAnilistData(null); setResolvedPlayerUrl(null); setResolvingUrl(false);
     setResolveError(null); setWebviewLoading(true);
   }, [item.id, playerSource, dubMode]);
 
-  // ── Anime routing ─────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     if (isAnime) {
       fetchAnilistData(item.title || item.name, "ANIME", item.id).then(
         (data) => { if (mounted && data) setAnilistData(data); },
-      );
+      ).catch(() => {});
       const cur = PLAYER_SOURCES.find((s) => s.id === playerSource);
       if (!cur?.tag) { const sv = storage.get("playerSource"); const svs = PLAYER_SOURCES.find((s) => s.id === sv); setPlayerSource(svs?.tag ? sv : ANIME_DEFAULT_SOURCE); }
     } else {
@@ -288,7 +480,6 @@ export default function MoviePage({
     return () => { mounted = false; };
   }, [item.id, isAnime]); // eslint-disable-line
 
-  // ── AllManga async resolve ────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !sourceIsAsync(playerSource)) return;
     if (resolvedPlayerUrl || resolvingUrl) return;
@@ -311,7 +502,6 @@ export default function MoviePage({
     return () => { mounted = false; };
   }, [playing, playerSource, dubMode]); // eslint-disable-line
 
-  // ── Electron listeners ────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
     const h = window.electron.onM3u8Found((url) => setM3u8Url((p) => p !== url ? url : p));
@@ -345,14 +535,12 @@ export default function MoviePage({
     if (wv) { try { wv.src = "about:blank"; } catch {} }
   }, [playing]);
 
-  // ── Beast Engine ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !window.electron) return;
     const wv = webviewRef.current;
     if (!wv) return;
     let active = true;
     clearInterval(pollRef.current);
-
     const markReady = () => {
       if (!active) return; active = false; clearInterval(pollRef.current);
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
@@ -360,7 +548,7 @@ export default function MoviePage({
     };
     const onFail = () => {
       if (!active) return; active = false; clearInterval(pollRef.current);
-      clearTimeout(hardTimeout); // eslint-disable-line no-use-before-define
+      clearTimeout(hardTimeout); // eslint-disable-line
       tryNextSource();
     };
     const onDomReady = async () => {
@@ -388,7 +576,6 @@ export default function MoviePage({
     };
   }, [playing, playerSource, item.id, tryNextSource]);
 
-  // ── Web iframe fallback ───────────────────────────────────────────────
   useEffect(() => {
     if (!playing || window.electron) return;
     let active = true;
@@ -396,7 +583,6 @@ export default function MoviePage({
     return () => { active = false; clearTimeout(tid); };
   }, [playing, playerSource, item.id]);
 
-  // ── Progress tracking ─────────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !sourceSupportsProgress(playerSource) || !window.electron) return;
     let interval = null;
@@ -451,8 +637,7 @@ export default function MoviePage({
   }, [playing, progressKey, watchedThreshold, playerSource, progressViaFrames]);
 
   const handlePlay = useCallback(() => {
-    // Stop preview when user starts actual playback
-    setPreviewActive(false); setPreviewReady(false); clearTimeout(previewTimerRef.current);
+    stopPreview();
     if (onWatch) {
       onHistory({ ...d, media_type: "movie" });
       onWatch({ item: d, season: null, episode: null, sourceId: foundSource });
@@ -462,9 +647,8 @@ export default function MoviePage({
     onHistory({ ...d, media_type: "movie" });
     const pw = preWarmRef.current;
     if (pw) { try { pw.src = "about:blank"; } catch {} }
-  }, [d, onHistory, onWatch, foundSource]);
+  }, [d, onHistory, onWatch, foundSource, stopPreview]);
 
-  // ── Fullscreen / PiP ──────────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !NEEDS_INTERCEPT.includes(playerSource)) return;
     const enterH = window.electron?.onWebviewEnterFullscreen?.(() => { setPlayerFullscreen(true); document.documentElement.setAttribute("data-player-fullscreen","1"); });
@@ -490,7 +674,6 @@ export default function MoviePage({
     setDownloaderFolder(folder); storage.set("downloaderFolder", folder);
   }, []);
 
-  // ── Derived values ────────────────────────────────────────────────────
   const displayOverview = isAnime && anilistData?.description ? cleanAnilistDescription(anilistData.description) : d.overview;
   const displayScore    = isAnime && anilistData?.averageScore ? (anilistData.averageScore / 10).toFixed(1) : d.vote_average > 0 ? d.vote_average.toFixed(1) : null;
   const displayGenres   = isAnime && anilistData?.genres?.length ? anilistData.genres.map((g, i) => ({ id: i, name: g })) : d.genres || [];
@@ -512,29 +695,20 @@ export default function MoviePage({
     return getSourceUrl(foundSource, "movie", item.id, null, null);
   }, [foundSource, playerSource, restricted, isUnreleased, playing, item.id]);
 
-  // ── Preview URL (muted YouTube embed) ────────────────────────────────
-  const previewSrc = trailerKey
-    ? `https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=${previewMuted ? 1 : 0}&controls=0&loop=1&playlist=${trailerKey}&rel=0&showinfo=0&iv_load_policy=3&modestbranding=1&enablejsapi=0`
-    : null;
-
-  // ── RENDER ─────────────────────────────────────────────────────────────
   return (
     <div className="fade-in">
       <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes previewFadeIn { from { opacity:0; } to { opacity:1; } }
-        @keyframes previewBadgePop {
-          from { opacity:0; transform:translateY(8px) scale(0.9); }
-          to   { opacity:1; transform:translateY(0) scale(1); }
+        @keyframes spin      { to { transform: rotate(360deg); } }
+        @keyframes previewIn { from { opacity:0; } to { opacity:1; } }
+        @keyframes badgePop  {
+          from { opacity:0; transform:translateY(6px) scale(0.92); }
+          to   { opacity:1; transform:translateY(0)   scale(1); }
         }
-        .preview-mute-btn:hover { background: rgba(255,255,255,0.2) !important; }
-        .preview-stop-btn:hover { background: rgba(255,255,255,0.15) !important; }
+        .preview-ctrl-btn:hover { background: rgba(255,255,255,0.18) !important; }
       `}</style>
 
-      {/* Server toast */}
       {playing && <ServerToast status={autoSourceStatus} sourceLabel={PLAYER_SOURCES.find((s) => s.id === playerSource)?.label} />}
 
-      {/* Pre-warm webview */}
       {preWarmUrl && (
         <webview ref={preWarmRef} src={preWarmUrl} partition="persist:player"
           allowpopups="false" plugins="true"
@@ -544,116 +718,39 @@ export default function MoviePage({
         />
       )}
 
-      {/* ── HERO — preview video plays here ───────────────────────────── */}
+      {/* ── HERO ──────────────────────────────────────────────────────── */}
       <div className="detail-hero" style={{ position: "relative", overflow: "hidden" }}>
 
-        {/* Static backdrop (always visible behind preview) */}
         <div className="detail-bg"
-          style={{ backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
-            filter: previewActive && previewReady ? "brightness(0)" : "brightness(0.45) contrast(1.05) saturate(0.9)",
-            transition: "filter 0.8s ease",
+          style={{
+            backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
+            filter: previewActive && previewReady
+              ? "brightness(0.15) saturate(0.6)"
+              : "brightness(0.45) contrast(1.05) saturate(0.9)",
+            transition: "filter 1s ease",
           }}
         />
         <div className="detail-gradient" />
 
-        {/* ── Autoplay trailer preview ── */}
-        {previewActive && previewSrc && (
+        {previewActive && trailerKey && (
           <div style={{
             position: "absolute", inset: 0, zIndex: 3,
             opacity: previewReady ? 1 : 0,
-            transition: "opacity 0.8s ease",
-            animation: previewReady ? "previewFadeIn 0.8s ease" : "none",
+            transition: "opacity 1s ease",
+            animation: previewReady ? "previewIn 1s ease" : "none",
           }}>
-            <iframe
-              src={previewSrc}
-              allow="autoplay; fullscreen"
-              allowFullScreen
-              style={{
-                position: "absolute", inset: 0,
-                width: "100%", height: "100%",
-                border: "none", background: "#000",
-                // Scale up slightly so YouTube letterbox edges are hidden
-                transform: "scale(1.12)",
-                transformOrigin: "center center",
-                pointerEvents: "none", // don't let it capture clicks
-              }}
-              title="Preview"
+            <HeroTrailer
+              trailerKey={trailerKey}
+              trimStart={TRAILER_TRIM_START}
+              trimEnd={TRAILER_TRIM_END}
+              muted={previewMuted}
+              onReady={() => setPreviewReady(true)}
+              onEnded={stopPreview}
             />
-            {/* Gradient overlay so content below stays readable */}
-            <div style={{
-              position: "absolute", inset: 0,
-              background: "linear-gradient(to top, var(--bg) 0%, rgba(5,12,15,0.2) 40%, transparent 70%)",
-              pointerEvents: "none",
-            }} />
-
-            {/* Preview controls — top right */}
-            <div style={{
-              position: "absolute", top: 16, right: 16, zIndex: 10,
-              display: "flex", gap: 8, alignItems: "center",
-              animation: "previewBadgePop 0.4s ease 0.3s both",
-            }}>
-              {/* LIVE PREVIEW badge */}
-              <div style={{
-                display: "flex", alignItems: "center", gap: 6,
-                background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 6, padding: "5px 10px",
-                fontSize: 10, fontWeight: 700, color: "#fff", letterSpacing: 1,
-              }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red, #00b4a6)", boxShadow: "0 0 6px var(--red, #00b4a6)", animation: "spin 2s linear infinite" }} />
-                PREVIEW
-              </div>
-
-              {/* Mute/Unmute */}
-              <button
-                className="preview-mute-btn"
-                onClick={() => setPreviewMuted((v) => !v)}
-                style={{
-                  background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  borderRadius: 6, padding: "5px 10px",
-                  cursor: "pointer", color: "#fff", fontSize: 13,
-                  display: "flex", alignItems: "center", gap: 5,
-                  transition: "background 0.2s",
-                }}
-                title={previewMuted ? "Unmute preview" : "Mute preview"}
-              >
-                {previewMuted ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                    <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
-                    <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                    <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                    <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
-                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  </svg>
-                )}
-                {previewMuted ? "Unmute" : "Mute"}
-              </button>
-
-              {/* Stop preview */}
-              <button
-                className="preview-stop-btn"
-                onClick={() => { setPreviewActive(false); setPreviewReady(false); }}
-                style={{
-                  background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  borderRadius: 6, padding: "5px 10px",
-                  cursor: "pointer", color: "rgba(255,255,255,0.7)", fontSize: 13,
-                  transition: "background 0.2s",
-                }}
-                title="Stop preview"
-              >✕</button>
-            </div>
           </div>
         )}
 
-        {/* Detail content — always on top */}
-        <div className="detail-content" style={{ position: "relative", zIndex: 4 }}>
-          {/* Poster */}
+        <div className="detail-content" style={{ position: "relative", zIndex: 5 }}>
           <div className="detail-poster" style={{ position: "relative" }}>
             {d.poster_path
               ? <img src={imgUrl(d.poster_path)} alt={title} loading="lazy" />
@@ -662,18 +759,16 @@ export default function MoviePage({
             {isWatched && <div className="detail-watched-badge"><WatchedIcon size={36} /></div>}
           </div>
 
-          {/* Info */}
           <div className="detail-info">
-            <div className="detail-type" style={{ display:"flex",alignItems:"center",gap:8 }}>
+            <div className="detail-type" style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
               Movie
               {isWatched && <span className="watched-label"><WatchedIcon size={14} /> Watched</span>}
-              {/* "Now Previewing" chip when trailer plays */}
               {previewActive && previewReady && (
                 <span style={{
                   fontSize: 10, fontWeight: 700, letterSpacing: 0.8,
                   background: "rgba(0,180,166,0.15)", border: "1px solid rgba(0,180,166,0.35)",
                   color: "var(--red, #00b4a6)", borderRadius: 4, padding: "2px 7px",
-                  animation: "previewBadgePop 0.3s ease",
+                  animation: "badgePop 0.3s ease",
                 }}>▶ NOW PREVIEWING</span>
               )}
             </div>
@@ -720,17 +815,14 @@ export default function MoviePage({
                   <PlayIcon /> {playing ? "Restart" : "Play"}
                 </button>
               )}
-
               {trailerKey && (restricted
                 ? <button className="btn btn-secondary btn-restricted" disabled>🔒 Trailer</button>
                 : <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}><TrailerIcon /> Trailer</button>
               )}
-
               <button className="btn btn-secondary" onClick={onSave}>
                 {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
                 {isSaved ? "Saved" : "Save"}
               </button>
-
               {!isUnreleased && (isWatched
                 ? <button className="btn btn-ghost watched-btn" onClick={() => onMarkUnwatched?.(progressKey)}>
                     <WatchedIcon size={16} /> Watched
@@ -745,26 +837,47 @@ export default function MoviePage({
                     )}
                   </>
               )}
-
               <button className="btn btn-ghost" onClick={onBack}><BackIcon /> Back</button>
             </div>
+
+            {previewActive && previewReady && (
+              <div style={{ display:"flex",gap:8,marginTop:12,animation:"badgePop 0.35s ease 0.1s both" }}>
+                <button className="preview-ctrl-btn" onClick={() => setPreviewMuted((v) => !v)}
+                  style={{ background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",border:"1px solid rgba(255,255,255,0.18)",borderRadius:7,padding:"6px 14px",cursor:"pointer",color:"#fff",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6,transition:"background 0.2s" }}>
+                  {previewMuted ? (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                      <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
+                      <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+                      <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+                    </svg>
+                  ) : (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                      <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+                    </svg>
+                  )}
+                  {previewMuted ? "Unmute" : "Mute"}
+                </button>
+                <button className="preview-ctrl-btn" onClick={stopPreview}
+                  style={{ background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,padding:"6px 14px",cursor:"pointer",color:"rgba(255,255,255,0.6)",fontSize:12,transition:"background 0.2s" }}>
+                  ✕ Stop Preview
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Inline player (web/Electron without onWatch) ─────────────── */}
+      {/* ── Inline player ─────────────────────────────────────────────── */}
       {playing && !restricted && !isUnreleased && !onWatch && (
         <div className="section">
           <div className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`} ref={playerWrapRef}>
-
-            {/* Loading spinner */}
             {webviewLoading && !resolveError && (
               <div style={{ position:"absolute",inset:0,zIndex:10,display:"flex",alignItems:"center",justifyContent:"center",background:"#000",borderRadius:"inherit" }}>
                 <div className="spinner" />
               </div>
             )}
-
-            {/* Resolve error */}
             {sourceIsAsync(playerSource) && resolveError && !resolvingUrl && (
               <div style={{ position:"absolute",inset:0,zIndex:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)",gap:10,borderRadius:"inherit" }}>
                 <span style={{ fontSize:28 }}>⚠️</span>
@@ -772,8 +885,6 @@ export default function MoviePage({
                 <span style={{ fontSize:12,color:"var(--text3)" }}>{resolveError}</span>
               </div>
             )}
-
-            {/* PiP overlay */}
             {pipOpen && (
               <div style={{ position:"absolute",inset:0,zIndex:20,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.92)",gap:16,borderRadius:"inherit" }}>
                 <PopOutIcon size={36} />
@@ -781,16 +892,10 @@ export default function MoviePage({
                 <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()}>Close pop-out &amp; return</button>
               </div>
             )}
-
-            {/* Webview / iframe — key forces remount on source/item change */}
             {window.electron ? (
-              <webview
-                key={`wv-movie-${playerSource}-${item.id}`}
-                ref={webviewRef}
+              <webview key={`wv-movie-${playerSource}-${item.id}`} ref={webviewRef}
                 src={pipOpen ? "about:blank" : sourceIsAsync(playerSource) ? resolvedPlayerUrl || "about:blank" : getSourceUrl(playerSource, "movie", item.id, null, null)}
-                partition="persist:player"
-                allowpopups="true"
-                plugins="true"
+                partition="persist:player" allowpopups="true" plugins="true"
                 webpreferences="contextIsolation=true,nodeIntegration=false,webSecurity=false,allowRunningInsecureContent=true"
                 useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
                 style={{ position:"absolute",inset:0,width:"100%",height:"100%",border:"none",
@@ -798,9 +903,7 @@ export default function MoviePage({
                   transition:"opacity 0.3s ease" }}
               />
             ) : (
-              <iframe
-                key={`if-movie-${playerSource}-${item.id}`}
-                ref={webviewRef}
+              <iframe key={`if-movie-${playerSource}-${item.id}`} ref={webviewRef}
                 src={pipOpen ? "about:blank" : sourceIsAsync(playerSource) ? resolvedPlayerUrl || "about:blank" : getSourceUrl(playerSource, "movie", item.id, null, null)}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                 allowFullScreen
@@ -809,8 +912,6 @@ export default function MoviePage({
                   transition:"opacity 0.3s ease" }}
               />
             )}
-
-            {/* Overlay controls */}
             <div className="player-overlay-group">
               <button ref={sourceRef} className="player-overlay-btn"
                 onClick={() => {
@@ -818,22 +919,19 @@ export default function MoviePage({
                   const rect = sourceRef.current?.getBoundingClientRect();
                   if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
                   setShowSourceMenu((v) => !v);
-                }} title="Change source">
+                }}>
                 <SourceIcon />{PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "Source"}
               </button>
-
               {playerSource === "allmanga" && (
                 <button className="player-overlay-btn" onClick={() => {
                   const next = dubMode === "sub" ? "dub" : "sub";
                   setDubMode(next); storage.set("allmangaDubMode", next);
                   setM3u8Url(null); setInterceptedSubs([]); setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
-                }} title="Toggle Sub/Dub">{dubMode === "sub" ? "SUB" : "DUB"}</button>
+                }}>{dubMode === "sub" ? "SUB" : "DUB"}</button>
               )}
-
-              <button className="player-overlay-btn" onClick={() => { setShowSourceMenu(false); setShowBlockedModal(true); }} title="Blocked ads & trackers">
+              <button className="player-overlay-btn" onClick={() => { setShowSourceMenu(false); setShowBlockedModal(true); }}>
                 <ShieldBlockIcon />{blockedSession > 0 && <span className="player-blocked-badge">{blockedSession}</span>}
               </button>
-
               <button className="player-overlay-btn"
                 onClick={() => {
                   if (pipOpen) { window.electron?.closePipWindow?.(); return; }
@@ -843,13 +941,10 @@ export default function MoviePage({
                   pipUrlRef.current = url;
                   window.electron?.openPipWindow?.(url, item.title);
                 }}
-                title={pipOpen ? "Close pop-out" : "Pop out player"}
                 disabled={!pipOpen && (webviewLoading || !!(sourceIsAsync(playerSource) && !resolvedPlayerUrl))}
                 style={pipOpen ? { color: "var(--red)" } : undefined}>
                 <PopOutIcon />
               </button>
-
-              {/* Data Meter */}
               <DataMeterWidget
                 isPlaying={playing && !webviewLoading && !pipOpen}
                 runtimeMinutes={d.runtime || null}
@@ -857,8 +952,6 @@ export default function MoviePage({
                 type="movie"
               />
             </div>
-
-            {/* Source dropdown */}
             {showSourceMenu && menuPos && (
               <div className="source-dropdown source-dropdown--fixed" style={{ top: menuPos.top, left: menuPos.left }} onClick={(e) => e.stopPropagation()}>
                 {PLAYER_SOURCES.map((src) => (
@@ -882,7 +975,6 @@ export default function MoviePage({
             )}
           </div>
 
-          {/* Download row */}
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",background:"var(--surface)",borderRadius:12,border:"1px solid var(--border)",marginTop:16,gap:16 }}>
             <div style={{ display:"flex",alignItems:"center",gap:12,flex:1 }}>
               <div style={{ width:40,height:40,borderRadius:10,background:movieDownload?"rgba(76,175,80,0.1)":"var(--red-dim)",display:"flex",alignItems:"center",justifyContent:"center",color:movieDownload?"#4caf50":"var(--red)",fontSize:20 }}>
@@ -926,7 +1018,7 @@ export default function MoviePage({
         </div>
       )}
 
-      {/* ── Collection ──────────────────────────────────────────────── */}
+      {/* ── Collection ────────────────────────────────────────────────── */}
       {collection && onSelect && (
         <div className="section">
           <div className="section-title">{collection.name}</div>
@@ -943,7 +1035,7 @@ export default function MoviePage({
         </div>
       )}
 
-      {/* ── Modals ──────────────────────────────────────────────────── */}
+      {/* ── Modals ────────────────────────────────────────────────────── */}
       {showTrailer && trailerKey && (
         <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />
       )}
