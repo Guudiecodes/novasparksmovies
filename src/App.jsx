@@ -25,72 +25,62 @@ import UpdateModal from "./components/UpdateModal";
 // ── NovaSpark: hardcoded key — users never see a setup screen ────────────────
 const NS_TMDB_KEY = "4bea51722649d28dcd5453a94f8f40ad";
 
-// Lazy-loaded pages: each chunk is only downloaded when the user first visits
-const HomePage     = lazy(() => import("./pages/HomePage"));
-// const NsaiPage    = lazy(() => import("./pages/NsaiPage"));
-const MoviePage    = lazy(() => import("./pages/MoviePage"));
-const TVPage       = lazy(() => import("./pages/TVPage"));
-const LibraryPage  = lazy(() => import("./pages/LibraryPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const DownloadsPage= lazy(() => import("./pages/DownloadsPage"));
-
-// ── Standalone player page ──────────────────────────────────────────────────
-const WatchPage    = lazy(() => import("./pages/WatchPage"));
-// ── ADDED: Premium pricing / subscription page ──────────────────────────────
-const PricingPage  = lazy(() => import("./pages/PricingPage"));
+const HomePage      = lazy(() => import("./pages/HomePage"));
+const MoviePage     = lazy(() => import("./pages/MoviePage"));
+const TVPage        = lazy(() => import("./pages/TVPage"));
+const LibraryPage   = lazy(() => import("./pages/LibraryPage"));
+const SettingsPage  = lazy(() => import("./pages/SettingsPage"));
+const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
+const WatchPage     = lazy(() => import("./pages/WatchPage"));
+const PricingPage   = lazy(() => import("./pages/PricingPage"));
 
 import { checkForUpdates } from "./utils/updates";
 
-// ── Premium storage key (shared with PricingPage) ───────────────────────────
 const NS_PREMIUM_KEY = "ns_premium";
 
 export default function App() {
-  // ── CHANGED: pre-load NS key so setup screen never shows ─────────────────
-  const [apiKey, setApiKey] = useState(NS_TMDB_KEY);
+  const [apiKey,       setApiKey]       = useState(NS_TMDB_KEY);
   const [apiKeyLoaded, setApiKeyLoaded] = useState(true);
-  const [skipped, setSkipped] = useState(true);
-  // ─────────────────────────────────────────────────────────────────────────
-  const [apiKeyStatus, setApiKeyStatus] = useState("checking"); // 'checking' | 'ok' | 'invalid_token' | 'unreachable'
-  const [page, setPage] = useState(() => storage.get("startPage") || "home");
-  const [selected, setSelected] = useState(null);
+  const [skipped,      setSkipped]      = useState(true);
+
+  // ── All TMDB/network errors are silenced — never shown to users ───────────
+  // setApiKeyStatus still exists internally but nothing renders from it
+  const [apiKeyStatus, setApiKeyStatus] = useState("ok"); // always 'ok' visually
+
+  const [page,       setPage]       = useState(() => storage.get("startPage") || "home");
+  const [selected,   setSelected]   = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
-  const [librarySort, setLibrarySort] = useState(
+  const [librarySort,  setLibrarySort]  = useState(
     () => storage.get(STORAGE_KEYS.LIBRARY_SORT) || "manual",
   );
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [platform, setPlatform] = useState(null);
+  const [platform,      setPlatform]      = useState(null);
 
-  // ── ADDED: Premium state — read on mount, re-sync after PricingPage changes
   const [isPremium, setIsPremium] = useState(() => !!storage.get(NS_PREMIUM_KEY));
   const handlePremiumUpdate = useCallback(() => {
     setIsPremium(!!storage.get(NS_PREMIUM_KEY));
   }, []);
 
-  // Navigation history stack for Ctrl+Z back navigation
   const [navStack, setNavStack] = useState([]);
 
-  const [saved, setSaved] = useState(() => storage.get("saved") || {});
-  // Separate order array for drag-and-drop reordering
-  const [savedOrder, setSavedOrder] = useState(
-    () => storage.get("savedOrder") || null,
-  );
-  const [progress, setProgress] = useState(() => storage.get("progress") || {});
-  const [history, setHistory] = useState(() => storage.get("history") || []);
-  const [watched, setWatched] = useState(() => storage.get("watched") || {});
-  const [toast, setToast] = useState(null);
-  const [updateBanner, setUpdateBanner] = useState(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  // null | "checking" | { entries: object[] } | "none"
+  const [saved,      setSaved]      = useState(() => storage.get("saved")     || {});
+  const [savedOrder, setSavedOrder] = useState(() => storage.get("savedOrder") || null);
+  const [progress,   setProgress]   = useState(() => storage.get("progress")  || {});
+  const [history,    setHistory]    = useState(() => storage.get("history")   || []);
+  const [watched,    setWatched]    = useState(() => storage.get("watched")   || {});
+  const [toast,          setToast]          = useState(null);
+  const [updateBanner,   setUpdateBanner]   = useState(null);
+  const [showUpdateModal,setShowUpdateModal] = useState(false);
   const [episodeCheckStatus, setEpisodeCheckStatus] = useState(null);
   const episodeDismissTimerRef = useRef(null);
 
-  const [trending, setTrending] = useState([]);
-  const [trendingTV, setTrendingTV] = useState([]);
-  const [loadingHome, setLoadingHome] = useState(false);
-  const [offline, setOffline] = useState(() => !navigator.onLine);
+  const [trending,     setTrending]     = useState([]);
+  const [trendingTV,   setTrendingTV]   = useState([]);
+  const [loadingHome,  setLoadingHome]  = useState(false);
+  const [offline,      setOffline]      = useState(() => !navigator.onLine);
 
-  // ── Scheduled backup: run on startup if due ─────────────────────────────────
+  // ── Scheduled backup ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron?.onScheduledBackupRequested) return;
     const handler = window.electron.onScheduledBackupRequested(async () => {
@@ -99,9 +89,7 @@ export default function App() {
         if (!settings?.enabled || !settings?.path) return;
         const data = collectBackupData();
         await window.electron.performScheduledBackup({ data, settings });
-      } catch {
-        // silently ignore errors on scheduled backup
-      }
+      } catch {}
     });
     return () => window.electron.offScheduledBackupRequested(handler);
   }, []);
@@ -111,25 +99,20 @@ export default function App() {
     if (!window.electron?.getAppVersion) return;
     window.electron.getAppVersion().then((version) => {
       const lastVersion = localStorage.getItem("novaspark_lastVersion");
-      if (lastVersion && lastVersion !== version) {
-        clearAppCaches();
-      }
+      if (lastVersion && lastVersion !== version) clearAppCaches();
       localStorage.setItem("novaspark_lastVersion", version);
     });
   }, []);
 
-  // ── Startup update check ─────────────────────────────────────────────────
+  // ── Startup update check ──────────────────────────────────────────────────
   useEffect(() => {
     if (!storage.get("autoCheckUpdates")) return;
     checkForUpdates()
-      .then((r) => {
-        if (r.hasUpdate) setUpdateBanner(r);
-      })
+      .then((r) => { if (r.hasUpdate) setUpdateBanner(r); })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Startup: new-episode notification check ──────────────────────────────
+  // ── New-episode notification check ───────────────────────────────────────
   useEffect(() => {
     if (!apiKeyLoaded) return;
     const notifyPref = storage.get(STORAGE_KEYS.NOTIFY_NEW_EPISODE);
@@ -139,17 +122,15 @@ export default function App() {
 
     async function checkNewEpisodes() {
       await new Promise((r) => setTimeout(r, 1200));
-      if (cancelled) return;
-
-      if (!apiKey || cancelled) return;
+      if (cancelled || !apiKey) return;
 
       const tvSeries = Object.values(saved).filter(
         (item) => item && item.media_type === "tv" && item.id,
       );
       if (!tvSeries.length) return;
 
-      const cache = storage.get(STORAGE_KEYS.EPISODE_RELEASE_CACHE) || {};
-      const now = Date.now();
+      const cache   = storage.get(STORAGE_KEYS.EPISODE_RELEASE_CACHE) || {};
+      const now     = Date.now();
       const CACHE_TTL = 12 * 60 * 60 * 1000;
       const toCheck = tvSeries.filter(
         (s) => !cache[s.id] || now - (cache[s.id].checkedAt || 0) > CACHE_TTL,
@@ -176,7 +157,7 @@ export default function App() {
               const data = await tmdbFetch(`/tv/${series.id}`, apiKey);
               if (cancelled) return;
 
-              const prev = cache[series.id] || {};
+              const prev   = cache[series.id] || {};
               const lastEp = data.last_episode_to_air;
               const lastDate = lastEp?.air_date || null;
               const isFirstCheck = !prev.checkedAt;
@@ -205,18 +186,12 @@ export default function App() {
               } else {
                 const prevLastDate = prev.lastEpDate ?? null;
                 const isMigratingOldCache = prev.checkedAt && prevLastDate === null;
-
                 if (!isMigratingOldCache) {
                   const lastParsed = parseLocalDate(lastDate);
                   const prevParsed = parseLocalDate(prevLastDate);
-
                   const isNewEpisode =
-                    lastDate &&
-                    lastDate !== prevLastDate &&
-                    lastParsed &&
-                    lastParsed >= sevenDaysAgo &&
-                    (!prevParsed || lastParsed > prevParsed);
-
+                    lastDate && lastDate !== prevLastDate && lastParsed &&
+                    lastParsed >= sevenDaysAgo && (!prevParsed || lastParsed > prevParsed);
                   if (isNewEpisode) {
                     newEpisodeEntries.push({
                       title: series.title || series.name || data.name || "Unknown series",
@@ -231,9 +206,9 @@ export default function App() {
               cache[series.id] = {
                 lastEpDate: lastDate,
                 nextEpDate: data.next_episode_to_air?.air_date || null,
-                checkedAt: now,
+                checkedAt:  now,
               };
-            } catch {}
+            } catch {} // silent — network errors don't surface
           }),
         );
         if (i + BATCH < toCheck.length && !cancelled) {
@@ -242,7 +217,6 @@ export default function App() {
       }
 
       if (cancelled) return;
-
       storage.set(STORAGE_KEYS.EPISODE_RELEASE_CACHE, cache);
 
       if (newEpisodeEntries.length === 0) {
@@ -257,49 +231,55 @@ export default function App() {
 
       if (window.electron?.showNotification) {
         const names = newEpisodeEntries.map((e) => e.title);
-        const body =
-          names.length === 1
-            ? `${names[0]} has a new episode.`
-            : `${names.slice(0, 3).join(", ")}${
-                names.length > 3 ? ` and ${names.length - 3} more` : ""
-              } have new episodes.`;
-        window.electron.showNotification({
-          title: "New episodes available",
-          body,
-          silent: false,
-        });
+        const body  = names.length === 1
+          ? `${names[0]} has a new episode.`
+          : `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` and ${names.length - 3} more` : ""} have new episodes.`;
+        window.electron.showNotification({ title: "New episodes available", body, silent: false });
       }
     }
 
-    checkNewEpisodes().catch(() => {
-      if (!cancelled) setEpisodeCheckStatus(null);
-    });
-    return () => {
-      cancelled = true;
-      clearTimeout(episodeDismissTimerRef.current);
-    };
-  }, [apiKeyLoaded]);
+    checkNewEpisodes().catch(() => { if (!cancelled) setEpisodeCheckStatus(null); });
+    return () => { cancelled = true; clearTimeout(episodeDismissTimerRef.current); };
+  }, [apiKeyLoaded]); // eslint-disable-line
 
-  // ── Downloads state ──────────────────────────────────────────────────────
-  const [downloads, setDownloads] = useState([]);
-  const [highlightDownload, setHighlightDownload] = useState(null);
-  const [closeConfirm, setCloseConfirm] = useState(null);
+  // ── Downloads state ───────────────────────────────────────────────────────
+  const [downloads,        setDownloads]        = useState([]);
+  const [highlightDownload,setHighlightDownload] = useState(null);
+  const [closeConfirm,     setCloseConfirm]      = useState(null);
 
-  // ── Load API key — always force admin NS key ─────────────────────────────
+  // ── Load API key — always force NS key ───────────────────────────────────
   useEffect(() => {
     let mounted = true;
     secureStorage.get("apikey").then((val) => {
       if (!mounted) return;
       setApiKey(NS_TMDB_KEY);
       setApiKeyLoaded(true);
-      if (val && val !== NS_TMDB_KEY) {
-        secureStorage.set("apikey", "");
-      }
+      if (val && val !== NS_TMDB_KEY) secureStorage.set("apikey", "");
     });
     return () => { mounted = false; };
   }, []);
 
-  // ── Detect platform for Windows titlebar ──────────────────────────────────
+  // ── Register API error handlers — both silent, nothing shown to user ──────
+  useEffect(() => {
+    setApiErrorHandlers(
+      () => {}, // auth error — silent
+      () => {}, // unreachable — silent
+    );
+  }, []);
+
+  // ── Validate API key silently — no UI feedback on failure ─────────────────
+  useEffect(() => {
+    if (!apiKey) return;
+    const controller = new AbortController();
+    fetch(`https://api.themoviedb.org/3/configuration?api_key=${apiKey}`, {
+      signal: controller.signal,
+    })
+      .then(() => {}) // success — silent
+      .catch(() => {}); // failure — silent
+    return () => controller.abort();
+  }, [apiKey]);
+
+  // ── Detect platform ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron?.getPlatform) return;
     let mounted = true;
@@ -313,39 +293,12 @@ export default function App() {
     return () => { mounted = false; };
   }, []);
 
-  // Listen for close confirmation request from main process
+  // ── Close confirmation ────────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
     const handler = window.electron.onConfirmClose((data) => setCloseConfirm(data));
     return () => window.electron.offConfirmClose(handler);
   }, []);
-
-  // ── Register global API error handlers ──────────────────────────────────
-  useEffect(() => {
-    setApiErrorHandlers(
-      () => setApiKeyStatus("invalid_token"),
-      () => setApiKeyStatus("unreachable"),
-    );
-  }, []);
-
-  // ── Validate API key on startup ───────────────────────────────────────────
-  useEffect(() => {
-    if (!apiKey) { setApiKeyStatus("ok"); return; }
-    setApiKeyStatus("checking");
-    const controller = new AbortController();
-    fetch(`https://api.themoviedb.org/3/configuration?api_key=${apiKey}`, {
-      signal: controller.signal,
-    })
-      .then((res) => {
-        if (res.status === 401 || res.status === 403) setApiKeyStatus("invalid_token");
-        else setApiKeyStatus("ok");
-      })
-      .catch((err) => {
-        if (err.name === "AbortError") return;
-        setApiKeyStatus("unreachable");
-      });
-    return () => controller.abort();
-  }, [apiKey]);
 
   // ── Downloads: load + prune on startup ───────────────────────────────────
   useEffect(() => {
@@ -353,7 +306,7 @@ export default function App() {
     let mounted = true;
     window.electron.getDownloads().then(async (list) => {
       if (!mounted || !Array.isArray(list)) return;
-      const pruned = [...list];
+      const pruned   = [...list];
       const toRemove = new Set();
       await Promise.all(
         pruned.map(async (d) => {
@@ -375,7 +328,7 @@ export default function App() {
     return () => { mounted = false; };
   }, []);
 
-  // ── Downloads: live progress events ──────────────────────────────────────
+  // ── Downloads: live progress ──────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
     const handler = window.electron.onDownloadProgress((update) => {
@@ -386,16 +339,13 @@ export default function App() {
       ) {
         window.electron.showNotification({
           title: "Download complete",
-          body: update.name || "Your download has finished.",
+          body:  update.name || "Your download has finished.",
           silent: false,
         });
       }
       setDownloads((prev) => {
         const idx = prev.findIndex((d) => d.id === update.id);
-        if (idx === -1) {
-          if (!update.name) return prev;
-          return [update, ...prev];
-        }
+        if (idx === -1) { if (!update.name) return prev; return [update, ...prev]; }
         const updated = [...prev];
         updated[idx] = { ...updated[idx], ...update };
         return updated;
@@ -428,26 +378,26 @@ export default function App() {
   // ── Trending fetch ────────────────────────────────────────────────────────
   const fetchTrending = useCallback(() => {
     if (!apiKey) return;
-    const cached = storage.get("trendingCache");
+    const cached    = storage.get("trendingCache");
     const CACHE_TTL = 30 * 60 * 1000;
-    if (cached && cached.ts && Date.now() - cached.ts < CACHE_TTL) {
+    if (cached?.ts && Date.now() - cached.ts < CACHE_TTL) {
       setTrending(cached.movies || []);
-      setTrendingTV(cached.tv || []);
+      setTrendingTV(cached.tv   || []);
       return;
     }
     setLoadingHome(true);
     Promise.all([
       tmdbFetch("/trending/movie/week", apiKey),
-      tmdbFetch("/trending/tv/week", apiKey),
+      tmdbFetch("/trending/tv/week",   apiKey),
     ])
       .then(([m, t]) => {
         const movies = m.results || [];
-        const tv = t.results || [];
+        const tv     = t.results || [];
         setTrending(movies);
         setTrendingTV(tv);
         storage.set("trendingCache", { movies, tv, ts: Date.now() });
       })
-      .catch(() => {})
+      .catch(() => {}) // silent
       .finally(() => setLoadingHome(false));
   }, [apiKey]);
 
@@ -468,13 +418,13 @@ export default function App() {
   useEffect(() => {
     const accent = storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red";
     applyAccentColor(accent);
-    const font = storage.get(STORAGE_KEYS.FONT_SIZE) || "normal";
+    const font    = storage.get(STORAGE_KEYS.FONT_SIZE) || "normal";
     const zoomMap = { sm: 0.85, normal: 1, lg: 1.15 };
-    const factor = zoomMap[font] ?? 1;
+    const factor  = zoomMap[font] ?? 1;
     if (window.electron?.setZoomFactor) window.electron.setZoomFactor(factor);
     const compact = !!storage.get(STORAGE_KEYS.COMPACT_MODE);
     document.body.classList.toggle("compact-mode", compact);
-    const noAnim = !!storage.get(STORAGE_KEYS.REDUCE_ANIMATIONS);
+    const noAnim  = !!storage.get(STORAGE_KEYS.REDUCE_ANIMATIONS);
     document.body.classList.toggle("no-anim", noAnim);
   }, []);
 
@@ -517,16 +467,11 @@ export default function App() {
     if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
   }, []);
 
-  // ── Navigate to standalone watch page ────────────────────────────────────
-  // Called from MoviePage/TVPage with: { item, season, episode, episodeName, sourceId }
   const handleWatch = useCallback(
     (watchData) => navigate("watch", watchData),
     [navigate],
   );
 
-  // ── Listen for upgrade events dispatched by PremiumGate components ────────
-  // PremiumGate calls window.dispatchEvent(new CustomEvent("novaspark:upgrade"))
-  // when the user clicks "Upgrade Now". This catches it and opens PricingPage.
   useEffect(() => {
     const handler = () => navigate("pricing");
     window.addEventListener("novaspark:upgrade", handler);
@@ -587,34 +532,34 @@ export default function App() {
 
   const toggleSave = useCallback(
     (item) => {
-      const mt = getMediaType(item);
-      const id = `${mt}_${item.id}`;
+      const mt  = getMediaType(item);
+      const id  = `${mt}_${item.id}`;
       const currentSaved = savedRef.current;
-      const isRemoving = !!currentSaved[id];
-      const next = { ...currentSaved };
+      const isRemoving   = !!currentSaved[id];
+      const next         = { ...currentSaved };
 
       if (isRemoving) {
         delete next[id];
         showToast("Removed from watchlist");
         setSavedOrder((prev) => {
           const currentOrder = prev || Object.keys(currentSaved);
-          const newOrder = currentOrder.filter((k) => k !== id);
+          const newOrder     = currentOrder.filter((k) => k !== id);
           storage.set("savedOrder", newOrder);
           return newOrder;
         });
       } else {
         next[id] = {
-          id: item.id,
-          title: item.title || item.name,
-          poster_path: item.poster_path,
-          media_type: mt,
+          id:           item.id,
+          title:        item.title || item.name,
+          poster_path:  item.poster_path,
+          media_type:   mt,
           vote_average: item.vote_average,
-          year: (item.release_date || item.first_air_date || "").slice(0, 4),
+          year:         (item.release_date || item.first_air_date || "").slice(0, 4),
         };
         showToast("Added to watchlist");
         setSavedOrder((prev) => {
           const currentOrder = prev || Object.keys(currentSaved);
-          const newOrder = [...currentOrder, id];
+          const newOrder     = [...currentOrder, id];
           storage.set("savedOrder", newOrder);
           return newOrder;
         });
@@ -634,11 +579,11 @@ export default function App() {
     const historyEnabled = storage.get(STORAGE_KEYS.HISTORY_ENABLED);
     if (historyEnabled === 0 || historyEnabled === false) return;
     const entry = {
-      id: item.id,
-      title: item.title || item.name,
+      id:          item.id,
+      title:       item.title || item.name,
       poster_path: item.poster_path,
-      media_type: getMediaType(item),
-      watchedAt: Date.now(),
+      media_type:  getMediaType(item),
+      watchedAt:   Date.now(),
       season:      item.season  != null ? Number(item.season)  : null,
       episode:     item.episode != null ? Number(item.episode) : null,
       episodeName: item.episodeName || null,
@@ -651,7 +596,7 @@ export default function App() {
       storage.set("history", next);
       return next;
     });
-  }, []); // no deps needed
+  }, []); // eslint-disable-line
 
   const saveProgress = useCallback((key, pct) => {
     setProgress((prev) => {
@@ -660,7 +605,7 @@ export default function App() {
       storage.set("progress", next);
       return next;
     });
-  }, []); // no deps needed
+  }, []);
 
   const markWatched = useCallback((key) => {
     setWatched((prev) => {
@@ -688,10 +633,9 @@ export default function App() {
         })
         .map((h) => ({
           ...h,
-          _pk:
-            h.media_type === "movie"
-              ? `movie_${h.id}`
-              : `tv_${h.id}_s${h.season}e${h.episode}`,
+          _pk: h.media_type === "movie"
+            ? `movie_${h.id}`
+            : `tv_${h.id}_s${h.season}e${h.episode}`,
         })),
     [history],
   );
@@ -734,7 +678,6 @@ export default function App() {
 
   const hasCustomTitlebar = platform === "win32" || platform === "linux";
 
-  // ── Shared props passed to both MoviePage and TVPage ─────────────────────
   const sharedPageProps = {
     apiKey,
     onHistory:         addHistory,
@@ -748,7 +691,6 @@ export default function App() {
     downloads,
     onGoToDownloads:   handleGoToDownloads,
     onWatch:           handleWatch,
-    // ── ADDED: premium state available to all pages ──────────────────────
     isPremium,
   };
 
@@ -767,26 +709,12 @@ export default function App() {
           canGoBack={navStack.length > 0}
           onBack={navigateBack}
           onShowShortcuts={() => setShowShortcuts(true)}
-          // ── ADDED: premium props ─────────────────────────────────────
           isPremium={isPremium}
           onUpgrade={() => navigate("pricing")}
         />
 
         <div className="main">
-          {apiKeyStatus === "invalid_token" && (
-            <div className="api-status-banner api-status-error">
-              <span>⚠ Your TMDB token is invalid or has been revoked. Movies and shows won't load.</span>
-              <button className="api-status-btn" onClick={changeApiKey}>Update Token</button>
-            </div>
-          )}
-          {apiKeyStatus === "unreachable" && (
-            <div className="api-status-banner api-status-warn">
-              <span>⚠ Cannot reach TMDB, check your internet connection. Content may not load.</span>
-              <button className="api-status-btn" onClick={() => setApiKeyStatus("checking") || window.location.reload()}>
-                Retry
-              </button>
-            </div>
-          )}
+          {/* ── All TMDB/network error banners removed — users never see them ── */}
 
           <Suspense
             fallback={
@@ -835,7 +763,6 @@ export default function App() {
               />
             )}
 
-            {/* ── Standalone watch page ─────────────────────────────────── */}
             {page === "watch" && selected && (
               <WatchPage
                 item={selected.item}
@@ -861,7 +788,6 @@ export default function App() {
               />
             )}
 
-            {/* ── ADDED: Pricing / subscription page ───────────────────── */}
             {page === "pricing" && (
               <PricingPage
                 isPremium={isPremium}
@@ -927,33 +853,34 @@ export default function App() {
         )}
 
         {updateBanner && (
-          <div
-            style={{
-              position: "fixed",
-              top: hasCustomTitlebar ? 32 : 0,
-              left: 0, right: 0,
-              zIndex: 9999,
-              background: "rgba(0,168,225,0.92)",
-              backdropFilter: "blur(8px)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 16,
-              padding: "10px 24px",
-              boxShadow: "0 2px 16px rgba(0,0,0,0.4)",
-              fontSize: 14, fontWeight: 500, color: "#fff",
-            }}
-          >
+          <div style={{
+            position: "fixed",
+            top: hasCustomTitlebar ? 32 : 0,
+            left: 0, right: 0, zIndex: 9999,
+            background: "rgba(0,168,225,0.92)",
+            backdropFilter: "blur(8px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: 16, padding: "10px 24px",
+            boxShadow: "0 2px 16px rgba(0,0,0,0.4)",
+            fontSize: 14, fontWeight: 500, color: "#fff",
+          }}>
             <span>🎉 NovaSpark v{updateBanner.latest} is available!</span>
             <button
               onClick={() => setShowUpdateModal(true)}
-              style={{ color: "#fff", fontWeight: 700, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 6, padding: "4px 12px", fontSize: 13, cursor: "pointer" }}
-            >
-              Install Update
-            </button>
+              style={{
+                color: "#fff", fontWeight: 700,
+                background: "rgba(255,255,255,0.18)",
+                border: "1px solid rgba(255,255,255,0.4)",
+                borderRadius: 6, padding: "4px 12px", fontSize: 13, cursor: "pointer",
+              }}
+            >Install Update</button>
             <button
               onClick={() => setUpdateBanner(null)}
-              style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}
+              style={{
+                background: "transparent", border: "none",
+                color: "rgba(255,255,255,0.7)", cursor: "pointer",
+                fontSize: 18, lineHeight: 1, padding: "0 4px",
+              }}
               aria-label="Dismiss"
             >×</button>
           </div>
@@ -970,14 +897,12 @@ export default function App() {
         {toast && <div className="toast">{toast}</div>}
 
         {episodeCheckStatus && (
-          <div
-            style={{
-              position: "fixed", bottom: 24, left: "calc(var(--sidebar) + 24px)",
-              zIndex: 500, background: "var(--surface2)", border: "1px solid var(--border)",
-              borderRadius: "var(--radius)", boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-              animation: "slideUp 0.3s ease", minWidth: 260, maxWidth: 400,
-            }}
-          >
+          <div style={{
+            position: "fixed", bottom: 24, left: "calc(var(--sidebar) + 24px)",
+            zIndex: 500, background: "var(--surface2)", border: "1px solid var(--border)",
+            borderRadius: "var(--radius)", boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            animation: "slideUp 0.3s ease", minWidth: 260, maxWidth: 400,
+          }}>
             {episodeCheckStatus === "checking" && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", fontSize: 14, color: "var(--text2)" }}>
                 <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid var(--text3)", borderTopColor: "var(--red)", borderRadius: "50%", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
@@ -996,24 +921,43 @@ export default function App() {
                     <span style={{ color: "var(--red)", fontSize: 15 }}>🎬</span>
                     New episode{episodeCheckStatus.entries.length > 1 ? "s" : ""} available
                   </div>
-                  <button onClick={() => { clearTimeout(episodeDismissTimerRef.current); setEpisodeCheckStatus(null); }} style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px" }} aria-label="Dismiss">×</button>
+                  <button
+                    onClick={() => { clearTimeout(episodeDismissTimerRef.current); setEpisodeCheckStatus(null); }}
+                    style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px" }}
+                    aria-label="Dismiss"
+                  >×</button>
                 </div>
                 <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
                   {episodeCheckStatus.entries.slice(0, 5).map((entry) => (
                     <li
                       key={entry.id}
                       className="episode-check-item"
-                      onClick={() => { clearTimeout(episodeDismissTimerRef.current); navigate("tv", { ...entry.seriesItem, season: entry.season ?? 1 }); setEpisodeCheckStatus(null); }}
-                      style={{ fontSize: 13, color: "var(--text2)", padding: "5px 0", paddingBottom: 7, borderBottom: "1px solid var(--border)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderRadius: 4, transition: "color 0.15s" }}
+                      onClick={() => {
+                        clearTimeout(episodeDismissTimerRef.current);
+                        navigate("tv", { ...entry.seriesItem, season: entry.season ?? 1 });
+                        setEpisodeCheckStatus(null);
+                      }}
+                      style={{
+                        fontSize: 13, color: "var(--text2)", padding: "5px 0", paddingBottom: 7,
+                        borderBottom: "1px solid var(--border)", cursor: "pointer",
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        gap: 8, borderRadius: 4, transition: "color 0.15s",
+                      }}
                     >
-                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.title}</span>
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {entry.title}
+                      </span>
                       {entry.season != null && (
-                        <span style={{ fontSize: 11, color: "var(--text3)", background: "var(--surface3)", borderRadius: 4, padding: "1px 6px", flexShrink: 0 }}>Season {entry.season}</span>
+                        <span style={{ fontSize: 11, color: "var(--text3)", background: "var(--surface3)", borderRadius: 4, padding: "1px 6px", flexShrink: 0 }}>
+                          Season {entry.season}
+                        </span>
                       )}
                     </li>
                   ))}
                   {episodeCheckStatus.entries.length > 5 && (
-                    <li style={{ fontSize: 12, color: "var(--text3)", paddingTop: 2 }}>+{episodeCheckStatus.entries.length - 5} more</li>
+                    <li style={{ fontSize: 12, color: "var(--text3)", paddingTop: 2 }}>
+                      +{episodeCheckStatus.entries.length - 5} more
+                    </li>
                   )}
                 </ul>
               </div>

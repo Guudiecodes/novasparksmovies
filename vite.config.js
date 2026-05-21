@@ -3,10 +3,15 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
   const isDist = process.env.ELECTRON_DIST === "1";
+
   return {
     plugins: [react()],
-    base: "./",
+
+    // Works for both Electron (file://) and Vercel (absolute paths)
+    base: isDist ? "./" : "/",
+
     build: {
+      outDir: "dist",
       minify: "terser",
       terserOptions: {
         compress: {
@@ -17,10 +22,10 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks: {
-            react: ["react", "react-dom"],
-            settings: ["./src/pages/SettingsPage"],
-            movie: ["./src/pages/MoviePage"],
-            tv: ["./src/pages/TVPage"],
+            react:     ["react", "react-dom"],
+            settings:  ["./src/pages/SettingsPage"],
+            movie:     ["./src/pages/MoviePage"],
+            tv:        ["./src/pages/TVPage"],
             downloads: ["./src/pages/DownloadsPage"],
           },
         },
