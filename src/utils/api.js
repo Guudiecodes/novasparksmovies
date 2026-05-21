@@ -4,19 +4,20 @@ const IMG_BASE  = "https://image.tmdb.org/t/p";
 export const imgUrl = (path, size = "w500") =>
   path ? `${IMG_BASE}/${size}${path}` : null;
 
-let _onAuthError   = null;
-let _onUnreachable = null;
+// ── Silent error handlers — never expose internal errors to users ──────────
+let _onAuthError   = () => {};
+let _onUnreachable = () => {};
 export const setApiErrorHandlers = (onAuth, onUnreachable) => {
-  _onAuthError   = onAuth;
-  _onUnreachable = onUnreachable;
+  _onAuthError   = onAuth   || (() => {});
+  _onUnreachable = onUnreachable || (() => {});
 };
 
-const _tmdbCache   = new Map();
+const _tmdbCache     = new Map();
 const TMDB_CACHE_TTL = 5 * 60 * 1000;
 
-let _inflight = 0;
+let _inflight    = 0;
 const MAX_INFLIGHT = 4;
-const _waiters    = [];
+const _waiters   = [];
 
 function _acquireSlot() {
   if (_inflight < MAX_INFLIGHT) { _inflight++; return Promise.resolve(); }
@@ -38,22 +39,27 @@ export const tmdbFetch = async (path, apiKey) => {
     res = await fetch(`${TMDB_BASE}${path}${sep}api_key=${apiKey}`);
   } catch {
     _releaseSlot();
-    _onUnreachable?.();
+    // Silent — no user-facing alert
     throw new Error("TMDB unreachable");
   }
   _releaseSlot();
-  if (res.status === 401 || res.status === 403) { _onAuthError?.(); throw new Error(`TMDB ${res.status}`); }
+  if (res.status === 401 || res.status === 403) {
+    // Silent — no user-facing alert
+    throw new Error(`TMDB ${res.status}`);
+  }
   if (!res.ok) throw new Error(`TMDB ${res.status}`);
   const data = await res.json();
   _tmdbCache.set(cacheKey, { data, expiresAt: Date.now() + TMDB_CACHE_TTL });
   if (_tmdbCache.size > 80) {
     const now = Date.now();
-    for (const [k, v] of _tmdbCache) { if (now >= v.expiresAt) _tmdbCache.delete(k); }
+    for (const [k, v] of _tmdbCache) {
+      if (now >= v.expiresAt) _tmdbCache.delete(k);
+    }
   }
   return data;
 };
 
-// ── PLAYER SOURCES ────────────────────────────────────────────────────────
+// ── PLAYER SOURCES ────────────────────────────────────────────────────────────
 export const PLAYER_SOURCES = [
   {
     id: "vidlink",
@@ -161,11 +167,11 @@ export const sourceIsAsync           = (sourceId) => PLAYER_SOURCES.find((s) => 
 
 export const NEEDS_INTERCEPT = ["vidsrc_cc", "autoembed", "vidlink"];
 
-// ── Source test with short timeout ────────────────────────────────────────
+// ── Source test with short timeout ────────────────────────────────────────────
 async function testUrl(url) {
   try {
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 2200); // was 6000 — 3× faster
+    const tid = setTimeout(() => controller.abort(), 2200);
     await fetch(url, { method: "HEAD", mode: "no-cors", signal: controller.signal });
     clearTimeout(tid);
     return true;
@@ -174,37 +180,20 @@ async function testUrl(url) {
   }
 }
 
-// ── Per-content source cache ──────────────────────────────────────────────
-// Survives re-renders; cleared when app restarts (intentional — sources can go down)
-const _sourceCache   = new Map();
-const SOURCE_CACHE_TTL = 15 * 60 * 1000; // 15 min per title
+// ── Per-content source cache ──────────────────────────────────────────────────
+const _sourceCache     = new Map();
+const SOURCE_CACHE_TTL = 15 * 60 * 1000;
 
-/**
- * findWorkingSource
- *
- * Races ALL non-async sources simultaneously with Promise.any.
- * First source to respond wins — resolves in <2.5 s no matter what.
- * Preferred source gets a 0 ms head-start; others wait 250 ms,
- * so existing user preference is respected without blocking the race.
- *
- * Results are cached per (type, id, season, episode) for 15 minutes
- * so repeat visits / episode changes are instant.
- */
 export async function findWorkingSource(
   type, id, season = null, episode = null, preferredId = null
 ) {
-  // 1. Return cached winner instantly
   const cacheKey = `${type}|${id}|${season ?? ""}|${episode ?? ""}`;
   const cached   = _sourceCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) {
-    return cached.sourceId;
-  }
+  if (cached && Date.now() < cached.expiresAt) return cached.sourceId;
 
-  // 2. Race all non-async sources simultaneously
   const sources = PLAYER_SOURCES.filter((s) => !s.async);
 
   const racePromises = sources.map((src) => {
-    // Give preferred source a head-start so it wins ties
     const delay = src.id === preferredId ? 0 : (preferredId ? 250 : 0);
     return new Promise((resolve, reject) => {
       setTimeout(async () => {
@@ -219,26 +208,23 @@ export async function findWorkingSource(
   });
 
   try {
-    // Resolves the instant ANY source responds — no waiting for others
     const winner = await Promise.any(racePromises);
     _sourceCache.set(cacheKey, {
-      sourceId: winner,
+      sourceId:  winner,
       expiresAt: Date.now() + SOURCE_CACHE_TTL,
     });
     return winner;
   } catch {
-    // All sources failed network test — still serve content; never show blank
-    // Fall back to preferred or Server 1. User can switch manually if needed.
     const fallback = preferredId ?? NON_ANIME_DEFAULT_SOURCE;
     _sourceCache.set(cacheKey, {
       sourceId:  fallback,
-      expiresAt: Date.now() + 2 * 60 * 1000, // shorter TTL for failed entries
+      expiresAt: Date.now() + 2 * 60 * 1000,
     });
     return fallback;
   }
 }
 
-// ── Anilist ───────────────────────────────────────────────────────────────
+// ── Anilist ───────────────────────────────────────────────────────────────────
 const ANILIST_API = "https://graphql.anilist.co";
 
 export const cleanAnilistDescription = (desc) => {
@@ -295,7 +281,7 @@ let _anilistCache = null;
 function getAnilistCache() {
   if (_anilistCache) return _anilistCache;
   try {
-    const raw   = localStorage.getItem(ANILIST_CACHE_KEY);
+    const raw     = localStorage.getItem(ANILIST_CACHE_KEY);
     _anilistCache = raw ? JSON.parse(raw) : {};
   } catch { _anilistCache = {}; }
   const now = Date.now();
@@ -355,7 +341,11 @@ export const buildAnilistSeasons = (anilistData) => {
     month:    anilistData.startDate?.month || 0,
   };
   const sequels = (anilistData.relations?.edges || [])
-    .filter((e) => e.relationType === "SEQUEL" && e.node.type === "ANIME" && (e.node.format === "TV" || e.node.format === "TV_SHORT"))
+    .filter((e) =>
+      e.relationType === "SEQUEL" &&
+      e.node.type === "ANIME" &&
+      (e.node.format === "TV" || e.node.format === "TV_SHORT")
+    )
     .map((e) => ({
       id:       e.node.id,
       title:    e.node.title?.english || e.node.title?.romaji,
@@ -363,13 +353,15 @@ export const buildAnilistSeasons = (anilistData) => {
       year:     e.node.startDate?.year  || e.node.seasonYear || 9999,
       month:    e.node.startDate?.month || 0,
     }));
-  const all = [main, ...sequels].sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month);
+  const all = [main, ...sequels].sort((a, b) =>
+    a.year !== b.year ? a.year - b.year : a.month - b.month
+  );
   return all.map((s, i) => ({ seasonNum: i + 1, ...s }));
 };
 
 export const isAnimeContent = (item, details) => {
-  const d        = details || item;
-  const lang     = d.original_language;
+  const d          = details || item;
+  const lang       = d.original_language;
   const countries  = d.origin_country || [];
   const genreIds   = d.genre_ids || (d.genres || []).map((g) => g.id);
   const hasAnimation = genreIds.includes(16);
@@ -379,7 +371,7 @@ export const isAnimeContent = (item, details) => {
 export const ANIME_DEFAULT_SOURCE     = "allmanga";
 export const NON_ANIME_DEFAULT_SOURCE = "vidlink";
 
-// ── Episode group cache ───────────────────────────────────────────────────
+// ── Episode group cache ───────────────────────────────────────────────────────
 const EG_CACHE_KEY = "novaspark_episodeGroupCache";
 const EG_CACHE_TTL = 1000 * 60 * 60 * 24 * 7;
 

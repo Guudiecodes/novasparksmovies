@@ -12,49 +12,42 @@ import {
   DownloadIcon, WatchedIcon, TrailerIcon, RatingShieldIcon, RatingLockIcon,
   SourceIcon, ShieldBlockIcon, PopOutIcon,
 } from "../components/Icons";
-import DownloadModal from "../components/DownloadModal";
-import TrailerModal from "../components/TrailerModal";
+import DownloadModal     from "../components/DownloadModal";
+import TrailerModal      from "../components/TrailerModal";
 import BlockedStatsModal from "../components/BlockedStatsModal";
+import DataMeterWidget   from "../components/DataMeterWidget";
 import { useBlockedStats } from "../utils/useBlockedStats";
-import MediaCard from "../components/MediaCard";
-import { storage } from "../utils/storage";
+import MediaCard         from "../components/MediaCard";
+import { storage }       from "../utils/storage";
 import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } from "../utils/ageRating";
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
-import PremiumGate from "../components/PremiumGate";
+import PremiumGate       from "../components/PremiumGate";
 
-// ─── Embed injection ──────────────────────────────────────────────────────────
+// ── Embed injection ───────────────────────────────────────────────────────
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],
 .spinner,.preloader,.lds-ring,.lds-spinner,.vjs-loading-spinner,
-.jw-icon-loading,.plyr__loading {
-  display:none!important;opacity:0!important;visibility:hidden!important;
-}
+.jw-icon-loading,.plyr__loading{display:none!important;opacity:0!important;visibility:hidden!important;}
 video{opacity:1!important;visibility:visible!important;display:block!important;}
 `;
 const _EMBED_JS = `(function(){
   if(window.__ns)return;window.__ns=true;
   var BAD=['FETCHING, ONE MOMENT...','FETCHING','ONE MOMENT...','PLEASE WAIT','LOADING...','LOADING'];
   function run(){try{document.querySelectorAll('body *').forEach(function(el){
-    if(!el.childElementCount){
-      var t=(el.textContent||'').trim().toUpperCase();
-      if(BAD.some(function(k){return t===k||t.startsWith(k);})){
-        var p=el;for(var i=0;i<4;i++){var par=p.parentElement;if(par&&par!==document.body)p=par;else break;}
-        p.style.cssText='display:none!important;opacity:0!important;pointer-events:none!important;';
-      }
-    }
-  });}catch(e){}}
-  run();
-  var obs=new MutationObserver(run);
-  obs.observe(document.body,{childList:true,subtree:true});
+    if(!el.childElementCount){var t=(el.textContent||'').trim().toUpperCase();
+    if(BAD.some(function(k){return t===k||t.startsWith(k);})){
+      var p=el;for(var i=0;i<4;i++){var par=p.parentElement;if(par&&par!==document.body)p=par;else break;}
+      p.style.cssText='display:none!important;opacity:0!important;pointer-events:none!important;';}}});}catch(e){}}
+  run();var obs=new MutationObserver(run);obs.observe(document.body,{childList:true,subtree:true});
   setTimeout(function(){obs.disconnect();},12000);
 })()`;
 
-// ─── Server toast ─────────────────────────────────────────────────────────────
+// ── Server toast ──────────────────────────────────────────────────────────
 function ServerToast({ status, sourceLabel }) {
   const [show, setShow] = useState(false);
   const [fade, setFade] = useState(false);
-  const timerRef        = useRef(null);
+  const timerRef = useRef(null);
   useEffect(() => {
     clearTimeout(timerRef.current);
     if (status === "testing" || status === "retrying") { setShow(true); setFade(false); }
@@ -74,14 +67,13 @@ function ServerToast({ status, sourceLabel }) {
       background:"rgba(8,8,8,0.97)",border:"1px solid rgba(255,255,255,0.08)",
       borderRadius:12,padding:"11px 22px",display:"flex",alignItems:"center",gap:10,
       color:"#fff",fontSize:13,fontWeight:500,backdropFilter:"blur(12px)",
-      WebkitBackdropFilter:"blur(12px)",boxShadow:"0 6px 32px rgba(0,0,0,0.7)",
-      opacity:fade?0:1,transition:"opacity 0.45s ease",pointerEvents:"none",
+      boxShadow:"0 6px 32px rgba(0,0,0,0.7)",opacity:fade?0:1,
+      transition:"opacity 0.45s ease",pointerEvents:"none",
     }}>
-      {(status==="testing"||status==="retrying") ? (<>
-        <div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.15)",
-          borderTopColor:"#fff",animation:"spin 0.7s linear infinite",flexShrink:0}}/>
-        <span>{status==="retrying"?"Trying another server…":"Please wait, finding best server…"}</span>
-      </>) : status==="found" ? (<>
+      {(status === "testing" || status === "retrying") ? (<>
+        <div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.15)",borderTopColor:"#fff",animation:"spin 0.7s linear infinite",flexShrink:0}}/>
+        <span>{status === "retrying" ? "Trying another server…" : "Please wait, finding best server…"}</span>
+      </>) : status === "found" ? (<>
         <span style={{color:"#4caf50",fontSize:17,lineHeight:1}}>✓</span>
         <span>Playing on <strong>{sourceLabel}</strong></span>
       </>) : (<>
@@ -97,53 +89,59 @@ export default function MoviePage({
   onBack, onSettings, onDownloadStarted, watched, onMarkWatched, onMarkUnwatched,
   downloads, onGoToDownloads, onSelect, onWatch, isPremium, onUpgrade,
 }) {
-  const [details,          setDetails]          = useState(null);
-  const [playing,          setPlaying]          = useState(false);
-  const [showDownload,     setShowDownload]     = useState(false);
-  const [trailerKey,       setTrailerKey]       = useState(null);
-  const [showTrailer,      setShowTrailer]      = useState(false);
-  const [m3u8Url,          setM3u8Url]          = useState(null);
-  const [interceptedSubs,  setInterceptedSubs]  = useState([]);
-  const [playerSource,     setPlayerSource]     = useState(() => storage.get("playerSource") || NON_ANIME_DEFAULT_SOURCE);
-  const [autoSourceStatus, setAutoSourceStatus] = useState("testing");
-  const [foundSource,      setFoundSource]      = useState(null);
-  const progressViaFrames = useMemo(() => sourceProgressViaFrames(playerSource), [playerSource]);
-  const [showSourceMenu,   setShowSourceMenu]   = useState(false);
-  const [dubMode,          setDubMode]          = useState(() => storage.get("allmangaDubMode") || "sub");
-  const [anilistData,      setAnilistData]      = useState(null);
-  const [menuPos,          setMenuPos]          = useState(null);
-  const [gateModal,        setGateModal]        = useState(null);
-  const [resolvedPlayerUrl,setResolvedPlayerUrl]= useState(null);
-  const [resolvingUrl,     setResolvingUrl]     = useState(false);
-  const [resolveError,     setResolveError]     = useState(null);
-  const [collection,       setCollection]       = useState(null);
-  const [webviewLoading,   setWebviewLoading]   = useState(false);
-  const [playerFullscreen, setPlayerFullscreen] = useState(false);
-  const [pipOpen,          setPipOpen]          = useState(false);
-  const [downloaderFolder, setDownloaderFolder] = useState(() => storage.get("downloaderFolder") || "");
+  const [details,           setDetails]           = useState(null);
+  const [playing,           setPlaying]           = useState(false);
+  const [showDownload,      setShowDownload]      = useState(false);
+  const [trailerKey,        setTrailerKey]        = useState(null);
+  const [showTrailer,       setShowTrailer]       = useState(false);
+  const [m3u8Url,           setM3u8Url]           = useState(null);
+  const [interceptedSubs,   setInterceptedSubs]   = useState([]);
+  const [playerSource,      setPlayerSource]      = useState(() => storage.get("playerSource") || NON_ANIME_DEFAULT_SOURCE);
+  const [autoSourceStatus,  setAutoSourceStatus]  = useState("testing");
+  const [foundSource,       setFoundSource]       = useState(null);
+  const progressViaFrames   = useMemo(() => sourceProgressViaFrames(playerSource), [playerSource]);
+  const [showSourceMenu,    setShowSourceMenu]    = useState(false);
+  const [dubMode,           setDubMode]           = useState(() => storage.get("allmangaDubMode") || "sub");
+  const [anilistData,       setAnilistData]       = useState(null);
+  const [menuPos,           setMenuPos]           = useState(null);
+  const [gateModal,         setGateModal]         = useState(null);
+  const [resolvedPlayerUrl, setResolvedPlayerUrl] = useState(null);
+  const [resolvingUrl,      setResolvingUrl]      = useState(false);
+  const [resolveError,      setResolveError]      = useState(null);
+  const [collection,        setCollection]        = useState(null);
+  const [webviewLoading,    setWebviewLoading]    = useState(false);
+  const [playerFullscreen,  setPlayerFullscreen]  = useState(false);
+  const [pipOpen,           setPipOpen]           = useState(false);
+  const [downloaderFolder,  setDownloaderFolder]  = useState(() => storage.get("downloaderFolder") || "");
 
-  // Beast engine refs
-  const sourceRef          = useRef(null);
-  const playerWrapRef      = useRef(null);
-  const webviewRef         = useRef(null);
-  const preWarmRef         = useRef(null);   // hidden pre-warm webview
-  const pollRef            = useRef(null);
-  const retryQueueRef      = useRef([]);
-  const retryIdxRef        = useRef(0);
-  const saveProgressRef    = useRef(saveProgress);
-  saveProgressRef.current  = saveProgress;
-  const onMarkWatchedRef   = useRef(onMarkWatched);
-  onMarkWatchedRef.current = onMarkWatched;
-  const pipUrlRef          = useRef(null);
-  const pipWebContentsIdRef= useRef(null);
+  // ── Netflix-style preview state ───────────────────────────────────────
+  const [previewActive,  setPreviewActive]  = useState(false); // trailer playing in hero
+  const [previewMuted,   setPreviewMuted]   = useState(true);  // start muted
+  const [previewReady,   setPreviewReady]   = useState(false); // fade in once iframe ready
+  const previewTimerRef  = useRef(null);
 
-  const isAnime = useMemo(() => isAnimeContent(item, details), [item.id, details]);
+  // refs
+  const sourceRef           = useRef(null);
+  const playerWrapRef       = useRef(null);
+  const webviewRef          = useRef(null);
+  const preWarmRef          = useRef(null);
+  const pollRef             = useRef(null);
+  const retryQueueRef       = useRef([]);
+  const retryIdxRef         = useRef(0);
+  const saveProgressRef     = useRef(saveProgress);
+  saveProgressRef.current   = saveProgress;
+  const onMarkWatchedRef    = useRef(onMarkWatched);
+  onMarkWatchedRef.current  = onMarkWatched;
+  const pipUrlRef           = useRef(null);
+  const pipWebContentsIdRef = useRef(null);
+
+  const isAnime = useMemo(() => isAnimeContent(item, details), [item.id, details]); // eslint-disable-line
 
   const { sessionTotal: blockedSession, alltimeTotal: blockedAlltime,
     showModal: showBlockedModal, setShowModal: setShowBlockedModal,
     getSessionDomains: getBlockedDomains } = useBlockedStats(item.id);
 
-  const [rating, setRating] = useState({ cert: null, minAge: null });
+  const [rating,        setRating]        = useState({ cert: null, minAge: null });
   const ageLimitSetting = useMemo(() => getAgeLimitSetting(storage), []);
   const ratingCountry   = useMemo(() => getRatingCountry(storage), []);
   const restricted      = isRestricted(rating.minAge, ageLimitSetting);
@@ -153,36 +151,31 @@ export default function MoviePage({
   const isWatched   = !!watched?.[progressKey];
   const hasProgress = pct > 0;
 
-  const d        = details || item;
-  const title    = d.title || d.name;
-  const year     = (d.release_date || "").slice(0, 4);
+  const d         = details || item;
+  const title     = d.title || d.name;
+  const year      = (d.release_date || "").slice(0, 4);
   const mediaName = `${title}${year ? " (" + year + ")" : ""}`;
   const planId    = isPremium?.planId || (isPremium ? "premium" : "free");
 
   const { watchedSecs, totalSecs, displayPct, progressLabel } = useMemo(() => {
-    const watchedSecs = storage.get("dlTime_" + progressKey) || 0;
-    const totalSecs   = d?.runtime ? d.runtime * 60 : 0;
-    const derivedPct  = watchedSecs > 0 && totalSecs > 0 ? Math.floor((watchedSecs / totalSecs) * 100) : 0;
-    const displayPct  = pct > 0 ? pct : derivedPct;
+    const ws = storage.get("dlTime_" + progressKey) || 0;
+    const ts = d?.runtime ? d.runtime * 60 : 0;
+    const dp = ws > 0 && ts > 0 ? Math.floor((ws / ts) * 100) : 0;
+    const display = pct > 0 ? pct : dp;
     const fmt = (s) => {
       const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
-      return h > 0
-        ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`
-        : `${m}:${String(sec).padStart(2,"0")}`;
+      return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}` : `${m}:${String(sec).padStart(2,"0")}`;
     };
-    const progressLabel = watchedSecs > 0 && totalSecs > 0
-      ? `${fmt(watchedSecs)} / ${fmt(totalSecs)}`
-      : watchedSecs > 0 ? fmt(watchedSecs)
-      : displayPct > 0  ? `${displayPct}%` : null;
-    return { watchedSecs, totalSecs, displayPct, progressLabel };
+    const label = ws > 0 && ts > 0 ? `${fmt(ws)} / ${fmt(ts)}` : ws > 0 ? fmt(ws) : display > 0 ? `${display}%` : null;
+    return { watchedSecs: ws, totalSecs: ts, displayPct: display, progressLabel: label };
   }, [progressKey, pct, d?.runtime]);
 
-  const [watchedThreshold] = useState(() => storage.get("watchedThreshold") ?? 20);
-  const autoMarkedRef      = useRef(false);
-  const lastKnownTimeRef   = useRef(0);
-  const seekBackCooldownRef= useRef(0);
+  const [watchedThreshold]  = useState(() => storage.get("watchedThreshold") ?? 20);
+  const autoMarkedRef        = useRef(false);
+  const lastKnownTimeRef     = useRef(0);
+  const seekBackCooldownRef  = useRef(0);
 
-  // ── Build retry queue on item change ────────────────────────────────────
+  // ── Build retry queue ─────────────────────────────────────────────────
   useEffect(() => {
     const all   = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
     const start = all.indexOf(playerSource);
@@ -190,30 +183,41 @@ export default function MoviePage({
       ? [...all.slice(start), ...all.slice(0, start)]
       : [playerSource, ...all.filter((id) => id !== playerSource)];
     retryIdxRef.current = 1;
-  }, [item.id]);
+  }, [item.id]); // eslint-disable-line
 
-  // ── Silent auto-retry ───────────────────────────────────────────────────
   const tryNextSource = useCallback(() => {
     const idx = retryIdxRef.current;
-    if (idx >= retryQueueRef.current.length) {
-      setAutoSourceStatus("failed"); setWebviewLoading(false); return;
-    }
+    if (idx >= retryQueueRef.current.length) { setAutoSourceStatus("failed"); setWebviewLoading(false); return; }
     const nextId = retryQueueRef.current[idx];
     retryIdxRef.current += 1;
     setAutoSourceStatus("retrying");
     setPlayerSource(nextId); storage.set("playerSource", nextId);
   }, []);
 
-  // ── Movie details ────────────────────────────────────────────────────────
+  // ── Movie details ─────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
+    setPreviewActive(false); setPreviewReady(false); clearTimeout(previewTimerRef.current);
     tmdbFetch(`/movie/${item.id}`, apiKey)
       .then((d) => { if (mounted) setDetails(d); })
       .catch(() => { if (mounted) setDetails(item); });
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Initial source check (respects stored pref, only switches if dead) ──
+  // ── Auto-start preview after details + trailerKey load ────────────────
+  useEffect(() => {
+    clearTimeout(previewTimerRef.current);
+    if (trailerKey && !playing && !restricted) {
+      previewTimerRef.current = setTimeout(() => {
+        setPreviewActive(true);
+        // Fade in after 800ms (iframe needs time to start)
+        setTimeout(() => setPreviewReady(true), 800);
+      }, 1800); // 1.8s delay so page settles first
+    }
+    return () => clearTimeout(previewTimerRef.current);
+  }, [trailerKey, item.id, playing, restricted]);
+
+  // ── Initial source check ──────────────────────────────────────────────
   useEffect(() => {
     if (!item?.id) return;
     let cancelled = false;
@@ -226,52 +230,49 @@ export default function MoviePage({
     return () => { cancelled = true; };
   }, [item.id, playerSource]);
 
-  // ── Age rating ───────────────────────────────────────────────────────────
+  // ── Age rating ────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     fetchMovieRating(item.id, apiKey, ratingCountry).then((r) => { if (mounted) setRating(r); });
     return () => { mounted = false; };
   }, [item.id, apiKey, ratingCountry]);
 
-  // ── Trailer ──────────────────────────────────────────────────────────────
+  // ── Trailer ───────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
-    tmdbFetch(`/movie/${item.id}/videos`, apiKey)
-      .then((data) => {
-        if (!mounted) return;
-        const videos  = data.results || [];
-        const trailer = videos.find((v) => v.type === "Trailer" && v.site === "YouTube") || videos.find((v) => v.site === "YouTube");
-        if (trailer) setTrailerKey(trailer.key);
-      })
-      .catch(() => {});
+    tmdbFetch(`/movie/${item.id}/videos`, apiKey).then((data) => {
+      if (!mounted) return;
+      const vids    = data.results || [];
+      const trailer = vids.find((v) => v.type === "Trailer" && v.site === "YouTube") || vids.find((v) => v.site === "YouTube");
+      if (trailer) setTrailerKey(trailer.key);
+      else setTrailerKey(null);
+    }).catch(() => {});
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Collection ───────────────────────────────────────────────────────────
+  // ── Collection ────────────────────────────────────────────────────────
   useEffect(() => {
     setCollection(null);
     if (!details?.belongs_to_collection?.id) return;
     let mounted = true;
-    tmdbFetch(`/collection/${details.belongs_to_collection.id}`, apiKey)
-      .then((data) => {
-        if (!mounted) return;
-        const parts = (data.parts || [])
-          .map((p) => ({ ...p, media_type: "movie" }))
-          .sort((a, b) => (a.release_date || "").localeCompare(b.release_date || ""));
-        if (parts.length > 1) setCollection({ name: data.name, parts });
-      })
-      .catch(() => {});
+    tmdbFetch(`/collection/${details.belongs_to_collection.id}`, apiKey).then((data) => {
+      if (!mounted) return;
+      const parts = (data.parts || [])
+        .map((p) => ({ ...p, media_type: "movie" }))
+        .sort((a, b) => (a.release_date || "").localeCompare(b.release_date || ""));
+      if (parts.length > 1) setCollection({ name: data.name, parts });
+    }).catch(() => {});
     return () => { mounted = false; };
   }, [details?.belongs_to_collection?.id, apiKey]);
 
-  // ── Reset player state on source/content change ──────────────────────────
+  // ── Reset player on source/content change ─────────────────────────────
   useEffect(() => {
     setM3u8Url(null); setInterceptedSubs([]); setShowSourceMenu(false);
     setAnilistData(null); setResolvedPlayerUrl(null); setResolvingUrl(false);
     setResolveError(null); setWebviewLoading(true);
   }, [item.id, playerSource, dubMode]);
 
-  // ── Anime source routing ─────────────────────────────────────────────────
+  // ── Anime routing ─────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     if (isAnime) {
@@ -285,9 +286,9 @@ export default function MoviePage({
       if (cur?.tag) { const sv = storage.get("playerSource"); const svs = PLAYER_SOURCES.find((s) => s.id === sv); setPlayerSource(!svs?.tag ? sv : NON_ANIME_DEFAULT_SOURCE); }
     }
     return () => { mounted = false; };
-  }, [item.id, isAnime]);
+  }, [item.id, isAnime]); // eslint-disable-line
 
-  // ── AllManga async resolve ────────────────────────────────────────────────
+  // ── AllManga async resolve ────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !sourceIsAsync(playerSource)) return;
     if (resolvedPlayerUrl || resolvingUrl) return;
@@ -308,9 +309,9 @@ export default function MoviePage({
       .catch((e) => { if (mounted) setResolveError(e.message || "Error"); })
       .finally(() => { if (mounted) setResolvingUrl(false); });
     return () => { mounted = false; };
-  }, [playing, playerSource, dubMode]);
+  }, [playing, playerSource, dubMode]); // eslint-disable-line
 
-  // ── Electron listeners ───────────────────────────────────────────────────
+  // ── Electron listeners ────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
     const h = window.electron.onM3u8Found((url) => setM3u8Url((p) => p !== url ? url : p));
@@ -335,10 +336,7 @@ export default function MoviePage({
     return () => window.electron.offSubtitleFound(h);
   }, []);
 
-  useEffect(() => {
-    autoMarkedRef.current = false; lastKnownTimeRef.current = 0; seekBackCooldownRef.current = 0;
-  }, [item.id, isWatched]);
-
+  useEffect(() => { autoMarkedRef.current = false; lastKnownTimeRef.current = 0; seekBackCooldownRef.current = 0; }, [item.id, isWatched]);
   useEffect(() => { if (playing) setWebviewLoading(true); }, [playing]);
 
   useLayoutEffect(() => {
@@ -347,33 +345,24 @@ export default function MoviePage({
     if (wv) { try { wv.src = "about:blank"; } catch {} }
   }, [playing]);
 
-  // ─── BEAST ENGINE ────────────────────────────────────────────────────────
-  // Runs when playing=true. Injects CSS/JS on dom-ready, polls for video
-  // readiness, retries next source on error or 12s timeout — all silently.
+  // ── Beast Engine ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !window.electron) return;
     const wv = webviewRef.current;
     if (!wv) return;
-
     let active = true;
     clearInterval(pollRef.current);
 
     const markReady = () => {
-      if (!active) return;
-      active = false;
-      clearInterval(pollRef.current);
+      if (!active) return; active = false; clearInterval(pollRef.current);
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
       setWebviewLoading(false);
     };
-
     const onFail = () => {
-      if (!active) return;
-      active = false;
-      clearInterval(pollRef.current);
+      if (!active) return; active = false; clearInterval(pollRef.current);
       clearTimeout(hardTimeout); // eslint-disable-line no-use-before-define
       tryNextSource();
     };
-
     const onDomReady = async () => {
       try { await wv.insertCSS(_EMBED_CSS); } catch (_) {}
       try { await wv.executeJavaScript(_EMBED_JS); } catch (_) {}
@@ -385,16 +374,13 @@ export default function MoviePage({
             `return{ready:v.readyState>=2&&v.duration>0&&!isNaN(v.duration),` +
             `err:v.networkState===3||!!(v.error&&v.error.code>0)};})()`
           );
-          if (r.ready) markReady();
-          else if (r.err) onFail();
+          if (r.ready) markReady(); else if (r.err) onFail();
         } catch { markReady(); }
       }, 300);
     };
-
     wv.addEventListener("dom-ready", onDomReady);
     wv.addEventListener("did-fail-load", onFail);
     const hardTimeout = setTimeout(onFail, 12000);
-
     return () => {
       active = false; clearInterval(pollRef.current); clearTimeout(hardTimeout);
       try { wv.removeEventListener("dom-ready", onDomReady); } catch (_) {}
@@ -402,7 +388,7 @@ export default function MoviePage({
     };
   }, [playing, playerSource, item.id, tryNextSource]);
 
-  // ── Web iframe fallback ──────────────────────────────────────────────────
+  // ── Web iframe fallback ───────────────────────────────────────────────
   useEffect(() => {
     if (!playing || window.electron) return;
     let active = true;
@@ -410,7 +396,7 @@ export default function MoviePage({
     return () => { active = false; clearTimeout(tid); };
   }, [playing, playerSource, item.id]);
 
-  // ── Progress tracking ────────────────────────────────────────────────────
+  // ── Progress tracking ─────────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !sourceSupportsProgress(playerSource) || !window.electron) return;
     let interval = null;
@@ -436,8 +422,7 @@ export default function MoviePage({
                 return { currentTime: v.currentTime, duration: v.duration,
                   recentUserSeek: v._lastUserSeek ? (Date.now() - v._lastUserSeek < 6000) : false,
                   lastUserSeekTo: v._lastUserSeekTo ?? null };
-              })()
-            `);
+              })()`);
           }
           if (result && result.duration > 0) {
             const ct = result.currentTime, now = Date.now();
@@ -466,18 +451,23 @@ export default function MoviePage({
   }, [playing, progressKey, watchedThreshold, playerSource, progressViaFrames]);
 
   const handlePlay = useCallback(() => {
-    if (onWatch) { onHistory({ ...d, media_type: "movie" }); onWatch({ item: d, season: null, episode: null, sourceId: foundSource }); return; }
+    // Stop preview when user starts actual playback
+    setPreviewActive(false); setPreviewReady(false); clearTimeout(previewTimerRef.current);
+    if (onWatch) {
+      onHistory({ ...d, media_type: "movie" });
+      onWatch({ item: d, season: null, episode: null, sourceId: foundSource });
+      return;
+    }
     setM3u8Url(null); setInterceptedSubs([]); setPlaying(true);
     onHistory({ ...d, media_type: "movie" });
-    // Stop pre-warm webview so it doesn't compete for resources
     const pw = preWarmRef.current;
     if (pw) { try { pw.src = "about:blank"; } catch {} }
   }, [d, onHistory, onWatch, foundSource]);
 
-  // ── Fullscreen / PiP listeners ────────────────────────────────────────────
+  // ── Fullscreen / PiP ──────────────────────────────────────────────────
   useEffect(() => {
     if (!playing || !NEEDS_INTERCEPT.includes(playerSource)) return;
-    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => { setPlayerFullscreen(true); document.documentElement.setAttribute("data-player-fullscreen", "1"); });
+    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => { setPlayerFullscreen(true); document.documentElement.setAttribute("data-player-fullscreen","1"); });
     const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => { setPlayerFullscreen(false); document.documentElement.removeAttribute("data-player-fullscreen"); if (document.fullscreenElement) document.exitFullscreen?.(); });
     return () => {
       if (enterH) window.electron?.offWebviewEnterFullscreen?.(enterH);
@@ -488,24 +478,26 @@ export default function MoviePage({
 
   useEffect(() => {
     if (!playing) return;
-    const openH = window.electron?.onPipOpened?.(async () => { setPipOpen(true); pipWebContentsIdRef.current = (await window.electron.getPipWebContentsId?.()) ?? null; });
+    const openH  = window.electron?.onPipOpened?.(async () => { setPipOpen(true); pipWebContentsIdRef.current = (await window.electron.getPipWebContentsId?.()) ?? null; });
     const closeH = window.electron?.onPipClosed?.(() => { pipUrlRef.current = null; pipWebContentsIdRef.current = null; setPipOpen(false); });
     return () => {
-      if (openH) window.electron?.offPipOpened?.(openH);
+      if (openH)  window.electron?.offPipOpened?.(openH);
       if (closeH) window.electron?.offPipClosed?.(closeH);
     };
   }, [playing]);
 
-  const handleSetDownloaderFolder = useCallback((folder) => { setDownloaderFolder(folder); storage.set("downloaderFolder", folder); }, []);
+  const handleSetDownloaderFolder = useCallback((folder) => {
+    setDownloaderFolder(folder); storage.set("downloaderFolder", folder);
+  }, []);
 
-  // ── Derived display values ────────────────────────────────────────────────
+  // ── Derived values ────────────────────────────────────────────────────
   const displayOverview = isAnime && anilistData?.description ? cleanAnilistDescription(anilistData.description) : d.overview;
   const displayScore    = isAnime && anilistData?.averageScore ? (anilistData.averageScore / 10).toFixed(1) : d.vote_average > 0 ? d.vote_average.toFixed(1) : null;
   const displayGenres   = isAnime && anilistData?.genres?.length ? anilistData.genres.map((g, i) => ({ id: i, name: g })) : d.genres || [];
 
   const isUnreleased = useMemo(() => {
     if (!d.release_date) return false;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0,0,0,0);
     return new Date(d.release_date) > today;
   }, [d.release_date]);
 
@@ -515,129 +507,285 @@ export default function MoviePage({
 
   const handleUpgrade = onUpgrade ?? (() => window.dispatchEvent(new CustomEvent("novaspark:upgrade")));
 
-  // ── Pre-warm URL: start loading embed BEFORE user clicks play ────────────
-  // Uses same persist:player partition — shared HTTP cache = near-instant
-  // main-player load when user actually hits Play.
   const preWarmUrl = useMemo(() => {
     if (!foundSource || !window.electron || sourceIsAsync(playerSource) || restricted || isUnreleased || playing) return null;
     return getSourceUrl(foundSource, "movie", item.id, null, null);
   }, [foundSource, playerSource, restricted, isUnreleased, playing, item.id]);
 
+  // ── Preview URL (muted YouTube embed) ────────────────────────────────
+  const previewSrc = trailerKey
+    ? `https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=${previewMuted ? 1 : 0}&controls=0&loop=1&playlist=${trailerKey}&rel=0&showinfo=0&iv_load_policy=3&modestbranding=1&enablejsapi=0`
+    : null;
+
+  // ── RENDER ─────────────────────────────────────────────────────────────
   return (
     <div className="fade-in">
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes previewFadeIn { from { opacity:0; } to { opacity:1; } }
+        @keyframes previewBadgePop {
+          from { opacity:0; transform:translateY(8px) scale(0.9); }
+          to   { opacity:1; transform:translateY(0) scale(1); }
+        }
+        .preview-mute-btn:hover { background: rgba(255,255,255,0.2) !important; }
+        .preview-stop-btn:hover { background: rgba(255,255,255,0.15) !important; }
+      `}</style>
 
-      {/* ── Server toast ─────────────────────────────────────────────────── */}
+      {/* Server toast */}
       {playing && <ServerToast status={autoSourceStatus} sourceLabel={PLAYER_SOURCES.find((s) => s.id === playerSource)?.label} />}
 
-      {/* ── PRE-WARM: invisible webview pre-loads embed into HTTP cache ───── */}
+      {/* Pre-warm webview */}
       {preWarmUrl && (
-        <webview
-          ref={preWarmRef}
-          src={preWarmUrl}
-          partition="persist:player"
-          allowpopups="false"
-          plugins="true"
+        <webview ref={preWarmRef} src={preWarmUrl} partition="persist:player"
+          allowpopups="false" plugins="true"
           webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
           useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-          style={{ position:"fixed", top:"-9999px", left:"-9999px", width:"1px", height:"1px", opacity:0, pointerEvents:"none", zIndex:-1 }}
+          style={{ position:"fixed",top:"-9999px",left:"-9999px",width:"1px",height:"1px",opacity:0,pointerEvents:"none",zIndex:-1 }}
         />
       )}
 
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div className="detail-hero">
-        <div className="detail-bg" style={{ backgroundImage:`url(${imgUrl(d.backdrop_path, "w1280")})` }} />
+      {/* ── HERO — preview video plays here ───────────────────────────── */}
+      <div className="detail-hero" style={{ position: "relative", overflow: "hidden" }}>
+
+        {/* Static backdrop (always visible behind preview) */}
+        <div className="detail-bg"
+          style={{ backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
+            filter: previewActive && previewReady ? "brightness(0)" : "brightness(0.45) contrast(1.05) saturate(0.9)",
+            transition: "filter 0.8s ease",
+          }}
+        />
         <div className="detail-gradient" />
-        <div className="detail-content">
-          <div className="detail-poster" style={{ position:"relative" }}>
+
+        {/* ── Autoplay trailer preview ── */}
+        {previewActive && previewSrc && (
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 3,
+            opacity: previewReady ? 1 : 0,
+            transition: "opacity 0.8s ease",
+            animation: previewReady ? "previewFadeIn 0.8s ease" : "none",
+          }}>
+            <iframe
+              src={previewSrc}
+              allow="autoplay; fullscreen"
+              allowFullScreen
+              style={{
+                position: "absolute", inset: 0,
+                width: "100%", height: "100%",
+                border: "none", background: "#000",
+                // Scale up slightly so YouTube letterbox edges are hidden
+                transform: "scale(1.12)",
+                transformOrigin: "center center",
+                pointerEvents: "none", // don't let it capture clicks
+              }}
+              title="Preview"
+            />
+            {/* Gradient overlay so content below stays readable */}
+            <div style={{
+              position: "absolute", inset: 0,
+              background: "linear-gradient(to top, var(--bg) 0%, rgba(5,12,15,0.2) 40%, transparent 70%)",
+              pointerEvents: "none",
+            }} />
+
+            {/* Preview controls — top right */}
+            <div style={{
+              position: "absolute", top: 16, right: 16, zIndex: 10,
+              display: "flex", gap: 8, alignItems: "center",
+              animation: "previewBadgePop 0.4s ease 0.3s both",
+            }}>
+              {/* LIVE PREVIEW badge */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: 6, padding: "5px 10px",
+                fontSize: 10, fontWeight: 700, color: "#fff", letterSpacing: 1,
+              }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red, #00b4a6)", boxShadow: "0 0 6px var(--red, #00b4a6)", animation: "spin 2s linear infinite" }} />
+                PREVIEW
+              </div>
+
+              {/* Mute/Unmute */}
+              <button
+                className="preview-mute-btn"
+                onClick={() => setPreviewMuted((v) => !v)}
+                style={{
+                  background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  borderRadius: 6, padding: "5px 10px",
+                  cursor: "pointer", color: "#fff", fontSize: 13,
+                  display: "flex", alignItems: "center", gap: 5,
+                  transition: "background 0.2s",
+                }}
+                title={previewMuted ? "Unmute preview" : "Mute preview"}
+              >
+                {previewMuted ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
+                    <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                )}
+                {previewMuted ? "Unmute" : "Mute"}
+              </button>
+
+              {/* Stop preview */}
+              <button
+                className="preview-stop-btn"
+                onClick={() => { setPreviewActive(false); setPreviewReady(false); }}
+                style={{
+                  background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  borderRadius: 6, padding: "5px 10px",
+                  cursor: "pointer", color: "rgba(255,255,255,0.7)", fontSize: 13,
+                  transition: "background 0.2s",
+                }}
+                title="Stop preview"
+              >✕</button>
+            </div>
+          </div>
+        )}
+
+        {/* Detail content — always on top */}
+        <div className="detail-content" style={{ position: "relative", zIndex: 4 }}>
+          {/* Poster */}
+          <div className="detail-poster" style={{ position: "relative" }}>
             {d.poster_path
               ? <img src={imgUrl(d.poster_path)} alt={title} loading="lazy" />
-              : <div style={{ width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text3)" }}><FilmIcon /></div>}
+              : <div style={{ width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text3)" }}><FilmIcon /></div>
+            }
             {isWatched && <div className="detail-watched-badge"><WatchedIcon size={36} /></div>}
           </div>
+
+          {/* Info */}
           <div className="detail-info">
             <div className="detail-type" style={{ display:"flex",alignItems:"center",gap:8 }}>
               Movie
               {isWatched && <span className="watched-label"><WatchedIcon size={14} /> Watched</span>}
+              {/* "Now Previewing" chip when trailer plays */}
+              {previewActive && previewReady && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: 0.8,
+                  background: "rgba(0,180,166,0.15)", border: "1px solid rgba(0,180,166,0.35)",
+                  color: "var(--red, #00b4a6)", borderRadius: 4, padding: "2px 7px",
+                  animation: "previewBadgePop 0.3s ease",
+                }}>▶ NOW PREVIEWING</span>
+              )}
             </div>
+
             <div className="detail-title">{title}</div>
+
             <div className="genres">
               {displayGenres.map((g) => <span key={g.id} className="genre-tag">{g.name}</span>)}
             </div>
+
             <div className="detail-meta">
-              {displayScore && <span className="detail-rating"><StarIcon /> {displayScore}</span>}
-              {year && <span>{year}</span>}
-              {d.runtime && <span>{d.runtime} min</span>}
+              {displayScore  && <span className="detail-rating"><StarIcon /> {displayScore}</span>}
+              {year          && <span>{year}</span>}
+              {d.runtime     && <span>{d.runtime} min</span>}
               {d.original_language && <span>{d.original_language?.toUpperCase()}</span>}
             </div>
+
             {rating.cert && (
-              <div className={`age-rating-pill${restricted?" age-rating-pill--restricted":""}`}>
+              <div className={`age-rating-pill${restricted ? " age-rating-pill--restricted" : ""}`}>
                 {restricted ? <RatingLockIcon size={13} /> : <RatingShieldIcon size={13} />}
                 <span className="age-rating-pill-cert">{rating.cert}</span>
                 {restricted && <span className="age-rating-pill-label">Inappropriate for your age setting</span>}
               </div>
             )}
+
             <p className="detail-overview">{displayOverview}</p>
+
             {!isWatched && displayPct > 0 && (
-              <div className="progress-bar-row" style={{ marginBottom:12 }}>
-                <div className="progress-bar-outer"><div className="progress-bar-fill" style={{ width:`${Math.min(displayPct,100)}%` }} /></div>
-                <span style={{ fontSize:12,color:"var(--text3)" }}>{progressLabel}</span>
+              <div className="progress-bar-row" style={{ marginBottom: 12 }}>
+                <div className="progress-bar-outer">
+                  <div className="progress-bar-fill" style={{ width: `${Math.min(displayPct, 100)}%` }} />
+                </div>
+                <span style={{ fontSize: 12, color: "var(--text3)" }}>{progressLabel}</span>
               </div>
             )}
+
             <div className="detail-actions">
               {isUnreleased ? (
-                <button className="btn btn-primary btn-restricted" disabled title="This movie has not been released yet">🔒 Unreleased</button>
+                <button className="btn btn-primary btn-restricted" disabled>🔒 Unreleased</button>
               ) : restricted ? (
-                <button className="btn btn-primary btn-restricted" disabled title="Inappropriate for your age rating setting">🔒 Restricted</button>
+                <button className="btn btn-primary btn-restricted" disabled>🔒 Restricted</button>
               ) : (
-                <button className="btn btn-primary" onClick={handlePlay}><PlayIcon /> {playing ? "Restart" : "Play"}</button>
+                <button className="btn btn-primary" onClick={handlePlay}>
+                  <PlayIcon /> {playing ? "Restart" : "Play"}
+                </button>
               )}
+
               {trailerKey && (restricted
                 ? <button className="btn btn-secondary btn-restricted" disabled>🔒 Trailer</button>
-                : <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}><TrailerIcon /> Trailer</button>)}
-              <button className="btn btn-secondary" onClick={onSave}>{isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}{isSaved ? "Saved" : "Save"}</button>
+                : <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}><TrailerIcon /> Trailer</button>
+              )}
+
+              <button className="btn btn-secondary" onClick={onSave}>
+                {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
+                {isSaved ? "Saved" : "Save"}
+              </button>
+
               {!isUnreleased && (isWatched
-                ? <button className="btn btn-ghost watched-btn" onClick={() => onMarkUnwatched?.(progressKey)}><WatchedIcon size={16} /> Watched</button>
+                ? <button className="btn btn-ghost watched-btn" onClick={() => onMarkUnwatched?.(progressKey)}>
+                    <WatchedIcon size={16} /> Watched
+                  </button>
                 : <>
                     <button className="btn btn-ghost" onClick={() => onMarkWatched?.(progressKey)}>✓ Mark Watched</button>
-                    {hasProgress && <button className="btn btn-ghost" style={{ fontSize:13 }} onClick={() => { saveProgress(progressKey,0); storage.set("dlTime_"+progressKey,null); }}>⊘ Not Started</button>}
-                  </>)}
+                    {hasProgress && (
+                      <button className="btn btn-ghost" style={{ fontSize: 13 }}
+                        onClick={() => { saveProgress(progressKey, 0); storage.set("dlTime_" + progressKey, null); }}>
+                        ⊘ Not Started
+                      </button>
+                    )}
+                  </>
+              )}
+
               <button className="btn btn-ghost" onClick={onBack}><BackIcon /> Back</button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Inline player (web mode — when onWatch not provided) ─────────── */}
+      {/* ── Inline player (web/Electron without onWatch) ─────────────── */}
       {playing && !restricted && !isUnreleased && !onWatch && (
         <div className="section">
-          <div className={`player-wrap${playerFullscreen?" player-wrap--fullscreen":""}`} ref={playerWrapRef}>
+          <div className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`} ref={playerWrapRef}>
 
-            {/* Solid black — only lifted when video.readyState >= 2 */}
+            {/* Loading spinner */}
             {webviewLoading && !resolveError && (
               <div style={{ position:"absolute",inset:0,zIndex:10,display:"flex",alignItems:"center",justifyContent:"center",background:"#000",borderRadius:"inherit" }}>
                 <div className="spinner" />
               </div>
             )}
 
+            {/* Resolve error */}
             {sourceIsAsync(playerSource) && resolveError && !resolvingUrl && (
               <div style={{ position:"absolute",inset:0,zIndex:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)",gap:10,borderRadius:"inherit" }}>
                 <span style={{ fontSize:28 }}>⚠️</span>
                 <span style={{ fontSize:14,color:"var(--text2)" }}>Movie not found</span>
                 <span style={{ fontSize:12,color:"var(--text3)" }}>{resolveError}</span>
-                <span style={{ fontSize:12,color:"var(--text3)" }}>Try a different source.</span>
               </div>
             )}
 
+            {/* PiP overlay */}
             {pipOpen && (
               <div style={{ position:"absolute",inset:0,zIndex:20,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.92)",gap:16,borderRadius:"inherit" }}>
                 <PopOutIcon size={36} />
-                <span style={{ fontSize:15,color:"var(--text1)",fontWeight:600 }}>Playing in pop-out window</span>
-                <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()} style={{ marginTop:4 }}>Close pop-out &amp; return</button>
+                <span style={{ fontSize:15,color:"var(--text)",fontWeight:600 }}>Playing in pop-out window</span>
+                <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()}>Close pop-out &amp; return</button>
               </div>
             )}
 
+            {/* Webview / iframe — key forces remount on source/item change */}
             {window.electron ? (
               <webview
+                key={`wv-movie-${playerSource}-${item.id}`}
                 ref={webviewRef}
                 src={pipOpen ? "about:blank" : sourceIsAsync(playerSource) ? resolvedPlayerUrl || "about:blank" : getSourceUrl(playerSource, "movie", item.id, null, null)}
                 partition="persist:player"
@@ -645,18 +793,24 @@ export default function MoviePage({
                 plugins="true"
                 webpreferences="contextIsolation=true,nodeIntegration=false,webSecurity=false,allowRunningInsecureContent=true"
                 useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-                style={{ position:"absolute",inset:0,width:"100%",height:"100%",border:"none",opacity:webviewLoading||(sourceIsAsync(playerSource)&&!resolvedPlayerUrl)?0:1,transition:"opacity 0.3s ease" }}
+                style={{ position:"absolute",inset:0,width:"100%",height:"100%",border:"none",
+                  opacity: webviewLoading || (sourceIsAsync(playerSource) && !resolvedPlayerUrl) ? 0 : 1,
+                  transition:"opacity 0.3s ease" }}
               />
             ) : (
               <iframe
+                key={`if-movie-${playerSource}-${item.id}`}
                 ref={webviewRef}
                 src={pipOpen ? "about:blank" : sourceIsAsync(playerSource) ? resolvedPlayerUrl || "about:blank" : getSourceUrl(playerSource, "movie", item.id, null, null)}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                 allowFullScreen
-                style={{ position:"absolute",inset:0,width:"100%",height:"100%",border:"none",background:"#000",opacity:webviewLoading||(sourceIsAsync(playerSource)&&!resolvedPlayerUrl)?0:1,transition:"opacity 0.3s ease" }}
+                style={{ position:"absolute",inset:0,width:"100%",height:"100%",border:"none",background:"#000",
+                  opacity: webviewLoading || (sourceIsAsync(playerSource) && !resolvedPlayerUrl) ? 0 : 1,
+                  transition:"opacity 0.3s ease" }}
               />
             )}
 
+            {/* Overlay controls */}
             <div className="player-overlay-group">
               <button ref={sourceRef} className="player-overlay-btn"
                 onClick={() => {
@@ -667,6 +821,7 @@ export default function MoviePage({
                 }} title="Change source">
                 <SourceIcon />{PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "Source"}
               </button>
+
               {playerSource === "allmanga" && (
                 <button className="player-overlay-btn" onClick={() => {
                   const next = dubMode === "sub" ? "dub" : "sub";
@@ -674,9 +829,11 @@ export default function MoviePage({
                   setM3u8Url(null); setInterceptedSubs([]); setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
                 }} title="Toggle Sub/Dub">{dubMode === "sub" ? "SUB" : "DUB"}</button>
               )}
+
               <button className="player-overlay-btn" onClick={() => { setShowSourceMenu(false); setShowBlockedModal(true); }} title="Blocked ads & trackers">
                 <ShieldBlockIcon />{blockedSession > 0 && <span className="player-blocked-badge">{blockedSession}</span>}
               </button>
+
               <button className="player-overlay-btn"
                 onClick={() => {
                   if (pipOpen) { window.electron?.closePipWindow?.(); return; }
@@ -688,19 +845,28 @@ export default function MoviePage({
                 }}
                 title={pipOpen ? "Close pop-out" : "Pop out player"}
                 disabled={!pipOpen && (webviewLoading || !!(sourceIsAsync(playerSource) && !resolvedPlayerUrl))}
-                style={pipOpen ? { color:"var(--red)" } : undefined}>
+                style={pipOpen ? { color: "var(--red)" } : undefined}>
                 <PopOutIcon />
               </button>
+
+              {/* Data Meter */}
+              <DataMeterWidget
+                isPlaying={playing && !webviewLoading && !pipOpen}
+                runtimeMinutes={d.runtime || null}
+                genreIds={(displayGenres || []).map((g) => g.id || 0)}
+                type="movie"
+              />
             </div>
 
+            {/* Source dropdown */}
             {showSourceMenu && menuPos && (
-              <div className="source-dropdown source-dropdown--fixed" style={{ top:menuPos.top, left:menuPos.left }} onClick={(e) => e.stopPropagation()}>
+              <div className="source-dropdown source-dropdown--fixed" style={{ top: menuPos.top, left: menuPos.left }} onClick={(e) => e.stopPropagation()}>
                 {PLAYER_SOURCES.map((src) => (
                   <button key={src.id}
                     className={"source-dropdown__item" + (playerSource === src.id ? " source-dropdown__item--active" : "")}
                     onClick={() => {
                       setShowSourceMenu(false); if (src.id === playerSource) return;
-                      const all = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
+                      const all   = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
                       const start = all.indexOf(src.id);
                       retryQueueRef.current = start >= 0 ? [...all.slice(start), ...all.slice(0, start)] : [src.id, ...all.filter((id) => id !== src.id)];
                       retryIdxRef.current = 1;
@@ -719,15 +885,15 @@ export default function MoviePage({
           {/* Download row */}
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",background:"var(--surface)",borderRadius:12,border:"1px solid var(--border)",marginTop:16,gap:16 }}>
             <div style={{ display:"flex",alignItems:"center",gap:12,flex:1 }}>
-              <div style={{ width:40,height:40,borderRadius:10,background:movieDownload?"rgba(76,175,80,0.1)":"rgba(0,168,225,0.08)",display:"flex",alignItems:"center",justifyContent:"center",color:movieDownload?"#4caf50":"#00a8e1",fontSize:20 }}>
+              <div style={{ width:40,height:40,borderRadius:10,background:movieDownload?"rgba(76,175,80,0.1)":"var(--red-dim)",display:"flex",alignItems:"center",justifyContent:"center",color:movieDownload?"#4caf50":"var(--red)",fontSize:20 }}>
                 {movieDownload ? "✓" : "⬇️"}
               </div>
               <div>
                 <div style={{ fontSize:14,fontWeight:600,color:"var(--text)" }}>
-                  {movieDownload ? (movieDownload.status==="downloading"?"Downloading…":"Downloaded") : "Download this movie"}
+                  {movieDownload ? (movieDownload.status === "downloading" ? "Downloading…" : "Downloaded") : "Download this movie"}
                 </div>
                 <div style={{ fontSize:12,color:"var(--text3)",marginTop:2 }}>
-                  {movieDownload ? (movieDownload.status==="downloading"?"In progress — click to view":"Available offline") : "Watch offline anytime"}
+                  {movieDownload ? (movieDownload.status === "downloading" ? "In progress — click to view" : "Available offline") : "Watch offline anytime"}
                 </div>
               </div>
             </div>
@@ -737,48 +903,64 @@ export default function MoviePage({
                 if (!canDownload(planId)) { setGateModal("download"); return; }
                 setShowDownload(true);
               }}
-              style={{ background:movieDownload?"rgba(76,175,80,0.15)":"linear-gradient(90deg,#00a8e1,#0076b0)",border:movieDownload?"1px solid rgba(76,175,80,0.3)":"none",color:movieDownload?"#4caf50":"#fff",whiteSpace:"nowrap" }}>
+              style={{ whiteSpace: "nowrap" }}>
               {movieDownload ? <>View in Downloads</> : <><DownloadIcon size={14} /> Download</>}
             </button>
           </div>
 
           {displayPct > 0 && (
             <div className="progress-bar-row">
-              <div className="progress-bar-outer"><div className="progress-bar-fill" style={{ width:`${Math.min(displayPct,100)}%` }} /></div>
-              <span style={{ fontSize:12,color:"var(--text3)" }}>{progressLabel}</span>
+              <div className="progress-bar-outer">
+                <div className="progress-bar-fill" style={{ width: `${Math.min(displayPct, 100)}%` }} />
+              </div>
+              <span style={{ fontSize: 12, color: "var(--text3)" }}>{progressLabel}</span>
             </div>
           )}
           <div className="progress-mark-row">
-            <span style={{ fontSize:12,color:"var(--text3)",marginRight:4 }}>Mark progress:</span>
-            {[25,50,75,100].map((p) => (
-              <button key={p} className="btn btn-ghost" style={{ padding:"5px 14px",fontSize:12 }} onClick={() => saveProgress(progressKey,p)}>{p}%</button>
+            <span style={{ fontSize: 12, color: "var(--text3)", marginRight: 4 }}>Mark progress:</span>
+            {[25, 50, 75, 100].map((p) => (
+              <button key={p} className="btn btn-ghost" style={{ padding: "5px 14px", fontSize: 12 }}
+                onClick={() => saveProgress(progressKey, p)}>{p}%</button>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── Collection ───────────────────────────────────────────────────── */}
+      {/* ── Collection ──────────────────────────────────────────────── */}
       {collection && onSelect && (
         <div className="section">
           <div className="section-title">{collection.name}</div>
           <div className="scroll-row">
             {collection.parts.map((part) => {
               const pk = `movie_${part.id}`;
-              const isCurrent = part.id === item.id;
               return (
-                <CollectionCard key={part.id} part={part} isCurrent={isCurrent} onSelect={onSelect}
-                  progress={progress[pk] || 0} watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
+                <CollectionCard key={part.id} part={part} isCurrent={part.id === item.id}
+                  onSelect={onSelect} progress={progress[pk] || 0}
+                  watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
               );
             })}
           </div>
         </div>
       )}
 
-      {/* ── Modals ───────────────────────────────────────────────────────── */}
-      {showTrailer && trailerKey && <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />}
-      {showBlockedModal && <BlockedStatsModal sessionDomains={getBlockedDomains()} sessionTotal={blockedSession} alltimeTotal={blockedAlltime} onClose={() => setShowBlockedModal(false)} />}
-      {showDownload && <DownloadModal onClose={() => setShowDownload(false)} m3u8Url={m3u8Url} subtitles={interceptedSubs} mediaName={mediaName} downloaderFolder={downloaderFolder} setDownloaderFolder={handleSetDownloaderFolder} onOpenSettings={onSettings} onDownloadStarted={onDownloadStarted} mediaId={item.id} mediaType="movie" posterPath={d.poster_path} tmdbId={item.id} />}
-      {gateModal && <PremiumGate feature={gateModal} onUpgrade={handleUpgrade} onClose={() => setGateModal(null)} />}
+      {/* ── Modals ──────────────────────────────────────────────────── */}
+      {showTrailer && trailerKey && (
+        <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />
+      )}
+      {showBlockedModal && (
+        <BlockedStatsModal sessionDomains={getBlockedDomains()} sessionTotal={blockedSession}
+          alltimeTotal={blockedAlltime} onClose={() => setShowBlockedModal(false)} />
+      )}
+      {showDownload && (
+        <DownloadModal onClose={() => setShowDownload(false)}
+          m3u8Url={m3u8Url} subtitles={interceptedSubs} mediaName={mediaName}
+          downloaderFolder={downloaderFolder} setDownloaderFolder={handleSetDownloaderFolder}
+          onOpenSettings={onSettings} onDownloadStarted={onDownloadStarted}
+          mediaId={item.id} mediaType="movie" posterPath={d.poster_path} tmdbId={item.id} />
+      )}
+      {gateModal && (
+        <PremiumGate feature={gateModal} onUpgrade={handleUpgrade} onClose={() => setGateModal(null)} />
+      )}
     </div>
   );
 }
@@ -786,8 +968,9 @@ export default function MoviePage({
 const CollectionCard = memo(function CollectionCard({ part, isCurrent, onSelect, progress, watched, onMarkWatched, onMarkUnwatched }) {
   const handleClick = useCallback(() => onSelect(part), [onSelect, part]);
   return (
-    <div style={{ opacity:isCurrent?0.5:1, pointerEvents:isCurrent?"none":"auto" }}>
-      <MediaCard item={part} onClick={handleClick} progress={progress} watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
+    <div style={{ opacity: isCurrent ? 0.5 : 1, pointerEvents: isCurrent ? "none" : "auto" }}>
+      <MediaCard item={part} onClick={handleClick} progress={progress}
+        watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
     </div>
   );
 });

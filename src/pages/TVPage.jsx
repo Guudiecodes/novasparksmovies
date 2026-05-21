@@ -61,25 +61,6 @@ import {
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate from "../components/PremiumGate";
 
-function _makePartialCircle(pct) {
-  const r = 5, cx = 7, cy = 7;
-  const angle = (pct / 100) * 2 * Math.PI - Math.PI / 2;
-  const x = cx + r * Math.cos(angle);
-  const y = cy + r * Math.sin(angle);
-  const large = pct > 50 ? 1 : 0;
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" style={{ display:"inline-block", verticalAlign:"middle", marginRight:4, flexShrink:0 }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.25" />
-      <path d={`M ${cx} ${cy - r} A ${r} ${r} 0 ${large} 1 ${x.toFixed(3)} ${y.toFixed(3)} L ${cx} ${cy} Z`} fill="currentColor" opacity="0.9" />
-    </svg>
-  );
-}
-const _CIRCLE_25 = _makePartialCircle(25);
-const _CIRCLE_50 = _makePartialCircle(50);
-const _CIRCLE_75 = _makePartialCircle(75);
-const _CIRCLE_MAP = { 25: _CIRCLE_25, 50: _CIRCLE_50, 75: _CIRCLE_75 };
-function PartialCircleIcon({ pct }) { return _CIRCLE_MAP[pct] ?? null; }
-
 function ContextMenu({ x, y, isWatched, hasProgress, watchedLabel, unwatchedLabel, onMarkWatched, onMarkUnwatched, onMarkNotStarted, onClose }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -228,21 +209,18 @@ export default function TVPage({
   onMarkWatchedRef.current = onMarkWatched;
   const isAnime = useMemo(() => isAnimeContent(item, details), [item.id, details]);
   const [downloaderFolder, setDownloaderFolder] = useState(() => storage.get("downloaderFolder") || "");
-  const [epMenu, setEpMenu] = useState(null);
   const blockedResetKey = `${item.id}_s${selectedSeason}_e${selectedEp?.episode_number ?? 0}`;
   const { sessionTotal: blockedSession, alltimeTotal: blockedAlltime, showModal: showBlockedModal, setShowModal: setShowBlockedModal, getSessionDomains: getBlockedDomains } = useBlockedStats(blockedResetKey);
   const [rating, setRating] = useState({ cert: null, minAge: null });
   const ageLimitSetting = useMemo(() => getAgeLimitSetting(storage), []);
   const ratingCountry = useMemo(() => getRatingCountry(storage), []);
   const restricted = isRestricted(rating.minAge, ageLimitSetting);
-  const [seasonMenu, setSeasonMenu] = useState(null);
   const [watchedThreshold] = useState(() => storage.get("watchedThreshold") ?? 20);
   const autoMarkedRef = useRef(false);
   const lastKnownTimeRef = useRef(0);
   const durationRef = useRef(0);
   const seekBackCooldownRef = useRef(0);
 
-  // planId derived once — passed to all gate functions
   const planId = isPremium?.planId || (isPremium ? "premium" : "free");
   const handleUpgrade = onUpgrade ?? (() => window.dispatchEvent(new CustomEvent("novaspark:upgrade")));
 
@@ -313,23 +291,20 @@ export default function TVPage({
     return () => { mounted = false; };
   }, [item.id, selectedSeason, apiKey, anilistSeasons]);
 
-  // ── Auto source — only changes if stored source is dead ─────────────────
+  // ── Auto source ──────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     setAutoSourceStatus("testing");
     const epNum = selectedEp?.episode_number;
     findWorkingSource("tv", item.id, selectedSeason, epNum, playerSource).then((workingId) => {
       if (cancelled) return;
-      if (workingId && workingId !== playerSource) {
-        setPlayerSource(workingId);
-        storage.set("playerSource", workingId);
-      }
+      if (workingId && workingId !== playerSource) { setPlayerSource(workingId); storage.set("playerSource", workingId); }
       setAutoSourceStatus(workingId ? "found" : "failed");
     });
     return () => { cancelled = true; };
   }, [item.id, selectedSeason, selectedEp?.episode_number]);
 
-  // ── Reset player state on source/content change ──────────────────────────
+  // ── Reset player state ───────────────────────────────────────────────────
   useEffect(() => {
     setM3u8Url(null); setInterceptedSubs([]); setShowSourceMenu(false);
     setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
@@ -480,36 +455,6 @@ export default function TVPage({
   const displayScore = useMemo(() => anilistLoading ? null : isAnime && anilistData?.averageScore ? (anilistData.averageScore / 10).toFixed(1) : d.vote_average > 0 ? d.vote_average.toFixed(1) : null, [anilistLoading, isAnime, anilistData?.averageScore, d.vote_average]);
   const displayGenres = useMemo(() => anilistLoading ? [] : isAnime && anilistData?.genres?.length ? anilistData.genres.map((g, i) => ({ id: i, name: g })) : d.genres || [], [anilistLoading, isAnime, anilistData?.genres, d.genres]);
 
-  const seasonWatchedMap = useMemo(() => {
-    const map = {};
-    for (const s of seasons) {
-      const num = s.season_number;
-      const count = num === selectedSeason ? currentSeasonEpisodes.length || s.episode_count || 0 : s.episode_count || 0;
-      if (!count) { map[num] = "none"; continue; }
-      let watchedCount = 0;
-      for (let i = 1; i <= count; i++) { if (watched?.[`tv_${item.id}_s${num}e${i}`]) watchedCount++; }
-      if (watchedCount === 0) { map[num] = "none"; } else if (watchedCount === count) { map[num] = "all"; } else { const pct = watchedCount / count; map[num] = pct < 0.375 ? "some25" : pct < 0.625 ? "some50" : "some75"; }
-    }
-    return map;
-  }, [seasons, selectedSeason, currentSeasonEpisodes, watched, item.id]);
-
-  const isSeasonWatched = useCallback((seasonNum) => seasonWatchedMap[seasonNum] === "all", [seasonWatchedMap]);
-
-  const markSeasonWatched = useCallback((seasonNum) => {
-    const seasonInfo = seasons.find((s) => s.season_number === seasonNum);
-    const episodes = seasonNum === selectedSeason ? currentSeasonEpisodes : null;
-    const count = episodes?.length || seasonInfo?.episode_count || 0;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    for (let i = 1; i <= count; i++) { if (episodes) { const ep = episodes.find((e) => e.episode_number === i); if (ep?.air_date && new Date(ep.air_date) > today) continue; } onMarkWatched?.(`tv_${item.id}_s${seasonNum}e${i}`); }
-  }, [seasons, selectedSeason, currentSeasonEpisodes, item.id, onMarkWatched]);
-
-  const markSeasonUnwatched = useCallback((seasonNum) => {
-    const seasonInfo = seasons.find((s) => s.season_number === seasonNum);
-    const episodes = seasonNum === selectedSeason ? currentSeasonEpisodes : null;
-    const count = episodes?.length || seasonInfo?.episode_count || 0;
-    for (let i = 1; i <= count; i++) { onMarkUnwatched?.(`tv_${item.id}_s${seasonNum}e${i}`); }
-  }, [seasons, selectedSeason, currentSeasonEpisodes, item.id, onMarkUnwatched]);
-
   const currentProgressKey = selectedEp ? `tv_${item.id}_s${selectedSeason}e${selectedEp.episode_number}` : null;
   const currentEpDownload = selectedEp ? (downloadsByEpisodeKey.get(`s${selectedSeason}e${selectedEp.episode_number}`) ?? null) : null;
 
@@ -522,7 +467,7 @@ export default function TVPage({
     if (wv) { try { wv.src = "about:blank"; } catch {} }
   }, [playing]);
 
-  // ── Webview loading — 1.5s timeout, spinner only ─────────────────────────
+  // ── Webview loading ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!playing) return;
     const wv = webviewRef.current;
@@ -696,6 +641,13 @@ export default function TVPage({
   const mediaName = selectedEp ? `${title}${effectiveYear ? ` (${effectiveYear})` : ""} S${String(selectedSeason).padStart(2, "0")} E${String(selectedEp.episode_number).padStart(2, "0")}` : title;
   const currentEpWatched = currentProgressKey ? !!watched?.[currentProgressKey] : false;
 
+  // ── Watch button handler — plays first episode or resumes ────────────────
+  const handleWatch = useCallback(() => {
+    const firstEp = currentSeasonEpisodes[0];
+    if (!firstEp) return;
+    playEpisode(firstEp);
+  }, [currentSeasonEpisodes, playEpisode]);
+
   return (
     <div className="fade-in">
       {loading && (<div className="loader"><div className="spinner" /></div>)}
@@ -734,8 +686,21 @@ export default function TVPage({
                 )}
                 <p className="detail-overview">{displayOverview}</p>
                 <div className="detail-actions">
+                  {/* ── Watch / Play button ── */}
+                  {restricted ? (
+                    <button className="btn btn-primary btn-restricted" disabled>🔒 Restricted</button>
+                  ) : (
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleWatch}
+                      disabled={loadingSeason || currentSeasonEpisodes.length === 0}
+                    >
+                      <PlayIcon />
+                      {loadingSeason ? "Loading…" : "Watch"}
+                    </button>
+                  )}
                   {trailerKey && (restricted ? (
-                    <button className="btn btn-secondary btn-restricted" disabled title="Inappropriate for your age rating setting">🔒 Trailer</button>
+                    <button className="btn btn-secondary btn-restricted" disabled>🔒 Trailer</button>
                   ) : (
                     <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}><TrailerIcon /> Trailer</button>
                   ))}
@@ -746,7 +711,7 @@ export default function TVPage({
             </div>
           </div>
 
-          {/* ── Active player ─────────────────────────────────────────── */}
+          {/* ── Active inline player (when onWatch is not defined) ─────── */}
           {playing && selectedEp && (
             <div className="section">
               <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
@@ -760,20 +725,11 @@ export default function TVPage({
               </div>
 
               <div className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`} ref={playerWrapRef}>
-
-                {/* Solid black spinner overlay — no text ever */}
                 {webviewLoading && !resolveError && (
-                  <div style={{
-                    position: "absolute", inset: 0, zIndex: 10,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: "#000",
-                    borderRadius: "inherit",
-                  }}>
+                  <div style={{ position: "absolute", inset: 0, zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", background: "#000", borderRadius: "inherit" }}>
                     <div className="spinner" />
                   </div>
                 )}
-
-                {/* Async error state */}
                 {isAsync && resolveError && !resolvingUrl && (
                   <div style={{ position: "absolute", inset: 0, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)", gap: 10, borderRadius: "inherit" }}>
                     <span style={{ fontSize: 28 }}>⚠️</span>
@@ -782,8 +738,6 @@ export default function TVPage({
                     <span style={{ fontSize: 12, color: "var(--text3)" }}>Try a different source</span>
                   </div>
                 )}
-
-                {/* PiP overlay */}
                 {pipOpen && (
                   <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.92)", gap: 16, borderRadius: "inherit" }}>
                     <PopOutIcon size={36} />
@@ -791,7 +745,6 @@ export default function TVPage({
                     <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()} style={{ marginTop: 4 }}>Close pop-out &amp; return</button>
                   </div>
                 )}
-
                 <webview
                   ref={webviewRef}
                   src={pipOpen ? "about:blank" : isAsync ? resolvedPlayerUrl || "about:blank" : getSourceUrl(playerSource, "tv", item.id, playerEp.season, playerEp.episode)}
@@ -800,48 +753,32 @@ export default function TVPage({
                   plugins="true"
                   webpreferences="contextIsolation=true,nodeIntegration=false,webSecurity=false,allowRunningInsecureContent=true"
                   useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-                  style={{
-                    position: "absolute", inset: 0, width: "100%", height: "100%",
-                    border: "none", outline: "none", boxShadow: "none", background: "black",
-                    opacity: webviewLoading || (isAsync && !resolvedPlayerUrl) ? 0 : 1,
-                    transition: "opacity 0.25s ease",
-                  }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", outline: "none", boxShadow: "none", background: "black", opacity: webviewLoading || (isAsync && !resolvedPlayerUrl) ? 0 : 1, transition: "opacity 0.25s ease" }}
                   tabIndex={-1}
                 />
-
-                {/* Player overlay controls */}
                 <div className="player-overlay-group">
-                  <button
-                    ref={sourceRef}
-                    className="player-overlay-btn"
+                  <button ref={sourceRef} className="player-overlay-btn"
                     onClick={() => {
                       if (!canSwitchSource(planId)) { setGateModal("source"); return; }
                       const rect = sourceRef.current?.getBoundingClientRect();
                       if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
                       setShowSourceMenu((v) => !v);
-                    }}
-                    title="Change source"
-                  >
-                    <SourceIcon />
-                    {PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "Source"}
+                    }} title="Change source">
+                    <SourceIcon />{PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "Source"}
                   </button>
                   {playerSource === "allmanga" && (
                     <button className="player-overlay-btn" onClick={() => {
                       const next = dubMode === "sub" ? "dub" : "sub";
-                      setDubMode(next);
-                      storage.set("allmangaDubMode", next);
+                      setDubMode(next); storage.set("allmangaDubMode", next);
                       setM3u8Url(null); setInterceptedSubs([]);
                       setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
-                    }} title="Toggle Sub/Dub">
-                      {dubMode === "sub" ? "SUB" : "DUB"}
-                    </button>
+                    }} title="Toggle Sub/Dub">{dubMode === "sub" ? "SUB" : "DUB"}</button>
                   )}
                   <button className="player-overlay-btn" onClick={() => { setShowSourceMenu(false); setShowBlockedModal(true); }} title="Blocked ads & trackers">
                     <ShieldBlockIcon />
                     {blockedSession > 0 && <span className="player-blocked-badge">{blockedSession}</span>}
                   </button>
-                  <button
-                    className="player-overlay-btn"
+                  <button className="player-overlay-btn"
                     onClick={() => {
                       if (pipOpen) { window.electron?.closePipWindow?.(); return; }
                       if (!canPopOut(planId)) { setGateModal("pip"); return; }
@@ -852,21 +789,16 @@ export default function TVPage({
                     }}
                     title={pipOpen ? "Close pop-out" : "Pop out player"}
                     disabled={!pipOpen && (webviewLoading || !!(isAsync && !resolvedPlayerUrl))}
-                    style={pipOpen ? { color: "var(--red)" } : undefined}
-                  >
+                    style={pipOpen ? { color: "var(--red)" } : undefined}>
                     <PopOutIcon />
                   </button>
                 </div>
-
-                {/* Source dropdown */}
                 {showSourceMenu && menuPos && (
                   <div className="source-dropdown source-dropdown--fixed" style={{ top: menuPos.top, left: menuPos.left }} onClick={(e) => e.stopPropagation()}>
                     {PLAYER_SOURCES.map((src) => (
                       <button key={src.id} className={"source-dropdown__item" + (playerSource === src.id ? " source-dropdown__item--active" : "")} onClick={() => {
-                        setShowSourceMenu(false);
-                        if (src.id === playerSource) return;
-                        setPlayerSource(src.id);
-                        storage.set("playerSource", src.id);
+                        setShowSourceMenu(false); if (src.id === playerSource) return;
+                        setPlayerSource(src.id); storage.set("playerSource", src.id);
                         setM3u8Url(null); setInterceptedSubs([]);
                         setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
                       }}>
@@ -877,45 +809,35 @@ export default function TVPage({
                     ))}
                   </div>
                 )}
-
-                {/* AniSkip prompt */}
                 {skipPrompt && (
-                  <button onClick={handleManualSkip} style={{ position: "absolute", bottom: 24, right: 24, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, background: "rgba(0,0,0,0.72)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 8, color: "white", cursor: "pointer", padding: "9px 18px", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", transition: "background 0.15s, border-color 0.15s", fontFamily: "var(--font-body)", animation: "slideDown 0.2s ease" }} onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(229,9,20,0.85)"; e.currentTarget.style.borderColor = "rgba(229,9,20,0.5)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.72)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)"; }}>
+                  <button onClick={handleManualSkip} style={{ position: "absolute", bottom: 24, right: 24, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, background: "rgba(0,0,0,0.72)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 8, color: "white", cursor: "pointer", padding: "9px 18px", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", transition: "background 0.15s, border-color 0.15s", fontFamily: "var(--font-body)", animation: "slideDown 0.2s ease" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(229,9,20,0.85)"; e.currentTarget.style.borderColor = "rgba(229,9,20,0.5)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.72)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)"; }}>
                     <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>SKIP</span>
                     <span style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", letterSpacing: 1 }}>{skipPrompt === "intro" ? "INTRO" : "OUTRO"}</span>
                   </button>
                 )}
               </div>
 
-              {/* Download button below player */}
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
-                <button
-                  className="btn btn-secondary"
+                <button className="btn btn-secondary"
                   onClick={() => {
                     if (currentEpDownload) { onGoToDownloads?.(currentEpDownload.id); return; }
                     if (!canDownload(planId)) { setGateModal("download"); return; }
-                    setShowSourceMenu(false);
-                    setShowDownload(true);
+                    setShowSourceMenu(false); setShowDownload(true);
                   }}
-                  title={currentEpDownload
-                    ? (currentEpDownload.status === "downloading" ? "Downloading… click to view" : "Downloaded — click to view")
-                    : "Download this episode"
-                  }
-                >
+                  title={currentEpDownload ? (currentEpDownload.status === "downloading" ? "Downloading… click to view" : "Downloaded — click to view") : "Download this episode"}>
                   {currentEpDownload ? (
                     <span style={{ color: currentEpDownload.status === "downloading" ? "var(--red)" : "#4caf50" }}>
                       {currentEpDownload.status === "downloading" ? "↓ Downloading…" : "✓ Downloaded"}
                     </span>
-                  ) : (
-                    <><DownloadIcon /> Download Episode</>
-                  )}
+                  ) : (<><DownloadIcon /> Download Episode</>)}
                 </button>
                 {m3u8Url && !currentEpDownload && (
                   <span style={{ fontSize: 12, color: "var(--red)", fontWeight: 600 }}>● HD stream detected</span>
                 )}
               </div>
 
-              {/* Progress bar */}
               {currentProgressKey && (() => {
                 const epPct = progress[currentProgressKey] || 0;
                 const dur = durationRef.current;
@@ -932,7 +854,6 @@ export default function TVPage({
                 ) : null;
               })()}
 
-              {/* Manual progress markers */}
               {currentProgressKey && (
                 <div className="progress-mark-row">
                   <span style={{ fontSize: 12, color: "var(--text3)", marginRight: 4 }}>Mark progress:</span>
@@ -943,106 +864,16 @@ export default function TVPage({
               )}
             </div>
           )}
-
-          {/* ── Episodes section ──────────────────────────────────────── */}
-          <div className="section">
-            <div className="section-title">Episodes</div>
-            {seasons.length > 0 && (
-              <div className="season-selector">
-                {seasons.map((s) => {
-                  const sw = seasonWatchedMap[s.season_number] ?? "none";
-                  return (
-                    <button key={s.season_number} className={`season-btn ${selectedSeason === s.season_number ? "active" : ""} ${sw === "all" ? "season-watched" : sw.startsWith("some") ? "season-partial" : ""}`} onClick={() => setSelectedSeason(s.season_number)} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setSeasonMenu({ x: e.clientX, y: e.clientY, seasonNum: s.season_number }); }} title="Right-click to mark season as watched/unwatched">
-                      {sw === "all" && <span className="season-watched-icon">✓</span>}
-                      {sw === "some25" && <PartialCircleIcon pct={25} />}
-                      {sw === "some50" && <PartialCircleIcon pct={50} />}
-                      {sw === "some75" && <PartialCircleIcon pct={75} />}
-                      {s.season_number === 0 ? "Specials" : `Season ${s.season_number}`}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {selectedSeason === 0 && !loadingSeason && (
-              <div style={{ margin: "8px 0", padding: "8px 12px", borderRadius: 8, background: "rgba(255,200,50,0.08)", border: "1px solid rgba(255,200,50,0.2)", fontSize: 12, color: "var(--text3)", display: "flex", alignItems: "center", gap: 8 }}>
-                <span>⚠️</span><span>Specials support varies by provider. If the wrong episode plays, try switching to a different source.</span>
-              </div>
-            )}
-            {loadingSeason && (<div className="loader"><div className="spinner" /></div>)}
-            {!loadingSeason && (seasonData?.episodes || episodeGroupCurrentEpisodes?.length) && (
-              <div className="episodes-grid">
-                {currentSeasonEpisodes.map((ep) => {
-                  const pk = `tv_${item.id}_s${selectedSeason}e${ep.episode_number}`;
-                  return (
-                    <EpisodeCard key={ep.episode_number} ep={ep} itemId={item.id} selectedSeason={selectedSeason} epPct={progress[pk] || 0} epWatched={!!watched?.[pk]} playing={playing} selectedEpNumber={selectedEp?.episode_number} downloadsByEpisodeKey={downloadsByEpisodeKey} restricted={restricted} onPlay={playEpisode} onContextMenu={setEpMenu} onGoToDownloads={onGoToDownloads} />
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </>
       )}
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {showTrailer && trailerKey && (<TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />)}
-      {epMenu && (<ContextMenu x={epMenu.x} y={epMenu.y} isWatched={!!watched?.[epMenu.pk]} hasProgress={(progress?.[epMenu.pk] ?? 0) > 0} watchedLabel="Mark as Watched" unwatchedLabel="Mark as Unwatched" onMarkWatched={() => onMarkWatched?.(epMenu.pk)} onMarkUnwatched={() => onMarkUnwatched?.(epMenu.pk)} onMarkNotStarted={() => { onMarkUnwatched?.(epMenu.pk); saveProgress?.(epMenu.pk, 0); storage.set("dlTime_" + epMenu.pk, null); }} onClose={() => setEpMenu(null)} />)}
-      {seasonMenu && (<ContextMenu x={seasonMenu.x} y={seasonMenu.y} isWatched={isSeasonWatched(seasonMenu.seasonNum)} watchedLabel="Mark Season as Watched" unwatchedLabel="Mark Season as Unwatched" onMarkWatched={() => markSeasonWatched(seasonMenu.seasonNum)} onMarkUnwatched={() => markSeasonUnwatched(seasonMenu.seasonNum)} onClose={() => setSeasonMenu(null)} />)}
       {showBlockedModal && (<BlockedStatsModal sessionDomains={getBlockedDomains()} sessionTotal={blockedSession} alltimeTotal={blockedAlltime} onClose={() => setShowBlockedModal(false)} />)}
       {showDownload && (<DownloadModal onClose={() => setShowDownload(false)} m3u8Url={m3u8Url} subtitles={interceptedSubs} mediaName={mediaName} downloaderFolder={downloaderFolder} setDownloaderFolder={handleSetDownloaderFolder} onOpenSettings={onSettings} onDownloadStarted={onDownloadStarted} mediaId={item.id} mediaType="tv" season={selectedSeason} episode={selectedEp?.episode_number} posterPath={d.poster_path} tmdbId={item.id} />)}
       {gateModal && (
-        <PremiumGate
-          feature={gateModal}
-          onUpgrade={handleUpgrade}
-          onClose={() => setGateModal(null)}
-        />
+        <PremiumGate feature={gateModal} onUpgrade={handleUpgrade} onClose={() => setGateModal(null)} />
       )}
     </div>
   );
 }
-
-// ── EpisodeCard ─────────────────────────────────────────────────────────────
-const _todayForEpisodes = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
-
-const EpisodeCard = memo(function EpisodeCard({ ep, itemId, selectedSeason, epPct, epWatched, playing, selectedEpNumber, downloadsByEpisodeKey, restricted, onPlay, onContextMenu, onGoToDownloads }) {
-  const pk = `tv_${itemId}_s${selectedSeason}e${ep.episode_number}`;
-  const isPlaying = playing && selectedEpNumber === ep.episode_number;
-  const epUnreleased = ep.air_date ? new Date(ep.air_date) > _todayForEpisodes : false;
-  const epDownload = downloadsByEpisodeKey.get(`s${selectedSeason}e${ep.episode_number}`) ?? null;
-
-  return (
-    <div className={`episode-card ${isPlaying ? "playing" : ""} ${epWatched ? "ep-watched" : ""} ${restricted ? "episode-card--restricted" : ""} ${epUnreleased ? "episode-card--unreleased" : ""}`} onClick={() => (restricted || epUnreleased ? null : onPlay(ep))} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (!restricted && !epUnreleased) onContextMenu({ x: e.clientX, y: e.clientY, pk }); }} style={epUnreleased ? { cursor: "default" } : undefined}>
-      <div className="episode-thumb">
-        {ep.still_path ? (
-          <img src={imgUrl(ep.still_path, "w300")} alt={ep.name} loading="lazy" />
-        ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text3)" }}><PlayIcon /></div>
-        )}
-        {restricted ? (
-          <div className="episode-restricted-overlay">🔒<span>Inappropriate for your age</span></div>
-        ) : epUnreleased ? (
-          <div className="episode-restricted-overlay">🔒<span>Unreleased</span></div>
-        ) : isPlaying ? (
-          <div className="episode-playing-badge"><span className="episode-playing-dot" />Playing</div>
-        ) : (
-          <div className="episode-thumb-play"><PlayIcon /></div>
-        )}
-      </div>
-      <div className="episode-info">
-        <div className="episode-num" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          E{ep.episode_number}
-          {epWatched && <WatchedIcon size={14} />}
-          {epDownload && (
-            <span className="ep-downloaded-badge" title={epDownload.status === "downloading" ? "Downloading… - click to view in Downloads" : "Downloaded - click to view in Downloads"} style={{ borderColor: epDownload.status === "downloading" ? "rgba(229,9,20,0.5)" : "rgba(72,199,116,0.5)", color: epDownload.status === "downloading" ? "var(--red)" : "#4caf50", background: epDownload.status === "downloading" ? "rgba(229,9,20,0.12)" : "rgba(72,199,116,0.18)" }} onClick={(e) => { e.stopPropagation(); onGoToDownloads?.(epDownload.id); }}>↓</span>
-          )}
-        </div>
-        <div className="episode-name">{ep.name}</div>
-        <EpisodeDesc overview={ep.overview} episodeName={ep.name} />
-        {!epWatched && epPct > 0 && (
-          <div className="episode-progress-bar">
-            <div className="episode-progress-fill" style={{ width: `${Math.min(epPct, 100)}%` }} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
