@@ -33,7 +33,7 @@ const SettingsPage  = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const WatchPage     = lazy(() => import("./pages/WatchPage"));
 const PricingPage   = lazy(() => import("./pages/PricingPage"));
-const NsaiPage      = lazy(() => import("./pages/NsaiPage"));
+const NsaiPage      = lazy(() => import("./pages/NSAIPage"));
 
 import { checkForUpdates } from "./utils/updates";
 

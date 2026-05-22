@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { imgUrl } from "../utils/api";
 import { getCurrentPlan } from "../utils/premium";
 
-import NsaiPage from "../pages/NsaiPage";
+import NsaiPage from "../pages/NSAIPage";
 
 import DonateModal from "../components/DonateModal";
 
