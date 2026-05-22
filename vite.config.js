@@ -1,17 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig(({ mode }) => {
-  const isDist = process.env.ELECTRON_DIST === "1";
-
+export default defineConfig(() => {
+  const isVercel  = process.env.VERCEL === "1";
+  const isDist    = process.env.ELECTRON_DIST === "1";
   return {
     plugins: [react()],
-
-    // Works for both Electron (file://) and Vercel (absolute paths)
-    base: isDist ? "./" : "/",
-
+    // Vercel (web) needs absolute "/", Electron needs relative "./"
+    base: isVercel ? "/" : "./",
     build: {
-      outDir: "dist",
       minify: "terser",
       terserOptions: {
         compress: {

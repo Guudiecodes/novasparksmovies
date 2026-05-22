@@ -89,9 +89,93 @@ function ServerToast({ status, sourceLabel }) {
 // Strategy: aggressive iframe oversizing crops the edges where UI chrome lives,
 // then SOLID (not gradient) corner blocks kill any in-video watermarks that
 // survive the crop (Prime Video, Netflix, Disney+, HBO, Apple TV+ logos).
+// Injected into the webview — kills ALL YouTube UI via CSS + MutationObserver
+const _TRAILER_INJECT_JS = `(function(){
+  if(window.__nsTrailerInjected) return;
+  window.__nsTrailerInjected = true;
+
+  var s = document.createElement('style');
+  s.textContent = [
+    '#movie_player > *:not(.html5-video-container)',
+    '#movie_player .html5-video-container > *:not(video)',
+    '.ytp-chrome-top','.ytp-chrome-bottom','.ytp-chrome-controls',
+    '.ytp-gradient-top','.ytp-gradient-bottom',
+    '.ytp-pause-overlay','.ytp-play-button','.ytp-large-play-button',
+    '.ytp-cued-thumbnail-overlay','.ytp-watermark','.ytp-youtube-button',
+    '.ytp-error','.ytp-error-content','.ytp-error-icon',
+    '.ytp-spinner','.ytp-spinner-container',
+    '.ytp-title','.ytp-title-text','.ytp-title-channel',
+    '.ytp-share-button','.ytp-watch-later-button','.ytp-copylink-button',
+    '.ytp-cards-teaser','.ytp-endscreen-element',
+    '.ytp-contextmenu','.ytp-tooltip',
+    '.ytp-progress-bar-container','.ytp-scrubber-container',
+    '.ytp-time-display','.ytp-volume-panel',
+    '.annotation','.iv-branding','.iv-drawer',
+    'a[href*="youtube.com"]','a[href*="youtu.be"]'
+  ].join(',') + '{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;}';
+  s.textContent += 'video{object-fit:cover!important;pointer-events:none!important;}';
+  s.textContent += 'body,html{background:#000!important;overflow:hidden!important;}';
+  document.head.appendChild(s);
+
+  function forcePlay() {
+    var v = document.querySelector('video');
+    if(v && v.paused) { v.muted=true; v.play().catch(function(){}); }
+  }
+  forcePlay();
+  [300,800,1500,3000,5000].forEach(function(t){ setTimeout(forcePlay,t); });
+
+  var HIDE = [
+    '.ytp-pause-overlay','.ytp-large-play-button','.ytp-play-button',
+    '.ytp-chrome-top','.ytp-chrome-bottom','.ytp-chrome-controls',
+    '.ytp-gradient-top','.ytp-gradient-bottom',
+    '.ytp-watermark','.ytp-youtube-button','.ytp-error',
+    '.ytp-spinner','.ytp-title','.ytp-endscreen-element',
+    '.ytp-cards-teaser','.ytp-cued-thumbnail-overlay'
+  ];
+  function sweep() {
+    HIDE.forEach(function(sel){
+      document.querySelectorAll(sel).forEach(function(el){
+        el.style.cssText='display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;';
+      });
+    });
+    forcePlay();
+  }
+  var obs = new MutationObserver(sweep);
+  obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true});
+  setTimeout(function(){ obs.disconnect(); },60000);
+})();`;
+
+// Poll the webview every second to check currentTime vs trimEnd
+function _useWebviewTrimPoll(webviewRef, durationRef, endedRef, trimEnd, onEnded) {
+  const pollRef = useRef(null);
+  useEffect(() => {
+    const tick = async () => {
+      const wv = webviewRef.current;
+      if (!wv) return;
+      try {
+        const r = await wv.executeJavaScript(
+          `(()=>{ const v=document.querySelector('video'); return v ? {ct:v.currentTime,dur:v.duration||0} : null; })()`
+        );
+        if (!r) return;
+        if (r.dur > 0) durationRef.current = r.dur;
+        if (durationRef.current > 0) {
+          const stopAt = durationRef.current - trimEnd;
+          if (!endedRef.current && r.ct >= stopAt && stopAt > 0) {
+            endedRef.current = true;
+            onEnded?.();
+          }
+        }
+      } catch {}
+    };
+    pollRef.current = setInterval(tick, 1000);
+    return () => clearInterval(pollRef.current);
+  }, [webviewRef, durationRef, endedRef, trimEnd, onEnded]);
+}
+
 function HeroTrailer({ trailerKey, trimStart, trimEnd, muted, onEnded, onReady }) {
+  const isElectron  = !!window?.electron;
+  const webviewRef  = useRef(null);
   const iframeRef   = useRef(null);
-  const pollRef     = useRef(null);
   const durationRef = useRef(0);
   const readyRef    = useRef(false);
   const endedRef    = useRef(false);
@@ -115,178 +199,99 @@ function HeroTrailer({ trailerKey, trimStart, trimEnd, muted, onEnded, onReady }
     return `https://www.youtube.com/embed/${trailerKey}?${params.toString()}`;
   }, [trailerKey, trimStart, muted]);
 
+  // Webview trim polling (Electron only)
+  _useWebviewTrimPoll(webviewRef, durationRef, endedRef, trimEnd, onEnded);
+
+  // iframe postMessage trim polling (web only)
+  const iframePollRef = useRef(null);
   useEffect(() => {
+    if (isElectron) return;
     const handler = (e) => {
       try {
         const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
         if (!data || data.event !== "infoDelivery" || !data.info) return;
         const { currentTime, duration } = data.info;
-        if (duration && duration > 0) durationRef.current = duration;
-        if (currentTime && durationRef.current > 0) {
+        if (duration > 0) durationRef.current = duration;
+        if (durationRef.current > 0) {
           const stopAt = durationRef.current - trimEnd;
           if (!endedRef.current && currentTime >= stopAt && stopAt > 0) {
-            endedRef.current = true;
-            onEnded?.();
+            endedRef.current = true; onEnded?.();
           }
         }
       } catch {}
     };
     window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [trimEnd, onEnded]);
-
-  useEffect(() => {
-    const tick = () => {
+    iframePollRef.current = setInterval(() => {
       try {
+        iframeRef.current?.contentWindow?.postMessage('{"event":"listening"}', "*");
         iframeRef.current?.contentWindow?.postMessage(
           JSON.stringify({ event: "command", func: "getVideoData", args: [] }), "*"
         );
-        iframeRef.current?.contentWindow?.postMessage('{"event":"listening"}', "*");
       } catch {}
-    };
-    pollRef.current = setInterval(tick, 1000);
-    return () => clearInterval(pollRef.current);
-  }, []);
+    }, 1000);
+    return () => { window.removeEventListener("message", handler); clearInterval(iframePollRef.current); };
+  }, [isElectron, trimEnd, onEnded]);
 
-  const handleLoad = () => {
-    if (!readyRef.current) { readyRef.current = true; onReady?.(); }
+  // Shared bottom gradient
+  const gradient = (
+    <div style={{
+      position: "absolute", bottom: 0, left: 0, right: 0, height: "60%",
+      background: "linear-gradient(to top, var(--bg,#050c0f) 0%, rgba(5,12,15,0.88) 28%, rgba(5,12,15,0.42) 58%, transparent 100%)",
+      pointerEvents: "none", zIndex: 3,
+    }} />
+  );
+
+  const playerStyle = {
+    position: "absolute", top: "50%", left: "50%",
+    width: "100%", height: "100%",
+    transform: "translate(-50%, -50%) scale(1.55)",
+    transformOrigin: "center center",
+    border: "none", pointerEvents: "none",
   };
 
-  // BG color matching the app dark theme — used for solid corner blocks
-  const BG = "rgba(5,12,15,1)";
-  const BG0 = "rgba(5,12,15,0)";
+  // ── Electron: webview injects CSS to nuke all YouTube UI ─────────────────
+  if (isElectron) {
+    return (
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+        <webview
+          ref={webviewRef}
+          src={src}
+          partition="persist:preview"
+          allowpopups="false"
+          plugins="true"
+          webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
+          useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+          style={playerStyle}
+          onDomReady={async () => {
+            const wv = webviewRef.current;
+            if (!wv) return;
+            try { await wv.executeJavaScript(_TRAILER_INJECT_JS); } catch {}
+            if (!readyRef.current) { readyRef.current = true; onReady?.(); }
+          }}
+        />
+        {gradient}
+      </div>
+    );
+  }
 
+  // ── Web: iframe with scale crop (no Electron security restrictions) ───────
   return (
     <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-
-      {/* Iframe: pushed out ~18% on all sides so YouTube chrome is off-screen */}
       <iframe
         ref={iframeRef}
         src={src}
         allow="autoplay; fullscreen"
         allowFullScreen
-        onLoad={handleLoad}
-        style={{
-          position:      "absolute",
-          top:           "-18%",
-          left:          "-10%",
-          width:         "120%",
-          height:        "136%",
-          border:        "none",
-          pointerEvents: "none",
-        }}
+        onLoad={() => { if (!readyRef.current) { readyRef.current = true; onReady?.(); } }}
+        style={playerStyle}
         title="Preview"
       />
-
-      {/*
-        ── SOLID corner blocks ─────────────────────────────────────────────
-        These are NOT gradients. Solid = invisible to user (matches dark bg),
-        completely opaque over any platform watermark (Prime, Netflix, etc.)
-        Each block has a feathered bleed so the edge doesn't look cut off.
-      */}
-
-      {/* TOP-RIGHT solid block — Prime Video / Netflix / Apple logo zone */}
-      <div style={{
-        position: "absolute", top: 0, right: 0,
-        width: "22%", height: "18%",
-        background: BG,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      {/* Feather: left edge of top-right block */}
-      <div style={{
-        position: "absolute", top: 0, right: "22%",
-        width: "8%", height: "18%",
-        background: `linear-gradient(to left, ${BG} 0%, ${BG0} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      {/* Feather: bottom edge of top-right block */}
-      <div style={{
-        position: "absolute", top: "18%", right: 0,
-        width: "22%", height: "7%",
-        background: `linear-gradient(to top, ${BG0} 0%, ${BG} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-
-      {/* TOP-LEFT solid block — YouTube logo / channel name zone */}
-      <div style={{
-        position: "absolute", top: 0, left: 0,
-        width: "20%", height: "18%",
-        background: BG,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      {/* Feather: right edge of top-left block */}
-      <div style={{
-        position: "absolute", top: 0, left: "20%",
-        width: "8%", height: "18%",
-        background: `linear-gradient(to right, ${BG} 0%, ${BG0} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      {/* Feather: bottom edge of top-left block */}
-      <div style={{
-        position: "absolute", top: "18%", left: 0,
-        width: "20%", height: "7%",
-        background: `linear-gradient(to top, ${BG0} 0%, ${BG} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-
-      {/* BOTTOM-LEFT solid block — YouTube watermark / channel icon */}
-      <div style={{
-        position: "absolute", bottom: 0, left: 0,
-        width: "18%", height: "16%",
-        background: BG,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      <div style={{
-        position: "absolute", bottom: 0, left: "18%",
-        width: "7%", height: "16%",
-        background: `linear-gradient(to right, ${BG} 0%, ${BG0} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      <div style={{
-        position: "absolute", bottom: "16%", left: 0,
-        width: "18%", height: "6%",
-        background: `linear-gradient(to bottom, ${BG0} 0%, ${BG} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-
-      {/* BOTTOM-RIGHT solid block — YouTube settings / fullscreen btn */}
-      <div style={{
-        position: "absolute", bottom: 0, right: 0,
-        width: "18%", height: "16%",
-        background: BG,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      <div style={{
-        position: "absolute", bottom: 0, right: "18%",
-        width: "7%", height: "16%",
-        background: `linear-gradient(to left, ${BG} 0%, ${BG0} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-      <div style={{
-        position: "absolute", bottom: "16%", right: 0,
-        width: "18%", height: "6%",
-        background: `linear-gradient(to bottom, ${BG0} 0%, ${BG} 100%)`,
-        pointerEvents: "none", zIndex: 6,
-      }} />
-
-      {/* Full-width top strip — catches any title/info bar YouTube shows on load */}
-      <div style={{
-        position: "absolute", top: 0, left: 0, right: 0,
-        height: "12%",
-        background: `linear-gradient(to bottom, ${BG} 0%, rgba(5,12,15,0.6) 65%, ${BG0} 100%)`,
-        pointerEvents: "none", zIndex: 5,
-      }} />
-
-      {/* Bottom cinematic gradient — page blends into video */}
-      <div style={{
-        position: "absolute", bottom: 0, left: 0, right: 0,
-        height: "60%",
-        background: `linear-gradient(to top, var(--bg, #050c0f) 0%, rgba(5,12,15,0.88) 28%, rgba(5,12,15,0.42) 58%, ${BG0} 100%)`,
-        pointerEvents: "none", zIndex: 5,
-      }} />
+      {gradient}
     </div>
   );
 }
+
+
 
 export default function MoviePage({
   item, apiKey, onSave, isSaved, onHistory, progress, saveProgress,
