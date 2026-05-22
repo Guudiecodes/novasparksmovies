@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { imgUrl } from "../utils/api";
-import { getCurrentPlan } from "../utils/premium";
-
-import NsaiPage from "../pages/NSAIPage";
+import { getEffectivePlan as getCurrentPlan } from "../utils/premium";
 
 import DonateModal from "../components/DonateModal";
 
@@ -20,6 +18,12 @@ import {
 
 // ── GitHub repo for auto-fetching latest release ──────────────────────────
 const GITHUB_REPO = "Guudiecodes/novasparks-gen";
+const DIRECT_DOWNLOAD = {
+  url:     "https://github.com/Guudiecodes/novasparks-gen/releases/download/v2.4.0/NovaSpark.Setup.2.4.0.exe",
+  version: "v2.4.0",
+  name:    "NovaSpark Setup 2.4.0.exe",
+  size:    "84.5 MB",
+};
 
 function getPlanTier(planId) {
   if (planId === "premium")                      return "diamond";
@@ -43,7 +47,7 @@ function DownloadPopup({ onClose }) {
   const [error,        setError]        = useState(null);
 
   useEffect(() => {
-    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
+    setRelease(DIRECT_DOWNLOAD); setLoading(false); if (false)
       .then((r) => r.json())
       .then((data) => {
         if (data.message) { setError("No release found yet."); setLoading(false); return; }

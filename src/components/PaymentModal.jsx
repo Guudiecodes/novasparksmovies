@@ -2,26 +2,23 @@ import { useState, useEffect, useCallback } from "react";
 import { setPremiumPlan } from "../utils/premium";
 import { CloseIcon } from "./Icons";
 
-// ── YOUR PAYSTACK PUBLIC KEY ── paste your pk_live_... key here ───────────
-// Dashboard: https://dashboard.paystack.com/#/settings/developers
+// ── YOUR PAYSTACK PUBLIC KEY ──────────────────────────────────────────────────
 const PAYSTACK_PUBLIC_KEY = "pk_live_7a41cee8223af8ebae60c24c63fc8be8cdbb9886";
 
-// ── Your crypto wallet addresses (from your Bybit deposit addresses) ──────
+// ── Crypto wallet addresses ───────────────────────────────────────────────────
 const CRYPTO_WALLETS = {
-  USDT_TRC: "0xc216ee7748a18c1a451b223cd0e344553ecf86ce", // BSC (BEP20)
-  USDT_ERC: "0xc216ee7748a18c1a451b223cd0e344553ecf86ce", // Ethereum (ERC20)
+  USDT_TRC: "0xc216ee7748a18c1a451b223cd0e344553ecf86ce",
+  USDT_ERC: "0xc216ee7748a18c1a451b223cd0e344553ecf86ce",
   BTC:      "12SDDVhtgYaKkmYg5tNxCygo43EqxndDXm",
-  ETH:      "0xc216ee7748a18c1a451b223cd0e344553ecf86ce",  // Ethereum (ERC20)
+  ETH:      "0xc216ee7748a18c1a451b223cd0e344553ecf86ce",
 };
 
-// ── NGN → USD display ─────────────────────────────────────────────────────
 const NGN_TO_USD = 1600;
 function toUSD(ngn) {
   if (!ngn) return null;
   return `~$${(ngn / NGN_TO_USD).toFixed(2)} USD`;
 }
 
-// ── Load Paystack script (idempotent) ─────────────────────────────────────
 function loadPaystack() {
   return new Promise((resolve, reject) => {
     if (window.PaystackPop) { resolve(); return; }
@@ -45,7 +42,7 @@ function genRef() {
   return `NS_${Date.now()}_${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
-// ── Copy button ───────────────────────────────────────────────────────────
+// ── Copy button ───────────────────────────────────────────────────────────────
 function CopyBtn({ text }) {
   const [copied, setCopied] = useState(false);
   const doCopy = async () => {
@@ -68,14 +65,13 @@ function CopyBtn({ text }) {
       color:        copied ? "#48c774" : "var(--text2)",
       borderRadius: 6, padding: "4px 10px", fontSize: 11,
       fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-      fontFamily: "var(--font-body)", whiteSpace: "nowrap", flexShrink: 0,
+      whiteSpace: "nowrap", flexShrink: 0,
     }}>
       {copied ? "✓ Copied" : "Copy"}
     </button>
   );
 }
 
-// ── Field wrapper ─────────────────────────────────────────────────────────
 function Field({ label, children, error }) {
   return (
     <div style={{ marginBottom: error ? 6 : 14 }}>
@@ -88,19 +84,19 @@ function Field({ label, children, error }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 export default function PaymentModal({ plan, onClose, onSuccess }) {
-  const [step,         setStep]         = useState("account");
-  const [email,        setEmail]        = useState("");
-  const [password,     setPassword]     = useState("");
-  const [confirmPass,  setConfirmPass]  = useState("");
-  const [showPass,     setShowPass]     = useState(false);
-  const [emailErr,     setEmailErr]     = useState("");
-  const [passErr,      setPassErr]      = useState("");
-  const [cryptoCoin,   setCryptoCoin]   = useState("USDT_TRC");
-  const [paystackBusy, setPaystackBusy] = useState(false);
-  const [errorMsg,     setErrorMsg]     = useState("");
-  const [txnRef,       setTxnRef]       = useState("");
+  const [step,        setStep]        = useState("account");
+  const [email,       setEmail]       = useState("");
+  const [password,    setPassword]    = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [showPass,    setShowPass]    = useState(false);
+  const [emailErr,    setEmailErr]    = useState("");
+  const [passErr,     setPassErr]     = useState("");
+  const [cryptoCoin,  setCryptoCoin]  = useState("USDT_TRC");
+  const [paystackBusy,setPaystackBusy]= useState(false);
+  const [errorMsg,    setErrorMsg]    = useState("");
+  const [txnRef,      setTxnRef]      = useState("");
 
   const usdLabel = toUSD(plan?.price);
 
@@ -112,23 +108,16 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
 
   const validateEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
-  // Step 1 → 2
   const handleAccountNext = () => {
     let ok = true;
-    if (!validateEmail(email))     { setEmailErr("Enter a valid email address."); ok = false; } else setEmailErr("");
-    if (password.length < 6)       { setPassErr("Password must be at least 6 characters."); ok = false; }
+    if (!validateEmail(email))         { setEmailErr("Enter a valid email address."); ok = false; } else setEmailErr("");
+    if (password.length < 6)           { setPassErr("Password must be at least 6 characters."); ok = false; }
     else if (password !== confirmPass) { setPassErr("Passwords do not match."); ok = false; }
     else setPassErr("");
     if (ok) setStep("method");
   };
 
-  // Paystack pay
   const handlePaystack = useCallback(async () => {
-    if (!PAYSTACK_PUBLIC_KEY || PAYSTACK_PUBLIC_KEY.includes("REPLACE")) {
-      setErrorMsg("Paystack is not yet configured. Please use Crypto to pay, or contact support.");
-      setStep("error");
-      return;
-    }
     setPaystackBusy(true);
     setErrorMsg("");
     try {
@@ -142,10 +131,12 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
         currency: "NGN",
         ref,
         label:    `NovaSpark ${plan?.name}`,
+        // All Paystack channels — no specific wallet names shown
         channels: ["card", "bank", "ussd", "qr", "mobile_money", "bank_transfer"],
         metadata: { plan_id: plan?.id, plan_name: plan?.name, email: email.trim() },
         callback: (response) => {
-          setPremiumPlan(plan.id, email.trim(), password, response.reference, 31);
+          // Activate immediately — 30 days from now, survives cancellation
+          setPremiumPlan(plan.id, email.trim(), password, response.reference, 30);
           setTxnRef(response.reference);
           setStep("success");
           onSuccess?.(plan, email.trim(), response.reference);
@@ -159,13 +150,19 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
     }
   }, [email, password, plan, onSuccess]);
 
-  // Crypto confirm
   const handleCryptoConfirm = () => {
     const ref = genRef();
-    setPremiumPlan(plan.id, email.trim(), password, ref, 31);
+    setPremiumPlan(plan.id, email.trim(), password, ref, 30);
     setTxnRef(ref);
     setStep("success");
     onSuccess?.(plan, email.trim(), ref);
+  };
+
+  const COIN_LABELS = {
+    USDT_TRC: "USDT (BSC / BEP20)",
+    USDT_ERC: "USDT (Ethereum / ERC20)",
+    BTC:      "Bitcoin (BTC)",
+    ETH:      "Ethereum (ETH)",
   };
 
   const PlanSummary = () => (
@@ -181,11 +178,9 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
         </div>
       </div>
       <div style={{ textAlign: "right" }}>
+        <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 2 }}>{usdLabel}</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text)" }}>₦{(plan?.price || 0).toLocaleString()}</div>
-        {usdLabel
-          ? <div style={{ fontSize: 12, color: "var(--text3)" }}>{usdLabel} / mo</div>
-          : <div style={{ fontSize: 12, color: "var(--text3)" }}>per month</div>
-        }
+        <div style={{ fontSize: 11, color: "var(--text3)" }}>per month · 30 days access</div>
       </div>
     </div>
   );
@@ -204,23 +199,22 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
             {step === "account" && "Create your account"}
             {step === "method"  && "Choose payment method"}
             {step === "crypto"  && "Pay with Crypto"}
-            {step === "success" && "🎉 You're Premium!"}
+            {step === "success" && "🎉 You're on Standard!"}
             {step === "error"   && "Payment issue"}
           </div>
-          <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)", display: "flex", padding: 4, borderRadius: 6, transition: "color 0.15s" }}
+          <button
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)", display: "flex", padding: 4, borderRadius: 6 }}
             onClick={onClose}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text3)")}
           >
             <CloseIcon />
           </button>
         </div>
 
-        {/* ── Account ── */}
+        {/* ── Account step ── */}
         {step === "account" && (
           <div style={{ padding: "16px 20px 24px" }}>
             <p style={{ fontSize: 13, color: "var(--text3)", marginBottom: 18, lineHeight: 1.6 }}>
-              Your account is used to access your subscription on this device. Keep your password safe.
+              Your account is stored securely on this device to identify your subscription. Keep your password safe.
             </p>
             <Field label="Email address" error={emailErr}>
               <input className="apikey-input" type="email" placeholder="you@example.com" value={email}
@@ -234,7 +228,8 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                   onChange={(e) => { setPassword(e.target.value); setPassErr(""); }}
                   onKeyDown={(e) => e.key === "Enter" && handleAccountNext()}
                   style={{ flex: 1, marginBottom: 0 }} />
-                <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12, flexShrink: 0 }} onClick={() => setShowPass((v) => !v)} type="button">
+                <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12, flexShrink: 0 }}
+                  onClick={() => setShowPass((v) => !v)} type="button">
                   {showPass ? "Hide" : "Show"}
                 </button>
               </div>
@@ -245,20 +240,30 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                 onKeyDown={(e) => e.key === "Enter" && handleAccountNext()}
                 style={{ width: "100%", marginBottom: 0 }} />
             </Field>
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", fontSize: 15, padding: 12, marginTop: 4 }} onClick={handleAccountNext}>
+            <button className="btn btn-primary"
+              style={{ width: "100%", justifyContent: "center", fontSize: 15, padding: 12, marginTop: 4 }}
+              onClick={handleAccountNext}>
               Continue to Payment →
             </button>
           </div>
         )}
 
-        {/* ── Method ── */}
+        {/* ── Method step ── */}
         {step === "method" && (
           <div style={{ padding: "16px 20px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
             <p style={{ fontSize: 13, color: "var(--text3)", marginBottom: 4 }}>
               Paying as <strong style={{ color: "var(--text)" }}>{email}</strong>
             </p>
+
+            {/* Paystack */}
             <button onClick={handlePaystack} disabled={paystackBusy}
-              style={{ display: "flex", alignItems: "center", gap: 16, background: paystackBusy ? "var(--surface2)" : "rgba(0,180,166,0.08)", border: "2px solid rgba(0,180,166,0.4)", borderRadius: 12, padding: "16px 20px", cursor: paystackBusy ? "default" : "pointer", transition: "all 0.2s", textAlign: "left", width: "100%", opacity: paystackBusy ? 0.6 : 1 }}
+              style={{
+                display: "flex", alignItems: "center", gap: 16,
+                background: paystackBusy ? "var(--surface2)" : "rgba(0,180,166,0.08)",
+                border: "2px solid rgba(0,180,166,0.4)", borderRadius: 12,
+                padding: "16px 20px", cursor: paystackBusy ? "default" : "pointer",
+                transition: "all 0.2s", textAlign: "left", width: "100%", opacity: paystackBusy ? 0.6 : 1,
+              }}
               onMouseEnter={(e) => { if (!paystackBusy) e.currentTarget.style.background = "rgba(0,180,166,0.14)"; }}
               onMouseLeave={(e) => { if (!paystackBusy) e.currentTarget.style.background = "rgba(0,180,166,0.08)"; }}
             >
@@ -267,115 +272,139 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>
                   {paystackBusy ? "Opening Paystack…" : "Pay with Paystack"}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text3)" }}>Card · OPay · PalmPay · Kuda · Bank Transfer · USSD</div>
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>
+                  Card · Bank Transfer · USSD · Mobile Money
+                </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--red)" }}>₦{(plan?.price || 0).toLocaleString()}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#00b4a6" }}>₦{(plan?.price || 0).toLocaleString()}</div>
                 {usdLabel && <div style={{ fontSize: 11, color: "var(--text3)" }}>{usdLabel}</div>}
               </div>
             </button>
 
+            {/* Crypto */}
             <button onClick={() => setStep("crypto")}
-              style={{ display: "flex", alignItems: "center", gap: 16, background: "rgba(245,166,35,0.06)", border: "2px solid rgba(245,166,35,0.3)", borderRadius: 12, padding: "16px 20px", cursor: "pointer", transition: "all 0.2s", textAlign: "left", width: "100%" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(245,166,35,0.12)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(245,166,35,0.06)")}
+              style={{
+                display: "flex", alignItems: "center", gap: 16,
+                background: "rgba(245,166,35,0.06)", border: "2px solid rgba(245,166,35,0.3)",
+                borderRadius: 12, padding: "16px 20px", cursor: "pointer",
+                transition: "all 0.2s", textAlign: "left", width: "100%",
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245,166,35,0.12)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(245,166,35,0.06)"}
             >
-              <div style={{ fontSize: 28, lineHeight: 1 }}>🌍</div>
+              <div style={{ fontSize: 28, lineHeight: 1 }}>₿</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>Pay with Crypto</div>
-                <div style={{ fontSize: 12, color: "var(--text3)" }}>Bitcoin · USDT (BEP20/ERC20) · Ethereum · International</div>
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>USDT · BTC · ETH</div>
               </div>
-              <span style={{ fontSize: 18, color: "var(--text3)" }}>→</span>
+              <div style={{ fontSize: 12, color: "var(--text3)" }}>Manual confirm →</div>
             </button>
 
-            <button className="btn btn-ghost" style={{ marginTop: 4 }} onClick={() => setStep("account")}>← Back</button>
+            <button className="btn btn-ghost"
+              style={{ justifyContent: "center", fontSize: 13 }}
+              onClick={() => setStep("account")}>
+              ← Back
+            </button>
           </div>
         )}
 
-        {/* ── Crypto ── */}
+        {/* ── Crypto step ── */}
         {step === "crypto" && (
           <div style={{ padding: "16px 20px 24px" }}>
-            <p style={{ fontSize: 13, color: "var(--text3)", marginBottom: 14, lineHeight: 1.6 }}>
-              Send the equivalent of{" "}
-              <strong style={{ color: "var(--text)" }}>₦{(plan?.price || 0).toLocaleString()}{usdLabel ? ` (${usdLabel})` : ""}</strong>{" "}
-              in your chosen crypto. Click <strong style={{ color: "var(--text)" }}>I've Sent Payment</strong> after sending — plan activates instantly, admin verifies within 24h.
+            <p style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.6 }}>
+              Send the exact USD equivalent to the wallet address below, then click confirm. Your plan activates immediately.
             </p>
 
+            {/* Coin selector */}
             <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-              {[
-                { id: "USDT_TRC", label: "USDT BEP20", icon: "💚" },
-                { id: "USDT_ERC", label: "USDT ERC20", icon: "🔷" },
-                { id: "BTC",      label: "Bitcoin",    icon: "₿"  },
-                { id: "ETH",      label: "Ethereum",   icon: "Ξ"  },
-              ].map(({ id, label, icon }) => (
-                <button key={id} onClick={() => setCryptoCoin(id)} style={{
-                  padding: "7px 14px", borderRadius: 8, border: "1px solid",
-                  borderColor: cryptoCoin === id ? "var(--red)"     : "var(--border)",
-                  background:  cryptoCoin === id ? "var(--red-dim)" : "var(--surface2)",
-                  color:       cryptoCoin === id ? "var(--text)"    : "var(--text2)",
-                  fontSize: 13, fontWeight: cryptoCoin === id ? 700 : 400,
-                  cursor: "pointer", fontFamily: "var(--font-body)", transition: "all 0.15s",
-                }}>
-                  {icon} {label}
+              {Object.keys(CRYPTO_WALLETS).map((coin) => (
+                <button key={coin}
+                  onClick={() => setCryptoCoin(coin)}
+                  style={{
+                    padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                    cursor: "pointer", border: "1px solid var(--border)",
+                    background: cryptoCoin === coin ? "var(--red)" : "var(--surface2)",
+                    color: cryptoCoin === coin ? "#fff" : "var(--text2)",
+                  }}>
+                  {coin.replace("_", " ")}
                 </button>
               ))}
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Send to this address:</div>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px" }}>
-                <code style={{ flex: 1, fontSize: 11, color: "var(--text)", wordBreak: "break-all", lineHeight: 1.6, fontFamily: "monospace" }}>
-                  {CRYPTO_WALLETS[cryptoCoin] || "Wallet not configured"}
+            {/* Wallet address */}
+            <div style={{
+              background: "var(--surface2)", border: "1px solid var(--border)",
+              borderRadius: 8, padding: "12px 14px", marginBottom: 16,
+            }}>
+              <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6, fontWeight: 600 }}>
+                {COIN_LABELS[cryptoCoin]} wallet
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <code style={{ flex: 1, fontSize: 12, wordBreak: "break-all", color: "var(--text)", lineHeight: 1.5 }}>
+                  {CRYPTO_WALLETS[cryptoCoin]}
                 </code>
-                <CopyBtn text={CRYPTO_WALLETS[cryptoCoin] || ""} />
+                <CopyBtn text={CRYPTO_WALLETS[cryptoCoin]} />
               </div>
             </div>
 
-            <div style={{ background: "rgba(245,166,35,0.07)", border: "1px solid rgba(245,166,35,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text2)", marginBottom: 16, lineHeight: 1.6 }}>
-              ⚡ After sending, click the button below. Your plan activates immediately. Admin verifies your transaction within 24 hours. Issues sent to <strong>{email}</strong>.
+            <div style={{
+              background: "rgba(245,166,35,0.08)", border: "1px solid rgba(245,166,35,0.3)",
+              borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#f5a623",
+            }}>
+              ⚠ Send only {COIN_LABELS[cryptoCoin].split(" ")[0]} to this address. Wrong network = lost funds.
             </div>
 
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", fontSize: 15, padding: 12, marginBottom: 10 }} onClick={handleCryptoConfirm}>
-              ✓ I've Sent Payment — Activate My Plan
+            <button className="btn btn-primary"
+              style={{ width: "100%", justifyContent: "center", fontSize: 14, padding: 12, marginBottom: 8 }}
+              onClick={handleCryptoConfirm}>
+              I've sent the payment — Activate now
             </button>
-            <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center" }} onClick={() => setStep("method")}>← Back</button>
+            <button className="btn btn-ghost"
+              style={{ width: "100%", justifyContent: "center", fontSize: 13 }}
+              onClick={() => setStep("method")}>
+              ← Back
+            </button>
           </div>
         )}
 
-        {/* ── Success ── */}
+        {/* ── Success step ── */}
         {step === "success" && (
-          <div style={{ padding: "32px 24px 28px", textAlign: "center" }}>
-            <div style={{ fontSize: 56, marginBottom: 12 }}>🎉</div>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 32, letterSpacing: 1, marginBottom: 8, color: plan?.color || "var(--red)" }}>
-              WELCOME TO {(plan?.name || "PREMIUM").toUpperCase()}!
+          <div style={{ padding: "24px 20px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 52, marginBottom: 16 }}>🎉</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>
+              Welcome to NovaSpark {plan?.name}!
             </div>
-            <p style={{ fontSize: 14, color: "var(--text2)", lineHeight: 1.7, marginBottom: 20 }}>
-              Your <strong style={{ color: "var(--text)" }}>NovaSpark {plan?.name}</strong> plan is now active.
-              Enjoy {plan?.quality}, {plan?.devices} device{plan?.devices > 1 ? "s" : ""}, and all premium features unlocked immediately.
+            <p style={{ fontSize: 14, color: "var(--text3)", lineHeight: 1.7, marginBottom: 8 }}>
+              Your plan is now active. You have full access for the next 30 days.
             </p>
             {txnRef && (
-              <div style={{ fontSize: 11, color: "var(--text3)", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 12px", marginBottom: 20, fontFamily: "monospace" }}>
-                Ref: {txnRef}
-              </div>
+              <p style={{ fontSize: 12, color: "var(--text3)", marginBottom: 20 }}>
+                Ref: <code style={{ color: "var(--text2)" }}>{txnRef}</code>
+              </p>
             )}
-            <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 20, background: "rgba(72,199,116,0.06)", border: "1px solid rgba(72,199,116,0.2)", borderRadius: 8, padding: "10px 14px", lineHeight: 1.6 }}>
-              📧 Account registered: <strong style={{ color: "var(--text)" }}>{email}</strong><br />Your credentials are saved on this device.
-            </div>
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", fontSize: 15, padding: 12 }} onClick={onClose}>
-              Start Streaming ▶
+            <button className="btn btn-primary"
+              style={{ justifyContent: "center", fontSize: 14, padding: "10px 32px" }}
+              onClick={onClose}>
+              Start watching →
             </button>
           </div>
         )}
 
-        {/* ── Error ── */}
+        {/* ── Error step ── */}
         {step === "error" && (
-          <div style={{ padding: "24px 20px 24px" }}>
-            <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(244,67,54,0.08)", border: "1px solid rgba(244,67,54,0.3)", fontSize: 14, color: "#f77", marginBottom: 16, lineHeight: 1.5 }}>
-              ⚠ {errorMsg || "Something went wrong. Please try again."}
-            </div>
+          <div style={{ padding: "20px 20px 24px" }}>
+            <p style={{ fontSize: 14, color: "var(--red)", marginBottom: 16, lineHeight: 1.6 }}>
+              {errorMsg || "Something went wrong. Please try again."}
+            </p>
             <div style={{ display: "flex", gap: 10 }}>
-              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: "center" }} onClick={() => { setStep("method"); setErrorMsg(""); setPaystackBusy(false); }}>Try Again</button>
-              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: "center" }} onClick={onClose}>Close</button>
+              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: "center" }}
+                onClick={() => { setStep("method"); setErrorMsg(""); setPaystackBusy(false); }}>
+                Try Again
+              </button>
+              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: "center" }} onClick={onClose}>
+                Close
+              </button>
             </div>
           </div>
         )}
