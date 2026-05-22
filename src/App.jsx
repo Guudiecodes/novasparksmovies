@@ -18,7 +18,6 @@ import { clearAppCaches } from "./utils/storage";
 
 import Sidebar from "./components/Sidebar";
 import SearchModal from "./components/SearchModal";
-import SetupScreen from "./components/SetupScreen";
 import CloseConfirmModal from "./components/CloseConfirmModal";
 import UpdateModal from "./components/UpdateModal";
 
@@ -26,6 +25,7 @@ import UpdateModal from "./components/UpdateModal";
 const NS_TMDB_KEY = "4bea51722649d28dcd5453a94f8f40ad";
 
 const HomePage      = lazy(() => import("./pages/HomePage"));
+const AiPage        = lazy(() => import("./pages/NSAIPage"));
 const MoviePage     = lazy(() => import("./pages/MoviePage"));
 const TVPage        = lazy(() => import("./pages/TVPage"));
 const LibraryPage   = lazy(() => import("./pages/LibraryPage"));
@@ -33,7 +33,6 @@ const SettingsPage  = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const WatchPage     = lazy(() => import("./pages/WatchPage"));
 const PricingPage   = lazy(() => import("./pages/PricingPage"));
-const NsaiPage      = lazy(() => import("./pages/NsaiPage"));
 
 import { checkForUpdates } from "./utils/updates";
 

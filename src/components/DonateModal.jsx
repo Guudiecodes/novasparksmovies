@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
 // ── YOUR PAYSTACK PUBLIC KEY ── replace with your real key ────────────────
-const PAYSTACK_KEY = "pk_live_7a41cee8223af8ebae60c24c63fc8be8cdbb9886";
+const PAYSTACK_KEY = "sk_live_7a41cee8223af8ebae60c24c63fc8be8cdbb9886";
 
 // ── Your wallet addresses ─────────────────────────────────────────────────
 const WALLETS = {
