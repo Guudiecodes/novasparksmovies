@@ -46,31 +46,9 @@ function DownloadPopup({ onClose }) {
   const [downloading,  setDownloading]  = useState(false);
   const [error,        setError]        = useState(null);
 
-  useEffect(() => {
-    setRelease(DIRECT_DOWNLOAD); setLoading(false); if (false)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.message) { setError("No release found yet."); setLoading(false); return; }
-        // Detect platform
-        const ua = navigator.userAgent.toLowerCase();
-        const isWin   = ua.includes("win");
-        const isMac   = ua.includes("mac");
-        // Pick best asset for platform
-        const assets  = data.assets || [];
-        const asset   =
-          assets.find((a) => isWin  && (a.name.endsWith(".exe") || a.name.endsWith(".msi")))    ||
-          assets.find((a) => isMac  && (a.name.endsWith(".dmg") || a.name.endsWith(".pkg")))    ||
-          assets.find((a) => a.name.endsWith(".AppImage") || a.name.endsWith(".deb"))           ||
-          assets[0];
-        setRelease({
-          version:  data.tag_name || "latest",
-          name:     asset?.name || "NovaSpark Setup",
-          url:      asset?.browser_download_url || null,
-          size:     asset ? `${(asset.size / 1024 / 1024).toFixed(1)} MB` : null,
-        });
-        setLoading(false);
-      })
-      .catch(() => { setError("Could not fetch release info."); setLoading(false); });
+useEffect(() => {
+    setRelease(DIRECT_DOWNLOAD);
+    setLoading(false);
   }, []);
 
   const download = () => {
