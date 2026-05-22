@@ -1,7 +1,9 @@
 import { storage } from "./storage";
 
-// ── Storage key ───────────────────────────────────────────────────────────────
-const PREMIUM_KEY = "ns_premium";
+// ── Storage keys ──────────────────────────────────────────────────────────────
+const PREMIUM_KEY        = "ns_premium_record";
+const PREMIUM_FLAG_KEY   = "ns_premium";
+const WARN_DISMISSED_KEY = "ns_warn_dismissed";
 
 // ── Exchange rate ─────────────────────────────────────────────────────────────
 export const NGN_TO_USD = 1600;
@@ -11,68 +13,69 @@ export function ngn2usd(ngn) {
 }
 
 // ── Plans ─────────────────────────────────────────────────────────────────────
-// Only two plans: Standard and Premium (coming soon)
 export const PLANS = {
   free: {
-    id:       "free",
-    name:     "Free",
-    price:    0,
-    color:    "var(--text3)",
+    id:    "free",
+    name:  "Free",
+    price: 0,
+    color: "var(--text3)",
     features: {
-      adFree:          true,
-      watchlist:       true,
-      history:         true,
-      multipleSource:  false,
-      downloads:       false,
-      subtitles:       false,
-      continueWatching:false,
-      prioritySupport: false,
-      earlyAccess:     false,
+      adFree:           true,
+      watchlist:        true,
+      history:          true,
+      multipleSource:   false,
+      downloads:        false,
+      subtitles:        false,
+      continueWatching: false,
+      prioritySupport:  false,
+      earlyAccess:      false,
     },
   },
+
   standard: {
-    id:       "standard",
-    name:     "Standard",
-    price:    800,           // ₦800/mo
-    color:    "#00b4a6",
-    badge:    "Most Popular",
+    id:           "standard",
+    name:         "Standard",
+    price:        800,
+    color:        "#00b4a6",
+    badge:        "Most Popular",
+    durationDays: 30,
     features: {
-      adFree:          true,
-      watchlist:       true,
-      history:         true,
-      multipleSource:  true,
-      downloads:       true,
-      subtitles:       true,
-      continueWatching:true,
-      prioritySupport: false,
-      earlyAccess:     false,
+      adFree:           true,
+      watchlist:        true,
+      history:          true,
+      multipleSource:   true,
+      downloads:        true,
+      subtitles:        true,
+      continueWatching: true,
+      prioritySupport:  false,
+      earlyAccess:      false,
     },
   },
+
   premium: {
-    id:         "premium",
-    name:       "Premium",
-    price:      null,        // coming soon — no price yet
-    color:      "#f5a623",
-    badge:      "Coming Soon",
-    comingSoon: true,
+    id:           "premium",
+    name:         "Premium",
+    price:        null,
+    color:        "#f5a623",
+    badge:        "Coming Soon",
+    comingSoon:   true,
+    durationDays: 30,
     features: {
-      adFree:          true,
-      watchlist:       true,
-      history:         true,
-      multipleSource:  true,
-      downloads:       true,
-      subtitles:       true,
-      continueWatching:true,
-      prioritySupport: true,
-      earlyAccess:     true,
-      NovaSparkArtificialIntelligence:     true,
+      adFree:           true,
+      watchlist:        true,
+      history:          true,
+      multipleSource:   true,
+      downloads:        true,
+      subtitles:        true,
+      continueWatching: true,
+      prioritySupport:  true,
+      earlyAccess:      true,
     },
   },
 };
 
 export const PLAN_ORDER = ["free", "standard", "premium"];
-
-export const PLAN_RANK = { free: 0, standard: 1, premium: 2 };
+export const PLAN_RANK  = { free: 0, standard: 1, premium: 2 };
 
 export const FEATURE_LABELS = {
   adFree:           "Ad-free experience",
@@ -86,15 +89,10 @@ export const FEATURE_LABELS = {
   earlyAccess:      "Early access to new features",
 };
 
-// ── Subscription record shape ─────────────────────────────────────────────────
-// {
-//   planId:      "standard" | "premium"
-//   email:       string
-//   passwordHash:string   (simple hash, not cryptographic — for local identity only)
-//   txnRef:      string
-//   startedAt:   timestamp (ms)
-//   expiresAt:   timestamp (ms)   ← always 30 days from startedAt
-//   cancelledAt: timestamp | null ← set when user cancels, plan still runs to expiresAt
+// ── Subscription record in localStorage ──────────────────────────────────────
+// streambert_ns_premium_record = {
+//   planId, email, passwordHash, txnRef,
+//   startedAt, expiresAt, cancelledAt, warningSent
 // }
 
 function simpleHash(str) {
@@ -105,11 +103,11 @@ function simpleHash(str) {
   return h.toString(16);
 }
 
-// ── Write a new subscription ──────────────────────────────────────────────────
-// durationDays defaults to 30. Called immediately on payment success.
-export function setPremiumPlan(planId, email, password, txnRef, durationDays = 30) {
+export function setPremiumPlan(planId, email, password, txnRef, durationDaysOverride) {
+  const plan      = PLANS[planId];
+  const days      = durationDaysOverride ?? plan?.durationDays ?? 30;
   const now       = Date.now();
-  const expiresAt = now + durationDays * 24 * 60 * 60 * 1000;
+  const expiresAt = now + days * 24 * 60 * 60 * 1000;
   const record = {
     planId,
     email:        email.trim().toLowerCase(),
@@ -118,73 +116,52 @@ export function setPremiumPlan(planId, email, password, txnRef, durationDays = 3
     startedAt:    now,
     expiresAt,
     cancelledAt:  null,
+    warningSent:  { "7d": false, "3d": false, "1d": false },
   };
-  storage.set(PREMIUM_KEY, record);
-  // Also set the flat key App.jsx checks (ns_premium)
-  storage.set("ns_premium", true);
+  storage.set(PREMIUM_KEY,      record);
+  storage.set(PREMIUM_FLAG_KEY, true);
   return record;
 }
 
-// ── Read current record ───────────────────────────────────────────────────────
 export function getPremiumRecord() {
   return storage.get(PREMIUM_KEY) || null;
 }
 
-// ── Cancel: mark cancelledAt but DO NOT remove — plan runs to expiresAt ──────
-export function cancelPremium() {
-  const rec = getPremiumRecord();
-  if (!rec) return;
-  rec.cancelledAt = Date.now();
-  storage.set(PREMIUM_KEY, rec);
-  // Note: do NOT touch ns_premium yet — expiry check does that
-}
-
-// ── Check if plan is still active (respects expiry, survives cancellation) ───
 export function isPremiumActive() {
   const rec = getPremiumRecord();
   if (!rec || rec.planId === "free") return false;
-  return Date.now() < rec.expiresAt;   // still within paid window
+  return Date.now() < rec.expiresAt;
 }
 
-// ── Sync ns_premium flat flag (call on app boot) ──────────────────────────────
-export function syncPremiumFlag() {
-  const active = isPremiumActive();
-  if (active) {
-    storage.set("ns_premium", true);
-  } else {
-    storage.remove("ns_premium");
-    // Optionally clean up the record too
-    const rec = getPremiumRecord();
-    if (rec && Date.now() >= rec.expiresAt) {
-      storage.set(PREMIUM_KEY, { ...rec, planId: "free" });
-    }
-  }
-  return active;
-}
-
-// ── Get the effective plan id (checking expiry) ───────────────────────────────
 export function getEffectivePlan() {
   if (!isPremiumActive()) return "free";
   return getPremiumRecord()?.planId || "free";
 }
 
-// ── Get the full plan object for current user ─────────────────────────────────
 export function getPremiumPlan() {
   return PLANS[getEffectivePlan()] || PLANS.free;
 }
 
-// ── Helpers used by PricingPage ───────────────────────────────────────────────
-export function canUpgradeTo(targetPlanId) {
-  return (PLAN_RANK[targetPlanId] ?? 0) > (PLAN_RANK[getEffectivePlan()] ?? 0);
+export function syncPremiumFlag() {
+  const active = isPremiumActive();
+  if (active) {
+    storage.set(PREMIUM_FLAG_KEY, true);
+  } else {
+    storage.remove(PREMIUM_FLAG_KEY);
+    const rec = getPremiumRecord();
+    if (rec && Date.now() >= rec.expiresAt) {
+      storage.set(PREMIUM_KEY, { ...rec, planId: "free", expiredAt: rec.expiresAt });
+    }
+  }
+  return active;
 }
 
-export function formatPrice(ngn) {
-  if (!ngn) return "Free";
-  const usd = ngn2usd(ngn);
-  return `${usd} / ₦${ngn.toLocaleString()} per month`;
+export function cancelPremium() {
+  const rec = getPremiumRecord();
+  if (!rec || rec.planId === "free") return;
+  storage.set(PREMIUM_KEY, { ...rec, cancelledAt: Date.now() });
 }
 
-// ── Days remaining in current plan ───────────────────────────────────────────
 export function daysRemaining() {
   const rec = getPremiumRecord();
   if (!rec || !rec.expiresAt) return 0;
@@ -192,8 +169,40 @@ export function daysRemaining() {
   return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
 
-// ── Hard clear (for testing / account reset) ──────────────────────────────────
+export function getExpiryWarning() {
+  const rec = getPremiumRecord();
+  if (!rec || !isPremiumActive()) return null;
+  const days = daysRemaining();
+  const warn = rec.warningSent || {};
+  if (days <= 1 && !warn["1d"]) return "1d";
+  if (days <= 3 && !warn["3d"]) return "3d";
+  if (days <= 7 && !warn["7d"]) return "7d";
+  return null;
+}
+
+export function dismissExpiryWarning(level) {
+  const rec = getPremiumRecord();
+  if (!rec) return;
+  storage.set(PREMIUM_KEY, { ...rec, warningSent: { ...(rec.warningSent || {}), [level]: true } });
+}
+
+export function verifyPassword(password) {
+  const rec = getPremiumRecord();
+  if (!rec) return false;
+  return rec.passwordHash === simpleHash(password);
+}
+
+export function canUpgradeTo(targetPlanId) {
+  return (PLAN_RANK[targetPlanId] ?? 0) > (PLAN_RANK[getEffectivePlan()] ?? 0);
+}
+
+export function formatPrice(ngn) {
+  if (!ngn) return "Free";
+  return `${ngn2usd(ngn)} / ₦${ngn.toLocaleString()} per month`;
+}
+
 export function clearPremium() {
   storage.remove(PREMIUM_KEY);
-  storage.remove("ns_premium");
+  storage.remove(PREMIUM_FLAG_KEY);
+  storage.remove(WARN_DISMISSED_KEY);
 }
