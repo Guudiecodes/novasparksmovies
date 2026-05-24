@@ -2763,7 +2763,7 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     display: flex;
     gap: 12px;
     overflow-x: auto;
-    overflow-y: visible;
+    overflow-y: clip; 
     padding: 8px 0 16px 4px;
     cursor: grab;
     -webkit-overflow-scrolling: touch;

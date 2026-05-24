@@ -344,7 +344,7 @@ function createWindow() {
     }
   });
 
-mainWindow.on("closed", () => {
+  mainWindow.on("closed", () => {
     mainWindow = null;
     if (intentionalQuit) app.quit();
   });
@@ -639,7 +639,7 @@ if (!gotTheLock) {
   });
 }
 
-// CRASH RECEIVER
+// -- Crash receiver ------------------------------------------------------------
 const _fs = require('fs');
 const _os = require('os');
 ipcMain.on('renderer-error', function(_, data) {

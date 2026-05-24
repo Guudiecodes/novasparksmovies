@@ -36,6 +36,10 @@ const PricingPage   = lazy(() => import("./pages/PricingPage"));
 
 import { checkForUpdates } from "./utils/updates";
 
+import { autoSyncPremium } from "./utils/premium";
+// inside useEffect on mount:
+autoSyncPremium(); // silent background sync, safe to fire-and-forget
+
 const NS_PREMIUM_KEY = "ns_premium";
 
 export default function App() {

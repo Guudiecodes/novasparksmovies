@@ -6,6 +6,7 @@ import {
   imgUrl,
   NON_ANIME_DEFAULT_SOURCE,
   findWorkingSource,
+  buildRetryQueue,
 } from "../utils/api";
 import { storage } from "../utils/storage";
 import {
@@ -20,7 +21,6 @@ import PremiumGate from "../components/PremiumGate";
 import DataMeterWidget from "../components/DataMeterWidget";
 
 // ── Silence all TMDB / network error alerts — never expose internals ──────────
-// Suppress any upstream setApiErrorHandlers callbacks silently
 import { setApiErrorHandlers } from "../utils/api";
 setApiErrorHandlers(
   () => { /* auth error — silent */ },
@@ -55,24 +55,20 @@ const _EMBED_JS = `(function(){
   setTimeout(function(){obs.disconnect();},12000);
 })()`;
 
-// ── Autoplay enforcer — injected into webview/iframe after load ───────────────
-// Clicks play buttons, unmutes, removes overlay blockers across major embed players
+// ── Autoplay enforcer ─────────────────────────────────────────────────────────
 const _AUTOPLAY_JS = `(function(){
   if(window.__nsAuto)return; window.__nsAuto=true;
   function tryPlay(){
-    // 1. Direct video element
     var v=document.querySelector('video');
     if(v){
       v.muted=false;
       if(v.paused){
         v.play().catch(function(){
-          // Browsers block unmuted autoplay — retry muted then unmute
           v.muted=true;
           v.play().then(function(){ setTimeout(function(){ v.muted=false; },800); }).catch(function(){});
         });
       }
     }
-    // 2. Common play button selectors across embed players
     var selectors=[
       '.jw-icon-display','[aria-label="Play"]','[title="Play"]',
       '.vjs-big-play-button','.plyr__control--overlaid',
@@ -85,7 +81,6 @@ const _AUTOPLAY_JS = `(function(){
       if(btn&&btn.offsetParent!==null){ btn.click(); break; }
     }
   }
-  // Fire immediately, then retry a few times for slow-loading players
   tryPlay();
   var attempts=0;
   var id=setInterval(function(){
@@ -98,15 +93,20 @@ const _AUTOPLAY_JS = `(function(){
 })()`;
 
 // ── postMessage play/pause event normaliser ───────────────────────────────────
-// Handles JW Player, VideoJS, Plyr, Vidlink, VidSrc, embed.su patterns
 function parsePlayerMessage(data) {
   try {
     const d = typeof data === "string" ? JSON.parse(data) : data;
     if (!d || typeof d !== "object") return null;
 
+    // vidsrc.cc sends { type: "PLAYER_EVENT", data: { event: "play"|"pause"|... } }
+    if (d.type === "PLAYER_EVENT" && d.data?.event) {
+      const evt = String(d.data.event).toLowerCase();
+      if (evt === "play" || evt === "playing") return "play";
+      if (evt === "pause" || evt === "complete" || evt === "ended") return "pause";
+    }
+
     const evt = String(d.event || d.type || d.action || d.playbackState || d.state || "").toLowerCase();
 
-    // Play signals
     if (
       evt === "play" || evt === "playing" || evt === "resume" ||
       evt === "started" || evt === "playbackstate_playing" ||
@@ -114,7 +114,6 @@ function parsePlayerMessage(data) {
       d.playbackState === "playing"
     ) return "play";
 
-    // Pause / stop signals
     if (
       evt === "pause" || evt === "paused" || evt === "stop" ||
       evt === "stopped" || evt === "ended" || evt === "complete" ||
@@ -304,9 +303,8 @@ export default function WatchPage({
   const [showSourceMenu,    setShowSourceMenu]     = useState(false);
   const [webviewLoading,    setWebviewLoading]     = useState(true);
 
-  // ── Real play/pause state — the core of DataMeter accuracy ───────────────
+  // ── Real play/pause state ─────────────────────────────────────────────────
   const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
-  // Track whether we've received ANY real postMessage signal this session
   const receivedRealSignalRef = useRef(false);
 
   // ── Data + content state ──────────────────────────────────────────────────
@@ -340,15 +338,14 @@ export default function WatchPage({
   const retryQueueRef = useRef([]);
   const retryIdxRef   = useRef(0);
 
-  // ── Build retry queue ─────────────────────────────────────────────────────
+  // ── Build retry queue — tier-ordered per content type ────────────────────
+  // Uses buildRetryQueue from api.js which sorts by moviePriority/tvPriority.
+  // This ensures the software always knows its best server and falls back
+  // in the correct order (tier 1 → tier 2 → tier 3).
   useEffect(() => {
-    const all   = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
-    const start = all.indexOf(playerSource);
-    retryQueueRef.current = start >= 0
-      ? [...all.slice(start), ...all.slice(0, start)]
-      : [playerSource, ...all.filter((id) => id !== playerSource)];
-    retryIdxRef.current = 1;
-  }, [item?.id, currentSeason, currentEpisode]);
+    retryQueueRef.current = buildRetryQueue(type, playerSource);
+    retryIdxRef.current   = 1; // index 0 = current source (already loading)
+  }, [item?.id, currentSeason, currentEpisode, type]); // eslint-disable-line
 
   const tryNextSource = useCallback(() => {
     const idx = retryIdxRef.current;
@@ -380,7 +377,7 @@ export default function WatchPage({
           setSeasons(d.seasons.filter((s) => s.season_number > 0));
         }
       })
-      .catch(() => {}); // silent — no user-facing error
+      .catch(() => {});
     return () => { mounted = false; };
   }, [item?.id, type, apiKey]);
 
@@ -391,7 +388,7 @@ export default function WatchPage({
     setEpisodeList([]);
     tmdbFetch(`/tv/${item.id}/season/${currentSeason}`, apiKey)
       .then((d) => { if (mounted) setEpisodeList(d.episodes || []); })
-      .catch(() => {}); // silent
+      .catch(() => {});
     return () => { mounted = false; };
   }, [item?.id, type, currentSeason, apiKey]);
 
@@ -414,7 +411,7 @@ export default function WatchPage({
         setRelatedTotal(d.total_pages || 1);
         setRelatedPage(page);
       })
-      .catch(() => {}) // silent
+      .catch(() => {})
       .finally(() => setRelatedLoading(false));
   }, [item?.id, type, apiKey]);
 
@@ -440,7 +437,7 @@ export default function WatchPage({
           if (id && id !== playerSource) { setPlayerSource(id); storage.set("playerSource", id); }
           setAutoSourceStatus(id ? "found" : "failed");
         })
-        .catch(() => { if (!cancelled) setAutoSourceStatus("failed"); }); // silent
+        .catch(() => { if (!cancelled) setAutoSourceStatus("failed"); });
     } else { setAutoSourceStatus("found"); }
     return () => { cancelled = true; };
   }, [item?.id, type, currentSeason, currentEpisode, preFoundSource]); // eslint-disable-line
@@ -501,6 +498,21 @@ export default function WatchPage({
       const wv = webviewRef.current;
       if (!wv) return;
       try {
+        // Try cross-frame IPC first (catches nested iframe players)
+        const wcId = wv.getWebContentsId?.();
+        if (wcId && window.electron?.queryVideoProgress) {
+          const prog = await window.electron.queryVideoProgress(wcId);
+          if (prog && prog.duration > 0) {
+            const playing = !prog.paused && prog.duration > 0;
+            if (playing !== lastState) {
+              lastState = playing;
+              receivedRealSignalRef.current = true;
+              setIsActuallyPlaying(playing);
+            }
+            return;
+          }
+        }
+        // Fallback: top-frame only
         const result = await wv.executeJavaScript(
           `(()=>{
             const v = document.querySelector('video');
@@ -508,17 +520,16 @@ export default function WatchPage({
             return { paused: v.paused, ended: v.ended, readyState: v.readyState };
           })()`
         );
-        if (result === null) return; // video not ready yet — don't change state
+        if (result === null) return;
         const playing = !result.paused && !result.ended && result.readyState >= 2;
         if (playing !== lastState) {
           lastState = playing;
           receivedRealSignalRef.current = true;
           setIsActuallyPlaying(playing);
         }
-      } catch {} // webview not ready — silent
+      } catch {}
     };
 
-    // First poll immediately, then every 2s
     poll();
     pollId = setInterval(poll, 2000);
     return () => { if (pollId) clearInterval(pollId); };
@@ -526,15 +537,12 @@ export default function WatchPage({
 
   // ─────────────────────────────────────────────────────────────────────────
   // ── REAL PLAY/PAUSE DETECTION — METHOD C: Web fallback (5s assumption) ───
-  // Sources that emit no postMessage → assume playing after 5s grace period.
-  // Immediately overridden if a real pause postMessage arrives later.
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isElectron) return; // Electron uses Method B
+    if (isElectron) return;
     if (webviewLoading) { setIsActuallyPlaying(false); return; }
 
     const timer = setTimeout(() => {
-      // Only activate fallback if no real signal was received
       if (!receivedRealSignalRef.current) {
         setIsActuallyPlaying(true);
       }
@@ -544,20 +552,16 @@ export default function WatchPage({
   }, [isElectron, webviewLoading, embedUrl]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ── AUTOPLAY ENGINE — fires after iframe/webview loads ───────────────────
-  // Tries to auto-start the video in every embed source.
-  // Works for movies AND TV episodes whenever content changes.
+  // ── AUTOPLAY ENGINE ───────────────────────────────────────────────────────
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isElectron) return;
-    // Electron: inject autoplay JS into webview after dom-ready
     const wv = webviewRef.current;
     if (!wv) return;
 
     const onDomReady = async () => {
       try { await wv.insertCSS(_EMBED_CSS); } catch {}
       try { await wv.executeJavaScript(_EMBED_JS); } catch {}
-      // Slight delay so player initialises first
       setTimeout(async () => {
         try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {}
       }, 1200);
@@ -569,22 +573,18 @@ export default function WatchPage({
 
   useEffect(() => {
     if (isElectron) return;
-    // Web iframe: send play postMessage to iframe + inject via contentWindow
     if (webviewLoading) return;
     const iframe = iframeRef.current;
     if (!iframe) return;
 
     const tryAutoplay = () => {
       try {
-        // postMessage play command (some players listen for this)
         iframe.contentWindow?.postMessage({ event: "play", action: "play" }, "*");
         iframe.contentWindow?.postMessage({ type: "play" }, "*");
-        // JW Player
         iframe.contentWindow?.postMessage(JSON.stringify({ method: "play" }), "*");
       } catch {}
     };
 
-    // Fire on load + retry
     tryAutoplay();
     const t1 = setTimeout(tryAutoplay, 1500);
     const t2 = setTimeout(tryAutoplay, 3500);
@@ -592,7 +592,34 @@ export default function WatchPage({
   }, [isElectron, webviewLoading, embedUrl]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ── BEAST ENGINE (Electron) — source validation + auto-retry ─────────────
+  // ── BEAST ENGINE (Electron) — fast source validation + auto-retry
+  //
+  // ARCHITECTURE
+  // ════════════
+  // The BEAST ENGINE has 3 jobs:
+  //   1. Detect when the current source has a working video (markReady)
+  //   2. Detect when the current source is broken (onFail → tryNextSource)
+  //   3. Do both as fast as possible on any network condition
+  //
+  // SPEED OPTIMISATIONS
+  // ═══════════════════
+  //   • Poll every 300ms (was 500ms) — catches fast-loading tier-1 sources sooner
+  //   • did-finish-load fires an IMMEDIATE poll — no need to wait for first interval
+  //   • queryVideoProgress IPC (main process) iterates ALL nested iframe frames,
+  //     not just the top frame. Most embed sources (vidsrc, 2embed, vidlink) nest
+  //     their actual <video> element inside 1-3 cross-origin child iframes.
+  //     executeJavaScript only reaches the top frame and always returns null.
+  //   • Hard timeout per tier: tier-1 sources get 10s, tier-2 get 14s, tier-3 get 18s.
+  //     This means fast servers fail fast and slow servers get more time.
+  //   • On network errors (did-fail-load) we fail immediately without waiting.
+  //
+  // OVERLAY FIX
+  // ═══════════
+  //   The loading overlay (position:absolute, inset:0, zIndex:5, background:#000)
+  //   was staying on screen permanently when markReady() was never called
+  //   (e.g. IPC failed, webview crashed). Added a guaranteed safety release:
+  //   after ABSOLUTE_CEILING_MS the overlay is always cleared regardless of
+  //   video detection state. The user sees the player either way.
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isElectron) return;
@@ -601,46 +628,111 @@ export default function WatchPage({
     let active = true;
     clearInterval(pollRef.current);
 
+    // Determine timeout based on current source tier
+    const currentSrc = PLAYER_SOURCES.find((s) => s.id === playerSource);
+    const tier = currentSrc?.tier ?? 2;
+    const HARD_TIMEOUT_MS     = tier === 1 ? 10000 : tier === 2 ? 14000 : 18000;
+    const ABSOLUTE_CEILING_MS = HARD_TIMEOUT_MS + 4000; // guaranteed overlay release
+
     const markReady = () => {
       if (!active) return;
       active = false;
       clearInterval(pollRef.current);
+      clearTimeout(hardTimeoutId); // eslint-disable-line
+      clearTimeout(absoluteCeilingId); // eslint-disable-line
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
       setWebviewLoading(false);
     };
+
     const onFail = () => {
       if (!active) return;
       active = false;
       clearInterval(pollRef.current);
-      clearTimeout(hardTimeout); // eslint-disable-line
+      clearTimeout(hardTimeoutId); // eslint-disable-line
+      clearTimeout(absoluteCeilingId); // eslint-disable-line
       tryNextSource();
     };
+
+    // Guaranteed overlay release — even if IPC fails, video is undetectable,
+    // or the webview crashes, the overlay will NOT stay stuck on screen forever.
+    const absoluteCeilingId = setTimeout(() => {
+      if (!active) return;
+      active = false;
+      clearInterval(pollRef.current);
+      clearTimeout(hardTimeoutId); // eslint-disable-line
+      setWebviewLoading(false); // release overlay — let user see whatever is there
+      // Don't call tryNextSource here — if something is rendering visually,
+      // we don't want to rip it away. User can switch manually.
+    }, ABSOLUTE_CEILING_MS);
+
+    // Core poll — runs every 300ms, checks all frames via IPC then falls back
+    const runPoll = async () => {
+      if (!active) { clearInterval(pollRef.current); return; }
+      const wv = webviewRef.current;
+      if (!wv) return;
+      try {
+        // PRIMARY: cross-frame check via main process IPC.
+        // queryVideoProgress walks wc.mainFrame recursively, finding <video>
+        // elements inside nested cross-origin iframes that executeJavaScript misses.
+        const wcId = wv.getWebContentsId?.();
+        if (wcId && window.electron?.queryVideoProgress) {
+          const prog = await window.electron.queryVideoProgress(wcId);
+          if (prog && prog.duration > 0) { markReady(); return; }
+        }
+
+        // FALLBACK: top-frame only (works for single-frame embeds like vidlink)
+        const r = await wv.executeJavaScript(
+          `(()=>{
+            const v = document.querySelector('video');
+            if (!v) return { ready: false, err: false };
+            return {
+              ready: v.readyState >= 2 && v.duration > 0 && !isNaN(v.duration),
+              err:   v.networkState === 3 || !!(v.error && v.error.code > 0),
+            };
+          })()`
+        );
+        if (r.ready) { markReady(); return; }
+        if (r.err)   { onFail();   return; }
+      } catch {
+        // executeJavaScript can throw if the webview navigated away —
+        // treat as a transient error, not a hard fail. markReady to unblock.
+        markReady();
+      }
+    };
+
     const onDomReady = async () => {
+      // Inject CSS/JS on every dom-ready (handles navigations within the embed)
       try { await wv.insertCSS(_EMBED_CSS); } catch {}
       try { await wv.executeJavaScript(_EMBED_JS); } catch {}
-      pollRef.current = setInterval(async () => {
-        if (!active) { clearInterval(pollRef.current); return; }
-        try {
-          const r = await wv.executeJavaScript(
-            `(()=>{const v=document.querySelector('video');if(!v)return{ready:false,err:false};` +
-            `return{ready:v.readyState>=2&&v.duration>0&&!isNaN(v.duration),` +
-            `err:v.networkState===3||!!(v.error&&v.error.code>0)};})()`
-          );
-          if (r.ready) markReady(); else if (r.err) onFail();
-        } catch { markReady(); }
-      }, 300);
+      // Immediate poll — don't wait for the first interval tick
+      runPoll();
     };
+
+    const onFinishLoad = () => {
+      // did-finish-load fires when the page fully loads — run an immediate poll
+      // This catches fast-loading sources (tier 1) in < 1s
+      runPoll();
+    };
+
+    pollRef.current = setInterval(runPoll, 300);
+
+    // Hard timeout — give up on this source and try the next one
+    const hardTimeoutId = setTimeout(onFail, HARD_TIMEOUT_MS);
+
     wv.addEventListener("dom-ready", onDomReady);
+    wv.addEventListener("did-finish-load", onFinishLoad);
     wv.addEventListener("did-fail-load", onFail);
-    const hardTimeout = setTimeout(onFail, 12000);
+
     return () => {
       active = false;
       clearInterval(pollRef.current);
-      clearTimeout(hardTimeout);
+      clearTimeout(hardTimeoutId);
+      clearTimeout(absoluteCeilingId);
       try { wv.removeEventListener("dom-ready", onDomReady); } catch {}
+      try { wv.removeEventListener("did-finish-load", onFinishLoad); } catch {}
       try { wv.removeEventListener("did-fail-load", onFail); } catch {}
     };
-  }, [embedUrl, isElectron, tryNextSource, type]);
+  }, [embedUrl, isElectron, tryNextSource, playerSource, type]);
 
   // ── Web iframe load fallback ──────────────────────────────────────────────
   useEffect(() => {
@@ -701,13 +793,12 @@ export default function WatchPage({
   const switchSource = useCallback((id) => {
     setShowSourceMenu(false);
     if (id === playerSource) return;
-    const all   = PLAYER_SOURCES.filter((s) => !s.async && !s.tag).map((s) => s.id);
-    const start = all.indexOf(id);
-    retryQueueRef.current = start >= 0 ? [...all.slice(start), ...all.slice(0, start)] : [id, ...all.filter((x) => x !== id)];
+    // Rebuild retry queue starting from the newly chosen source
+    retryQueueRef.current = buildRetryQueue(type, id);
     retryIdxRef.current   = 1;
     setPlayerSource(id);
     storage.set("playerSource", id);
-  }, [playerSource]);
+  }, [playerSource, type]);
 
   useEffect(() => {
     if (!showSourceMenu && !showSeasonMenu) return;
@@ -775,7 +866,6 @@ export default function WatchPage({
       : base;
   }, [title, year, type, currentSeason, currentEpisode]);
 
-  // Runtime for DataMeter
   const runtimeMinutes = useMemo(() => {
     if (type === "tv") {
       return episodeList.find((e) => e.episode_number === currentEpisode)?.runtime
@@ -813,28 +903,58 @@ export default function WatchPage({
         .season-dropdown-menu button.active { color:var(--red,#00b4a6); font-weight:700; }
         .load-more-btn:hover { background: rgba(255,255,255,0.08) !important; }
         .watch-rel-card:hover .watch-rel-overlay { opacity:1 !important; }
+        .topbar-pip-btn {
+          display:flex; align-items:center; gap:6px;
+          background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+          border-radius:8px; color:#fff; font-size:13px; font-weight:600;
+          padding:7px 14px; cursor:pointer; transition:background 0.15s;
+          font-family:inherit;
+        }
+        .topbar-pip-btn:hover { background:rgba(255,255,255,0.13); }
+        .topbar-pip-btn.active { color:var(--red,#00b4a6); border-color:rgba(0,180,166,0.35); }
       `}</style>
 
-      {/* Only show server toast — no TMDB/network errors ever reach UI */}
       <ServerToast status={autoSourceStatus} sourceLabel={currentLabel} />
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      {/* PopOut button lives here — next to the title, away from the player */}
       <div className="watch-topbar">
         <button className="btn btn-ghost" onClick={onBack} style={{gap:6}}><BackIcon /> Back</button>
-        <div className="watch-topbar-title">
+        <div className="watch-topbar-title" style={{flex:1,minWidth:0}}>
           {title}
           {type === "tv" && (
             <span className="watch-topbar-ep">&nbsp;·&nbsp;S{currentSeason} E{currentEpisode}</span>
           )}
         </div>
+        {/* ── PopOut — moved here from controls bar ── */}
+        {isElectron && (
+          <button
+            className={`topbar-pip-btn${pipOpen ? " active" : ""}`}
+            onClick={() => {
+              if (pipOpen) { window.electron?.closePipWindow?.(); return; }
+              if (!canPopOut(planId)) { setGateModal("pip"); return; }
+              window.electron?.openPipWindow?.(embedUrl, title);
+            }}
+            title={pipOpen ? "Close pop-out" : "Pop out player"}
+          >
+            <PopOutIcon />
+            <span style={{fontSize:12}}>{pipOpen ? "Close" : "Pop out"}</span>
+          </button>
+        )}
       </div>
 
       {/* ── Player ───────────────────────────────────────────────────────── */}
       <div className="watch-player-wrap" style={{background:"#000",position:"relative"}}>
 
+        {/* Loading overlay — released by markReady() or absolute ceiling timer */}
         {webviewLoading && (
-          <div style={{position:"absolute",inset:0,zIndex:5,background:"#000",
-            display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{
+            position:"absolute",inset:0,zIndex:5,background:"#000",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            // pointer-events:none so it cannot block webview interaction
+            // even when semi-visible during fade-out
+            pointerEvents:"none",
+          }}>
             <div className="spinner" />
           </div>
         )}
@@ -850,8 +970,17 @@ export default function WatchPage({
             nodeintegration="no"
             webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
             useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-            style={{position:"absolute",inset:0,width:"100%",height:"100%",border:"none",background:"#000",
-              opacity:webviewLoading?0:1,transition:"opacity 0.3s ease"}}
+            style={{
+              position:"absolute",inset:0,width:"100%",height:"100%",border:"none",background:"#000",
+              // Always visible — opacity just fades in once loaded.
+              // Using opacity:0 was making it look "broken" if webviewLoading
+              // stuck; the overlay above handles the black screen instead.
+              opacity: webviewLoading ? 0 : 1,
+              transition:"opacity 0.3s ease",
+              // z-index:1 keeps webview below the overlay (z-index:5) while loading
+              // and above nothing while playing. This is intentional.
+              zIndex: 1,
+            }}
           />
         ) : (
           <iframe
@@ -861,8 +990,11 @@ export default function WatchPage({
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             allowFullScreen
             onLoad={() => setWebviewLoading(false)}
-            style={{position:"absolute",inset:0,width:"100%",height:"100%",border:"none",background:"#000",
-              opacity:webviewLoading?0:1,transition:"opacity 0.3s ease"}}
+            style={{
+              position:"absolute",inset:0,width:"100%",height:"100%",border:"none",background:"#000",
+              opacity: webviewLoading ? 0 : 1,
+              transition:"opacity 0.3s ease",
+            }}
           />
         )}
 
@@ -877,7 +1009,6 @@ export default function WatchPage({
           </div>
         )}
 
-        {/* Skip Intro + Next Episode */}
         {!webviewLoading && !pipOpen && (
           <PlayerOverlayBtns
             showSkip={showSkipIntro}
@@ -888,7 +1019,7 @@ export default function WatchPage({
           />
         )}
 
-        {/* Controls bar */}
+        {/* Controls bar — PopOut has been removed from here, it's in the topbar now */}
         <div className="watch-source-bar" style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <button
             ref={sourceRef}
@@ -904,22 +1035,6 @@ export default function WatchPage({
             <SourceIcon /> {currentLabel}
           </button>
 
-          {isElectron && (
-            <button
-              className="player-overlay-btn"
-              onClick={() => {
-                if (pipOpen) { window.electron?.closePipWindow?.(); return; }
-                if (!canPopOut(planId)) { setGateModal("pip"); return; }
-                window.electron?.openPipWindow?.(embedUrl, title);
-              }}
-              title={pipOpen ? "Close pop-out" : "Pop out player"}
-              style={pipOpen ? {color:"var(--red)"} : undefined}
-            >
-              <PopOutIcon />
-            </button>
-          )}
-
-          {/* ── DataMeterWidget with REAL play state ── */}
           <DataMeterWidget
             isPlaying={!webviewLoading && !pipOpen}
             isActuallyPlaying={isActuallyPlaying && !webviewLoading && !pipOpen}
@@ -935,7 +1050,7 @@ export default function WatchPage({
             style={{top:menuPos.top,left:menuPos.left}}
             onClick={(e) => e.stopPropagation()}
           >
-            {PLAYER_SOURCES.map((src) => (
+            {PLAYER_SOURCES.filter((src) => !src.async).map((src) => (
               <button key={src.id}
                 className={"source-dropdown__item" + (playerSource === src.id ? " source-dropdown__item--active" : "")}
                 onClick={() => switchSource(src.id)}>

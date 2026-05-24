@@ -13,6 +13,9 @@
  *   When set, ALL users are treated as at least that plan tier.
  */
 
+// ── Storage prefix (must match storage.js) ────────────────────────────────────
+const PREFIX = "streambert_";
+
 // ── Plan rank map ─────────────────────────────────────────────────────────────
 const PLAN_RANK = {
   free:     0,
@@ -22,13 +25,21 @@ const PLAN_RANK = {
   premium:  4,
 };
 
-/** Returns the stored plan id ("free" when nothing is stored). */
+/**
+ * Returns the active plan id for the current user.
+ * Reads from the full premium record (streambert_ns_premium_record)
+ * so it gets the planId AND checks expiry correctly.
+ * Falls back to "free" if nothing stored or subscription expired.
+ */
 export function getCurrentPlan() {
   try {
-    const raw = localStorage.getItem("ns_premium");
+    const raw = localStorage.getItem(PREFIX + "ns_premium_record");
     if (!raw) return "free";
-    const parsed = JSON.parse(raw);
-    return parsed?.planId || "free";
+    const rec = JSON.parse(raw);
+    if (!rec || !rec.planId || rec.planId === "free") return "free";
+    // Treat expired subscriptions as free
+    if (rec.expiresAt && Date.now() >= rec.expiresAt) return "free";
+    return rec.planId;
   } catch {
     return "free";
   }
@@ -38,6 +49,7 @@ export function getCurrentPlan() {
  * Returns the admin-set global plan floor.
  * If admin has set "ns_admin_global_plan" = "basic", every user
  * is treated as at least basic regardless of their own plan.
+ * Admin key is intentionally unprefixed (set directly by admin tools).
  */
 export function getAdminGlobalPlan() {
   try {

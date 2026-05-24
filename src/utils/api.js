@@ -39,14 +39,10 @@ export const tmdbFetch = async (path, apiKey) => {
     res = await fetch(`${TMDB_BASE}${path}${sep}api_key=${apiKey}`);
   } catch {
     _releaseSlot();
-    // Silent — no user-facing alert
     throw new Error("TMDB unreachable");
   }
   _releaseSlot();
-  if (res.status === 401 || res.status === 403) {
-    // Silent — no user-facing alert
-    throw new Error(`TMDB ${res.status}`);
-  }
+  if (res.status === 401 || res.status === 403) throw new Error(`TMDB ${res.status}`);
   if (!res.ok) throw new Error(`TMDB ${res.status}`);
   const data = await res.json();
   _tmdbCache.set(cacheKey, { data, expiresAt: Date.now() + TMDB_CACHE_TTL });
@@ -59,96 +55,186 @@ export const tmdbFetch = async (path, apiKey) => {
   return data;
 };
 
-// ── PLAYER SOURCES ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ── PLAYER SOURCES
+//
+// TIERED PRIORITY SYSTEM
+// ══════════════════════
+// Tier 1 (priority 1) — Fastest, most reliable. Always tried first.
+//   These load in < 3s on average, have high uptime, and work in Electron.
+//   vidlink and vidsrc.cc are the two most consistently fast providers.
+//
+// Tier 2 (priority 2) — Fast and reliable, minor occasional downtime.
+//   Good coverage, lower latency than tier 3. Used after tier 1 fails.
+//
+// Tier 3 (priority 3) — Fallback. Reliable but can be slow or ad-heavy.
+//   Always available as last resort.
+//
+// The BEAST ENGINE in WatchPage uses this ordering to build its retry queue:
+//   - Always starts with the user's preferred source (or tier-1 default)
+//   - On fail, walks the queue in tier order, skipping same-tier failures fast
+//
+// moviePriority / tvPriority allow separate rankings because some providers
+// have better movie coverage than TV coverage and vice versa.
+// ─────────────────────────────────────────────────────────────────────────────
 export const PLAYER_SOURCES = [
+  // ── TIER 1: Fastest & most reliable ────────────────────────────────────────
   {
     id: "vidlink",
     label: "Server 1",
     tag: null,
     note: "Fast",
+    tier: 1,
+    moviePriority: 1,
+    tvPriority: 1,
     supportsProgress: true,
+    // vidlink.pro sends postMessage PLAYER_EVENT with play/pause — best signal
     movieUrl: (id) => `https://vidlink.pro/movie/${id}?autoplay=true`,
     tvUrl:    (id, season, ep) => `https://vidlink.pro/tv/${id}/${season}/${ep}?autoplay=true`,
   },
   {
-    id: "moviesapi",
+    id: "vidsrc_cc",
     label: "Server 2",
     tag: null,
     note: "Fast",
+    tier: 1,
+    moviePriority: 2,
+    tvPriority: 2,
+    supportsProgress: true,
+    progressViaFrames: true,
+    // vidsrc.cc sends PLAYER_EVENT postMessages — reliable play/pause detection
+    movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, season, ep) => `https://vidsrc.cc/v2/embed/tv/${id}/${season}/${ep}?autoPlay=true`,
+  },
+  {
+    id: "vidsrc_fyi",
+    label: "Server 3",
+    tag: null,
+    note: "Fast",
+    tier: 1,
+    moviePriority: 3,
+    tvPriority: 3,
+    supportsProgress: true,
+    progressViaFrames: true,
+    // vidsrc.fyi — clean player, fast CDN, TMDB native, low load time
+    movieUrl: (id) => `https://vidsrc.fyi/embed/movie/${id}`,
+    tvUrl:    (id, season, ep) => `https://vidsrc.fyi/embed/tv/${id}/${season}/${ep}`,
+  },
+
+  // ── TIER 2: Fast & reliable ─────────────────────────────────────────────────
+  {
+    id: "moviesapi",
+    label: "Server 4",
+    tag: null,
+    note: null,
+    tier: 2,
+    moviePriority: 4,
+    tvPriority: 6,   // moviesapi TV coverage slightly weaker
     supportsProgress: true,
     movieUrl: (id) => `https://moviesapi.club/movie/${id}`,
     tvUrl:    (id, season, ep) => `https://moviesapi.club/tv/${id}-${season}-${ep}`,
   },
   {
     id: "embedsu",
-    label: "Server 3",
+    label: "Server 5",
     tag: null,
-    note: "Fast",
+    note: null,
+    tier: 2,
+    moviePriority: 5,
+    tvPriority: 4,   // embed.su strong on TV
     supportsProgress: true,
+    progressViaFrames: true,
     movieUrl: (id) => `https://embed.su/embed/movie/${id}`,
     tvUrl:    (id, season, ep) => `https://embed.su/embed/tv/${id}/${season}/${ep}`,
   },
   {
-    id: "vidsrcto",
-    label: "Server 4",
-    tag: null,
-    note: "Fast",
-    supportsProgress: true,
-    movieUrl: (id) => `https://vidsrc.to/embed/movie/${id}`,
-    tvUrl:    (id, season, ep) => `https://vidsrc.to/embed/tv/${id}/${season}/${ep}`,
-  },
-  {
-    id: "smashy",
-    label: "Server 5",
-    tag: null,
-    note: "Fast",
-    supportsProgress: true,
-    movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
-    tvUrl:    (id, season, ep) => `https://player.smashy.stream/tv/${id}?s=${season}&e=${ep}`,
-  },
-  {
-    id: "vidfast",
+    id: "vidsrc_net",
     label: "Server 6",
     tag: null,
     note: null,
+    tier: 2,
+    moviePriority: 6,
+    tvPriority: 5,
     supportsProgress: true,
-    movieUrl: (id) => `https://vidfast.pro/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, season, ep) => `https://vidfast.pro/tv/${id}/${season}/${ep}?autoPlay=true`,
-  },
-  {
-    id: "videasy",
-    label: "Server 7",
-    tag: null,
-    note: null,
-    supportsProgress: true,
-    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
-    tvUrl:    (id, season, ep) => `https://player.videasy.net/tv/${id}/${season}/${ep}`,
+    progressViaFrames: true,
+    // vidsrc.net — stable, large library, TMDB support confirmed 2025
+    movieUrl: (id) => `https://vidsrc.net/embed/movie?tmdb=${id}`,
+    tvUrl:    (id, season, ep) => `https://vidsrc.net/embed/tv?tmdb=${id}&season=${season}&episode=${ep}`,
   },
   {
     id: "autoembed",
-    label: "Server 8",
+    label: "Server 7",
     tag: null,
     note: null,
+    tier: 2,
+    moviePriority: 7,
+    tvPriority: 7,
     supportsProgress: true,
     progressViaFrames: true,
     movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
     tvUrl:    (id, season, ep) => `https://player.autoembed.cc/embed/tv/${id}/${season}/${ep}`,
   },
+
+  // ── TIER 3: Fallback ────────────────────────────────────────────────────────
   {
-    id: "vidsrc_cc",
+    id: "vidsrcto",
+    label: "Server 8",
+    tag: null,
+    note: null,
+    tier: 3,
+    moviePriority: 8,
+    tvPriority: 8,
+    supportsProgress: true,
+    progressViaFrames: true,
+    movieUrl: (id) => `https://vidsrc.to/embed/movie/${id}`,
+    tvUrl:    (id, season, ep) => `https://vidsrc.to/embed/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "vidfast",
     label: "Server 9",
     tag: null,
     note: null,
+    tier: 3,
+    moviePriority: 9,
+    tvPriority: 9,
     supportsProgress: true,
-    progressViaFrames: true,
-    movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
-    tvUrl:    (id, season, ep) => `https://vidsrc.cc/v2/embed/tv/${id}/${season}/${ep}`,
+    movieUrl: (id) => `https://vidfast.pro/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, season, ep) => `https://vidfast.pro/tv/${id}/${season}/${ep}?autoPlay=true`,
   },
+  {
+    id: "smashy",
+    label: "Server 10",
+    tag: null,
+    note: null,
+    tier: 3,
+    moviePriority: 10,
+    tvPriority: 10,
+    supportsProgress: true,
+    movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
+    tvUrl:    (id, season, ep) => `https://player.smashy.stream/tv/${id}?s=${season}&e=${ep}`,
+  },
+  {
+    id: "videasy",
+    label: "Server 11",
+    tag: null,
+    note: null,
+    tier: 3,
+    moviePriority: 11,
+    tvPriority: 11,
+    supportsProgress: true,
+    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
+    tvUrl:    (id, season, ep) => `https://player.videasy.net/tv/${id}/${season}/${ep}`,
+  },
+
+  // ── ANIME ────────────────────────────────────────────────────────────────────
   {
     id: "allmanga",
     label: "NsManga",
     tag: "ANIME",
     note: null,
+    tier: 1,
+    moviePriority: 99,
+    tvPriority: 99,
     supportsProgress: true,
     async: true,
     movieUrl: (_id) => "https://allmanga.to",
@@ -156,6 +242,7 @@ export const PLAYER_SOURCES = [
   },
 ];
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 export const getSourceUrl = (sourceId, type, id, season, ep) => {
   const src = PLAYER_SOURCES.find((s) => s.id === sourceId) ?? PLAYER_SOURCES[0];
   return type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
@@ -165,7 +252,27 @@ export const sourceSupportsProgress  = (sourceId) => PLAYER_SOURCES.find((s) => 
 export const sourceProgressViaFrames = (sourceId) => PLAYER_SOURCES.find((s) => s.id === sourceId)?.progressViaFrames ?? false;
 export const sourceIsAsync           = (sourceId) => PLAYER_SOURCES.find((s) => s.id === sourceId)?.async             ?? false;
 
-export const NEEDS_INTERCEPT = ["vidsrc_cc", "autoembed", "vidlink"];
+export const NEEDS_INTERCEPT = ["vidsrc_cc", "autoembed", "vidlink", "vidsrc_fyi", "vidsrc_net"];
+
+// ── Build sorted retry queue for a given content type ────────────────────────
+// Returns source IDs sorted by their priority for the given type (movie/tv),
+// starting from the preferred source and wrapping around.
+// This is used by WatchPage BEAST ENGINE to walk servers in the optimal order.
+export function buildRetryQueue(type, preferredId) {
+  const eligible = PLAYER_SOURCES
+    .filter((s) => !s.async && !s.tag)
+    .sort((a, b) => {
+      const pa = type === "movie" ? (a.moviePriority ?? 99) : (a.tvPriority ?? 99);
+      const pb = type === "movie" ? (b.moviePriority ?? 99) : (b.tvPriority ?? 99);
+      return pa - pb;
+    })
+    .map((s) => s.id);
+
+  const startIdx = eligible.indexOf(preferredId);
+  if (startIdx <= 0) return eligible;
+  // Rotate so preferred source is first, but keep the tier-ordered fallback list
+  return [...eligible.slice(startIdx), ...eligible.slice(0, startIdx)];
+}
 
 // ── Source test with short timeout ────────────────────────────────────────────
 async function testUrl(url) {
@@ -191,16 +298,19 @@ export async function findWorkingSource(
   const cached   = _sourceCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.sourceId;
 
+  // Use tier-sorted order: tier-1 sources race with 0ms delay, tier-2 with 150ms, tier-3 with 400ms
   const sources = PLAYER_SOURCES.filter((s) => !s.async);
 
   const racePromises = sources.map((src) => {
-    const delay = src.id === preferredId ? 0 : (preferredId ? 250 : 0);
+    // Preferred source always gets 0ms. Others get staggered by tier.
+    let delay = 0;
+    if (src.id !== preferredId) {
+      delay = src.tier === 1 ? 0 : src.tier === 2 ? 150 : 400;
+    }
     return new Promise((resolve, reject) => {
       setTimeout(async () => {
-        const url = type === "movie"
-          ? src.movieUrl(id)
-          : src.tvUrl(id, season, episode);
-        const ok = await testUrl(url);
+        const url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, episode);
+        const ok  = await testUrl(url);
         if (ok) resolve(src.id);
         else    reject();
       }, delay);
