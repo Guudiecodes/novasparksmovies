@@ -46,7 +46,7 @@ function DownloadPopup({ onClose }) {
   const [downloading,  setDownloading]  = useState(false);
   const [error,        setError]        = useState(null);
 
-useEffect(() => {
+  useEffect(() => {
     setRelease(DIRECT_DOWNLOAD);
     setLoading(false);
   }, []);
@@ -120,14 +120,12 @@ useEffect(() => {
             Fetching latest version...
           </div>
         )}
-
         {error && (
           <div style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.5 }}>
             {error}<br />
             <span style={{ color: "var(--text2)" }}>Check back soon for the desktop release.</span>
           </div>
         )}
-
         {release && !loading && (
           <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -143,11 +141,9 @@ useEffect(() => {
                 }}>{release.size}</div>
               )}
             </div>
-
             <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 12, lineHeight: 1.5 }}>
               {release.name}
             </div>
-
             {release.url ? (
               <button onClick={download} disabled={downloading} style={{
                 width: "100%", padding: "11px 0", borderRadius: 9, border: "none",
@@ -169,7 +165,6 @@ useEffect(() => {
                 No installer found in latest release.
               </div>
             )}
-
             <div style={{
               marginTop: 10, fontSize: 10, color: "var(--text3)",
               textAlign: "center", lineHeight: 1.5,
@@ -288,6 +283,18 @@ function TierBadge({ tier }) {
   );
 }
 
+// ── Hook: detect if we're in mobile layout ────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}
+
 export default function Sidebar({
   page, onNavigate, onSearch, savedList, activeDownloads,
   onReorderSaved, onRemoveSaved, canGoBack, onBack,
@@ -309,6 +316,7 @@ export default function Sidebar({
 
   const tier    = getPlanTier(planId);
   const tierCfg = TIER_CFG[tier];
+  const isMobile = useIsMobile();
 
   const dragItem = useRef(null);
   const dragNode = useRef(null);
@@ -346,9 +354,273 @@ export default function Sidebar({
     ? "Free Plan · Click to upgrade"
     : `${tierCfg.label} Plan · Click to manage`;
 
-  // Only show download button on web (not in Electron — they already have the app)
   const isWeb = !window.electron;
 
+  // ── MOBILE BOTTOM NAV ─────────────────────────────────────────────────────
+  // Rendered in the same component, not via CSS .mobile-nav class
+  // (which relies on nothing rendering it). We detect viewport width
+  // and return the mobile nav instead of the full sidebar.
+  // ── Shared icon size token — every nav icon is exactly this ─────────────
+  const ICO = 22; // px — enforced on every SVG in mobile nav
+
+  // ── Nav items: search lives here too, same visual weight as everything else
+  const mobileNavItems = [
+    {
+      id:    "search",
+      label: "Search",
+      onTap: onSearch,          // search opens the modal, not a page navigate
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="7"/>
+          <line x1="16.5" y1="16.5" x2="22" y2="22"/>
+        </svg>
+      ),
+    },
+    {
+      id:    "home",
+      label: "Home",
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/>
+          <path d="M9 21V12h6v9"/>
+        </svg>
+      ),
+    },
+    {
+      id:    "history",
+      label: "Library",
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="9" rx="1"/>
+          <rect x="14" y="3" width="7" height="5" rx="1"/>
+          <rect x="14" y="12" width="7" height="9" rx="1"/>
+          <rect x="3" y="16" width="7" height="5" rx="1"/>
+        </svg>
+      ),
+    },
+    {
+      id:    "downloads",
+      label: "Downloads",
+      badge: activeDownloads > 0 ? activeDownloads : null,
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v11m0 0l-4-4m4 4l4-4"/>
+          <path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2"/>
+        </svg>
+      ),
+    },
+    {
+      id:    "settings",
+      label: "Settings",
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+      ),
+    },
+  ];
+
+  if (isMobile) {
+    return (
+      <>
+        {/* ── Mobile top bar ─────────────────────────────────────────────── */}
+        <div style={{
+          position: "fixed",
+          top: 0, left: 0, right: 0,
+          height: 52,
+          background: "rgba(5,12,15,0.97)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 16px",
+          zIndex: 100,
+          // GPU layer
+          willChange: "transform",
+          transform: "translateZ(0)",
+        }}>
+          {/* Logo + plan tier badge */}
+          <div
+            onClick={() => onNavigate("pricing")}
+            title={logoLabel}
+            style={{
+              position: "relative",
+              width: 34, height: 34,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <NovasparkLogo tier={tier} />
+            <TierBadge tier={tier} />
+          </div>
+
+          {/* App wordmark — centred */}
+          <div style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 19,
+            letterSpacing: 3,
+            color: "var(--text)",
+            flex: 1,
+            textAlign: "center",
+            userSelect: "none",
+          }}>
+            NOVASPARK
+          </div>
+
+          {/* Plan label pill — right side */}
+          <div
+            onClick={() => onNavigate("pricing")}
+            style={{
+              flexShrink: 0,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "4px 10px",
+              borderRadius: 20,
+              border: `1px solid ${tier === "free" ? "var(--border)" : TIER_CFG[tier].ring}`,
+              background: tier === "free"
+                ? "rgba(255,255,255,0.04)"
+                : `rgba(${tier === "diamond" ? "0,212,255" : tier === "gold" ? "245,166,35" : "192,200,208"},0.08)`,
+            }}
+          >
+            {/* Tier dot */}
+            <span style={{
+              width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+              background: tier === "free"    ? "var(--red)"
+                        : tier === "silver"  ? "#c0c8d0"
+                        : tier === "gold"    ? "#f5a623"
+                        : "linear-gradient(135deg,#00d4ff,#7c3aed)",
+              boxShadow: tier !== "free" ? `0 0 5px ${TIER_CFG[tier].glow}` : "none",
+            }} />
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
+              color: tier === "free" ? "var(--text3)" : TIER_CFG[tier].grad0,
+              textTransform: "uppercase",
+            }}>
+              {TIER_CFG[tier].label}
+            </span>
+          </div>
+        </div>
+
+        {/* ── Mobile bottom navigation ────────────────────────────────────── */}
+        {/* Search is item #1 here — same visual treatment as all other items  */}
+        <nav style={{
+          position: "fixed",
+          bottom: 0, left: 0, right: 0,
+          background: "rgba(5,12,15,0.97)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderTop: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "stretch",
+          justifyContent: "space-around",
+          // Height: 58px content + safe-area-inset-bottom
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          zIndex: 100,
+          willChange: "transform",
+          transform: "translateZ(0)",
+        }}>
+          {mobileNavItems.map(({ id, icon, label, badge, onTap }) => {
+            const isActive = id !== "search" && page === id;
+            const handleClick = onTap
+              ? onTap                        // search opens modal directly
+              : () => onNavigate(id);        // everything else navigates
+
+            return (
+              <button
+                key={id}
+                onClick={handleClick}
+                style={{
+                  // Equal flex share — every item identical width
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  height: 58,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  position: "relative",
+                  fontFamily: "var(--font-body)",
+                  // Active indicator: subtle teal underline at top of bar
+                  borderTop: isActive
+                    ? "2px solid var(--red)"
+                    : "2px solid transparent",
+                  transition: "border-color 0.2s, color 0.2s",
+                }}
+              >
+                {/* Icon — always 22×22, colour handled inside each icon fn */}
+                <span style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: ICO, height: ICO,
+                  transition: "transform 0.15s",
+                  // Subtle scale-up on active
+                  transform: isActive ? "scale(1.12)" : "scale(1)",
+                }}>
+                  {icon(isActive)}
+                </span>
+
+                {/* Label — same font size, same weight, same casing everywhere */}
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: 0.3,
+                  color: isActive ? "var(--red)" : "var(--text3)",
+                  textTransform: "capitalize",
+                  lineHeight: 1,
+                  transition: "color 0.2s",
+                }}>
+                  {label}
+                </span>
+
+                {/* Badge (downloads count) */}
+                {badge && (
+                  <span style={{
+                    position: "absolute",
+                    top: 8, right: "calc(50% - 18px)",
+                    minWidth: 16, height: 16,
+                    borderRadius: 8,
+                    background: "var(--red)",
+                    color: "#050c0f",
+                    fontSize: 9, fontWeight: 800,
+                    lineHeight: "16px",
+                    textAlign: "center",
+                    padding: "0 4px",
+                  }}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Modals */}
+        {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
+      </>
+    );
+  }
+
+  // ── DESKTOP SIDEBAR ───────────────────────────────────────────────────────
   return (
     <div className="sidebar">
       <style>{`
@@ -380,10 +652,10 @@ export default function Sidebar({
         <TierBadge tier={tier} />
       </div>
 
-      {canGoBack && <SideBtn onClick={onBack}                         icon={<BackIcon />}          label="Back (Ctrl+Z)" />}
-      <SideBtn onClick={onSearch}                                     icon={<SearchIcon />}         label="Search (⌘F)" />
-      <SideBtn active={page === "home"}     onClick={() => onNavigate("home")}     icon={<HomeIcon />}          label="Home" />
-      <SideBtn active={page === "history"}  onClick={() => onNavigate("history")}  icon={<HistoryIcon />}       label="Library & History" />
+      {canGoBack && <SideBtn onClick={onBack}                          icon={<BackIcon />}           label="Back (Ctrl+Z)" />}
+      <SideBtn onClick={onSearch}                                      icon={<SearchIcon />}          label="Search (⌘F)" />
+      <SideBtn active={page === "home"}      onClick={() => onNavigate("home")}      icon={<HomeIcon />}           label="Home" />
+      <SideBtn active={page === "history"}   onClick={() => onNavigate("history")}   icon={<HistoryIcon />}        label="Library & History" />
       <SideBtn active={page === "downloads"} onClick={() => onNavigate("downloads")} icon={<DownloadsQueueIcon />} label="Downloads"
         badge={activeDownloads > 0 ? activeDownloads : null} />
 
@@ -442,7 +714,6 @@ export default function Sidebar({
 
       {/* ── Bottom buttons ── */}
       <div className="sidebar-bottom">
-
         {/* Download desktop app — web only */}
         {isWeb && (
           <div style={{ position: "relative" }}>
