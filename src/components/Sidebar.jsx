@@ -363,12 +363,12 @@ export default function Sidebar({
   // ── Shared icon size token — every nav icon is exactly this ─────────────
   const ICO = 22; // px — enforced on every SVG in mobile nav
 
-  // ── Nav items: search lives here too, same visual weight as everything else
+  // ── Primary nav items (bottom bar row 1) ─────────────────────────────────
   const mobileNavItems = [
     {
       id:    "search",
       label: "Search",
-      onTap: onSearch,          // search opens the modal, not a page navigate
+      onTap: onSearch,
       icon: (active) => (
         <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
           stroke={active ? "var(--red)" : "var(--text3)"}
@@ -429,6 +429,60 @@ export default function Sidebar({
         </svg>
       ),
     },
+    {
+      id:    "help",
+      label: "Help",
+      onTap: onShowShortcuts,
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+          <circle cx="12" cy="17" r=".5" fill="currentColor"/>
+        </svg>
+      ),
+    },
+    {
+      id:    "donate",
+      label: "Donate",
+      onTap: () => setShowDonate(true),
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 21C12 21 3 14.5 3 8.5C3 5.46 5.46 3 8.5 3C10.24 3 11.91 3.81 13 5.08C14.09 3.81 15.76 3 17.5 3C20.54 3 23 5.46 23 8.5C23 14.5 12 21 12 21Z"/>
+        </svg>
+      ),
+    },
+    // Download desktop app — web only
+    ...(isWeb ? [{
+      id:    "get-app",
+      label: "Get App",
+      onTap: () => setShowDownload((v) => !v),
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={showDownload ? "var(--amber)" : active ? "var(--red)" : "var(--text3)"}
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v11m0 0l-4-4m4 4l4-4"/>
+          <path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2"/>
+        </svg>
+      ),
+    }] : []),
+    // Quit — Electron only
+    ...(window.electron?.quitApp ? [{
+      id:    "quit",
+      label: "Quit",
+      onTap: () => window.electron.quitApp(),
+      icon: (_active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke="#e53e3e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      ),
+    }] : []),
   ];
 
   if (isMobile) {
@@ -516,8 +570,7 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* ── Mobile bottom navigation ────────────────────────────────────── */}
-        {/* Search is item #1 here — same visual treatment as all other items  */}
+        {/* ── Mobile bottom navigation — horizontally scrollable so all icons fit ── */}
         <nav style={{
           position: "fixed",
           bottom: 0, left: 0, right: 0,
@@ -525,96 +578,108 @@ export default function Sidebar({
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
           borderTop: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "stretch",
-          justifyContent: "space-around",
-          // Height: 58px content + safe-area-inset-bottom
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
           zIndex: 100,
           willChange: "transform",
           transform: "translateZ(0)",
         }}>
-          {mobileNavItems.map(({ id, icon, label, badge, onTap }) => {
-            const isActive = id !== "search" && page === id;
-            const handleClick = onTap
-              ? onTap                        // search opens modal directly
-              : () => onNavigate(id);        // everything else navigates
+          {/* Scrollable icon strip */}
+          <div style={{
+            display: "flex",
+            alignItems: "stretch",
+            overflowX: "auto",
+            overflowY: "visible",
+            scrollbarWidth: "none",
+            WebkitOverflowScrolling: "touch",
+            // Fade out edges to hint scrollability
+            maskImage: "linear-gradient(to right, transparent 0%, black 12px, black calc(100% - 12px), transparent 100%)",
+            WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 12px, black calc(100% - 12px), transparent 100%)",
+          }}>
+            <div style={{ width: 8, flexShrink: 0 }} />
 
-            return (
-              <button
-                key={id}
-                onClick={handleClick}
-                style={{
-                  // Equal flex share — every item identical width
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 4,
-                  height: 58,
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  position: "relative",
-                  fontFamily: "var(--font-body)",
-                  // Active indicator: subtle teal underline at top of bar
-                  borderTop: isActive
-                    ? "2px solid var(--red)"
-                    : "2px solid transparent",
-                  transition: "border-color 0.2s, color 0.2s",
-                }}
-              >
-                {/* Icon — always 22×22, colour handled inside each icon fn */}
-                <span style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: ICO, height: ICO,
-                  transition: "transform 0.15s",
-                  // Subtle scale-up on active
-                  transform: isActive ? "scale(1.12)" : "scale(1)",
-                }}>
-                  {icon(isActive)}
-                </span>
+            {mobileNavItems.map(({ id, icon, label, badge, onTap }) => {
+              const isActive = id !== "search" && id !== "help" && id !== "donate" && id !== "get-app" && id !== "quit" && page === id;
+              const handleClick = onTap ?? (() => onNavigate(id));
 
-                {/* Label — same font size, same weight, same casing everywhere */}
-                <span style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: 0.3,
-                  color: isActive ? "var(--red)" : "var(--text3)",
-                  textTransform: "capitalize",
-                  lineHeight: 1,
-                  transition: "color 0.2s",
-                }}>
-                  {label}
-                </span>
-
-                {/* Badge (downloads count) */}
-                {badge && (
+              return (
+                <button
+                  key={id}
+                  onClick={handleClick}
+                  style={{
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    height: 58,
+                    minWidth: 60,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "0 8px",
+                    position: "relative",
+                    fontFamily: "var(--font-body)",
+                    borderTop: isActive
+                      ? "2px solid var(--red)"
+                      : "2px solid transparent",
+                    transition: "border-color 0.2s",
+                  }}
+                >
                   <span style={{
-                    position: "absolute",
-                    top: 8, right: "calc(50% - 18px)",
-                    minWidth: 16, height: 16,
-                    borderRadius: 8,
-                    background: "var(--red)",
-                    color: "#050c0f",
-                    fontSize: 9, fontWeight: 800,
-                    lineHeight: "16px",
-                    textAlign: "center",
-                    padding: "0 4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: ICO, height: ICO,
+                    transition: "transform 0.15s",
+                    transform: isActive ? "scale(1.12)" : "scale(1)",
                   }}>
-                    {badge}
+                    {icon(isActive)}
                   </span>
-                )}
-              </button>
-            );
-          })}
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 600,
+                    letterSpacing: 0.3,
+                    color: isActive ? "var(--red)" : "var(--text3)",
+                    textTransform: "capitalize",
+                    lineHeight: 1,
+                    transition: "color 0.2s",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {label}
+                  </span>
+                  {badge && (
+                    <span style={{
+                      position: "absolute",
+                      top: 8, right: 4,
+                      minWidth: 16, height: 16,
+                      borderRadius: 8,
+                      background: "var(--red)",
+                      color: "#050c0f",
+                      fontSize: 9, fontWeight: 800,
+                      lineHeight: "16px",
+                      textAlign: "center",
+                      padding: "0 4px",
+                    }}>
+                      {badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <div style={{ width: 8, flexShrink: 0 }} />
+          </div>
         </nav>
 
-        {/* Modals */}
+        {/* Download popup — outside nav so it renders above everything */}
+        {showDownload && isWeb && (
+          <div data-download-popup style={{ position: "fixed", bottom: 68, left: 12, zIndex: 99999 }}>
+            <DownloadPopup onClose={() => setShowDownload(false)} />
+          </div>
+        )}
+
+        {/* Modals — outside nav, at document level */}
         {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
       </>
     );
@@ -622,6 +687,7 @@ export default function Sidebar({
 
   // ── DESKTOP SIDEBAR ───────────────────────────────────────────────────────
   return (
+    <>
     <div className="sidebar">
       <style>{`
         @keyframes ns-ai-pulse {
@@ -712,62 +778,245 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* ── Bottom buttons ── */}
-      <div className="sidebar-bottom">
-        {/* Download desktop app — web only */}
-        {isWeb && (
-          <div style={{ position: "relative" }}>
-            <button
-              data-download-btn
-              className="sidebar-btn"
-              onClick={(e) => { e.stopPropagation(); setShowDownload((v) => !v); }}
-              title="Download Desktop App"
-              style={{ color: showDownload ? "var(--amber)" : undefined }}
-            >
-              <svg width="20" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M12 3v11m0 0l-4-4m4 4l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              <span className="tooltip">Download Desktop App</span>
-            </button>
-            {showDownload && (
-              <div data-download-popup>
-                <DownloadPopup onClose={() => setShowDownload(false)} />
-              </div>
-            )}
-          </div>
-        )}
+    </div>
 
-        {/* Donate button */}
-        <button
-          className="sidebar-btn"
-          onClick={() => setShowDonate(true)}
-          title="Support NovaSpark"
-          style={{ color: "var(--text3)" }}
-        >
-          <svg width="20" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M12 21C12 21 3 14.5 3 8.5C3 5.46 5.46 3 8.5 3C10.24 3 11.91 3.81 13 5.08C14.09 3.81 15.76 3 17.5 3C20.54 3 23 5.46 23 8.5C23 14.5 12 21 12 21Z"
-              stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinejoin="round"/>
-          </svg>
-          <span className="tooltip">Support NovaSpark ❤️</span>
-        </button>
+    {/* ══════════════════════════════════════════════════════════════════════
+        FLOATING MENU — top-right corner, visible on ALL devices (desktop +
+        tablet). Holds utility actions that were previously buried at the
+        bottom of the sidebar: Settings, Help, Donate, Download App, Quit.
+        Transparent glass pill with a "⋮" trigger. Renders outside the
+        sidebar so it is never clipped.
+       ══════════════════════════════════════════════════════════════════════ */}
+    <FloatingMenu
+      page={page}
+      onNavigate={onNavigate}
+      onShowShortcuts={onShowShortcuts}
+      showDonate={showDonate}
+      setShowDonate={setShowDonate}
+      showDownload={showDownload}
+      setShowDownload={setShowDownload}
+      isWeb={isWeb}
+    />
 
-        <SideBtn onClick={onShowShortcuts}                              icon={<HelpIcon />}     label="Help & Shortcuts (?)" />
-        <SideBtn active={page === "settings"} onClick={() => onNavigate("settings")} icon={<SettingsIcon />} label="Settings" />
-
-        {window.electron?.quitApp && (
-          <button className="sidebar-btn"
-            onClick={() => window.electron.quitApp()}
-            title="Quit App"
-            style={{ color: "#e53e3e", marginTop: 4 }}>
-            <QuitIcon />
-            <span className="tooltip">Quit App</span>
-          </button>
-        )}
+    {/* Donate Modal — always outside any clipping container */}
+    {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
+    {showDownload && isWeb && (
+      <div data-download-popup>
+        <DownloadPopup onClose={() => setShowDownload(false)} />
       </div>
+    )}
+    </>
+  );
+}
 
-      {/* ── Donate Modal ── */}
-      {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
+// ── FloatingMenu — top-right glass pill, visible on desktop + tablet ─────────
+// Holds all utility actions removed from the sidebar bottom.
+// On mobile the mobile bottom nav already includes these.
+function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDonate, showDownload, setShowDownload, isWeb }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => {
+      if (!menuRef.current?.contains(e.target)) setOpen(false);
+    };
+    setTimeout(() => document.addEventListener("mousedown", h), 0);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const items = [
+    {
+      label: "Settings",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+      ),
+      active: page === "settings",
+      action: () => { onNavigate("settings"); setOpen(false); },
+    },
+    {
+      label: "Help & Shortcuts",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+          <circle cx="12" cy="17" r=".5" fill="currentColor"/>
+        </svg>
+      ),
+      action: () => { onShowShortcuts(); setOpen(false); },
+    },
+    {
+      label: "Support NovaSpark ❤️",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 21C12 21 3 14.5 3 8.5C3 5.46 5.46 3 8.5 3C10.24 3 11.91 3.81 13 5.08C14.09 3.81 15.76 3 17.5 3C20.54 3 23 5.46 23 8.5C23 14.5 12 21 12 21Z"/>
+        </svg>
+      ),
+      accent: "#e8547a",
+      action: () => { setShowDonate(true); setOpen(false); },
+    },
+    ...(isWeb ? [{
+      label: "Download Desktop App",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v11m0 0l-4-4m4 4l4-4"/>
+          <path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2"/>
+        </svg>
+      ),
+      accent: "var(--amber)",
+      action: () => { setShowDownload((v) => !v); setOpen(false); },
+    }] : []),
+    ...(window.electron?.quitApp ? [{
+      label: "Quit NovaSpark",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      ),
+      accent: "#e53e3e",
+      action: () => window.electron.quitApp(),
+    }] : []),
+  ];
+
+  return (
+    <div
+      ref={menuRef}
+      style={{
+        position: "fixed",
+        top: 14,
+        right: 16,
+        zIndex: 200,
+        // Hide on mobile — mobile bottom nav handles these
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 8,
+      }}
+    >
+      {/* ── Trigger pill ── */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Menu"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "7px 13px",
+          borderRadius: 20,
+          border: open
+            ? "1px solid rgba(0,180,166,0.5)"
+            : "1px solid rgba(255,255,255,0.10)",
+          background: open
+            ? "rgba(0,180,166,0.12)"
+            : "rgba(10,20,24,0.55)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          color: open ? "var(--red)" : "var(--text2)",
+          cursor: "pointer",
+          transition: "all 0.18s ease",
+          fontFamily: "var(--font-body)",
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: 0.3,
+        }}
+        onMouseEnter={(e) => {
+          if (!open) {
+            e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)";
+            e.currentTarget.style.color = "var(--text)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!open) {
+            e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
+            e.currentTarget.style.color = "var(--text2)";
+          }
+        }}
+      >
+        {/* Three-dot icon */}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5"  cy="12" r="2"/>
+          <circle cx="12" cy="12" r="2"/>
+          <circle cx="19" cy="12" r="2"/>
+        </svg>
+        <span>Menu</span>
+      </button>
+
+      {/* ── Dropdown ── */}
+      {open && (
+        <div style={{
+          background: "rgba(10,18,22,0.96)",
+          border: "1px solid rgba(255,255,255,0.10)",
+          borderRadius: 12,
+          padding: "6px",
+          minWidth: 210,
+          boxShadow: "0 16px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(0,180,166,0.08)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          animation: "menuDrop 0.15s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>
+          <style>{`
+            @keyframes menuDrop {
+              from { opacity:0; transform:translateY(-6px) scale(0.97); }
+              to   { opacity:1; transform:translateY(0) scale(1); }
+            }
+          `}</style>
+
+          {items.map(({ label, icon, accent, active, action }) => (
+            <button
+              key={label}
+              onClick={action}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                background: active ? "var(--red-dim)" : "none",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 12px",
+                color: accent ?? (active ? "var(--red)" : "var(--text2)"),
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: active ? 600 : 500,
+                fontFamily: "var(--font-body)",
+                textAlign: "left",
+                transition: "background 0.13s, color 0.13s",
+              }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                  e.currentTarget.style.color = accent ?? "var(--text)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = "none";
+                  e.currentTarget.style.color = accent ?? "var(--text2)";
+                }
+              }}
+            >
+              <span style={{
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                opacity: 0.8,
+              }}>
+                {icon}
+              </span>
+              {label}
+              {active && (
+                <span style={{ marginLeft: "auto", color: "var(--red)", fontSize: 11 }}>✓</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

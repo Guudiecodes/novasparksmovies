@@ -70,8 +70,8 @@ export default async function handler(req, res) {
   if (!patchOk) return res.status(500).json({ error: "Failed to update password" });
 
   return res.status(200).json({
-    ok:    true,
-    email: record.email,
+    ok:      true,
+    email:   record.email,
     message: "Password updated. You can now restore your subscription.",
   });
 }

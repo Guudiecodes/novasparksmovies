@@ -1,3 +1,4 @@
+cat > /home/claude/novasparks/api/restore.js << 'EOF'
 // api/restore.js — NovaSpark subscription restore / cross-device sync
 // Called by desktop app and web app to retrieve an existing subscription.
 // POST { email, passwordHash } → returns subscription record if valid.
@@ -45,27 +46,29 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Incorrect password" });
   }
 
-  const now = Date.now();
+  const now       = Date.now();
+  // FIX: Supabase returns ISO string — convert to ms timestamp before comparing
+  const expiresMs = new Date(sub.expires_at).getTime();
 
   // Expired — tell client so they can show renewal UI
-  if (sub.expires_at < now) {
+  if (expiresMs < now) {
     return res.status(403).json({
       ok:        false,
       error:     "Subscription expired",
-      expiresAt: sub.expires_at,
+      expiresAt: expiresMs,
       planId:    sub.plan_id,
     });
   }
 
-  const daysRemaining = Math.ceil((sub.expires_at - now) / (1000 * 60 * 60 * 24));
+  const daysRemaining = Math.ceil((expiresMs - now) / (1000 * 60 * 60 * 24));
 
   return res.status(200).json({
     ok:           true,
     planId:       sub.plan_id,
     email:        sub.email,
     txnRef:       sub.txn_ref,
-    startedAt:    sub.started_at,
-    expiresAt:    sub.expires_at,
+    startedAt:    new Date(sub.started_at).getTime(),
+    expiresAt:    expiresMs,
     daysRemaining,
   });
 }

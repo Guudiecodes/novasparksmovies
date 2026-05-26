@@ -8,9 +8,9 @@ import {
   cancelPremium,
   daysRemaining,
   isPremiumActive,
-  ngn2usd,
   getExpiryWarning,
   dismissExpiryWarning,
+  formatPrice,
 } from "../utils/premium";
 import PaymentModal from "../components/PaymentModal";
 import RestoreModal from "../components/RestoreModal";
@@ -20,12 +20,16 @@ function FAQItem({ q, a }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-      <button onClick={() => setOpen((v) => !v)}
-        style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "14px 18px", fontSize: 14, fontWeight: 600, color: "var(--text)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "14px 18px", fontSize: 14, fontWeight: 600, color: "var(--text)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+      >
         {q}
         <span style={{ fontSize: 18, color: "var(--text3)", flexShrink: 0, marginLeft: 12 }}>{open ? "−" : "+"}</span>
       </button>
-      {open && <div style={{ padding: "0 18px 14px", fontSize: 13, color: "var(--text3)", lineHeight: 1.7 }}>{a}</div>}
+      {open && (
+        <div style={{ padding: "0 18px 14px", fontSize: 13, color: "var(--text3)", lineHeight: 1.7 }}>{a}</div>
+      )}
     </div>
   );
 }
@@ -56,9 +60,9 @@ function ExpiryWarningBanner({ onRenew }) {
   const [warning, setWarning] = useState(() => getExpiryWarning());
   if (!warning) return null;
   const msgs = {
-    "7d": { text: "Your plan expires in 7 days.", color: "#f5a623" },
-    "3d": { text: "Your plan expires in 3 days — renew now to stay premium.", color: "#f97316" },
-    "1d": { text: "⚠ Your plan expires tomorrow! Renew now or lose access.", color: "var(--red)" },
+    "7d": { text: "Your plan expires in 7 days.",                               color: "#f5a623" },
+    "3d": { text: "Your plan expires in 3 days — renew now to stay premium.",   color: "#f97316" },
+    "1d": { text: "⚠ Your plan expires tomorrow! Renew now or lose access.",     color: "var(--red)" },
   };
   const { text, color } = msgs[warning] || {};
   return (
@@ -106,7 +110,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
   return (
     <div style={{ padding: "32px 28px", maxWidth: 900, margin: "0 auto" }}>
 
-      {/* Top row: back + restore */}
+      {/* Top row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
         {onBack && (
           <button className="btn btn-ghost" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }} onClick={onBack}>
@@ -118,7 +122,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
           style={{ fontSize: 13, color: "#00b4a6", borderColor: "rgba(0,180,166,0.3)" }}
           onClick={() => setShowRestore(true)}
         >
-          Already subscribed?🔄Restore access
+          Already subscribed? 🔄 Restore access
         </button>
       </div>
 
@@ -200,17 +204,10 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                 {plan.comingSoon ? (
                   <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text3)", marginBottom: 16 }}>Coming Soon</div>
                 ) : (
-                  <>
-                    {/* Dollar first, naira second */}
-                    <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, color: "var(--text)", fontSize: 15 }}>{ngn2usd(plan.price)}</span>
-                      {" · "}₦{plan.price.toLocaleString()} / month
-                    </div>
-                    <div style={{ fontSize: 32, fontWeight: 800, color: "var(--text)", lineHeight: 1.1, marginBottom: 16 }}>
-                      ₦{plan.price.toLocaleString()}
-                      <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text3)" }}> /mo</span>
-                    </div>
-                  </>
+                  <div style={{ fontSize: 36, fontWeight: 800, color: "var(--text)", lineHeight: 1.1, marginBottom: 16 }}>
+                    ${Number(plan.price).toFixed(2)}
+                    <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text3)" }}> /mo</span>
+                  </div>
                 )}
 
                 <ul style={{ listStyle: "none", margin: "0 0 24px", padding: 0, display: "flex", flexDirection: "column", gap: 9 }}>
@@ -234,10 +231,12 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                     Notify me when available
                   </div>
                 ) : canBuy ? (
-                  <button className="btn btn-primary"
+                  <button
+                    className="btn btn-primary"
                     style={{ width: "100%", justifyContent: "center", background: plan.color, border: "none", fontSize: 14, fontWeight: 700, padding: "12px 0" }}
-                    onClick={() => setSelectedPlan(plan)}>
-                    Get {plan.name} — {ngn2usd(plan.price)} / ₦{plan.price.toLocaleString()}/mo
+                    onClick={() => setSelectedPlan(plan)}
+                  >
+                    Get {plan.name} — ${Number(plan.price).toFixed(2)}/mo
                   </button>
                 ) : (
                   <div style={{ textAlign: "center", fontSize: 13, color: "var(--text3)", padding: "10px 0", border: "1px solid var(--border)", borderRadius: 8 }}>
@@ -250,14 +249,16 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
         })}
       </div>
 
-      {/* Payment methods */}
+      {/* Payment methods — Paystack channels only, no bank names */}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
           Accepted payment methods
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
-          {["Card", "Bank Transfer", "USSD", "PalmPay", "Kuda", "Crypto"].map((m) => (
-            <span key={m} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 12px", fontSize: 12, color: "var(--text2)" }}>{m}</span>
+          {["Card", "Bank Transfer", "USSD", "Mobile Money", "Crypto"].map((m) => (
+            <span key={m} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 12px", fontSize: 12, color: "var(--text2)" }}>
+              {m}
+            </span>
           ))}
         </div>
       </div>
@@ -302,7 +303,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
           <FAQItem q="Can I cancel my subscription?" a="Yes — cancel any time from this page. Your plan stays active until the end of your 30-day billing period. No charges after that." />
           <FAQItem q="What if I clear my browser history?" a="No problem — click 'Already subscribed? Restore access' and enter your email and password. Your plan is stored on our server and restored instantly." />
           <FAQItem q="What if I forget my password?" a="Use the 'Forgot password' option in the restore screen. Enter your Paystack payment reference to verify your identity and set a new password." />
-          <FAQItem q="How does payment work?" a="Pay via Paystack (card, bank transfer, USSD, PalmPay, Kuda) or crypto. Your plan activates immediately after payment is confirmed." />
+          <FAQItem q="How does payment work?" a="Pay securely via Paystack — card, bank transfer, USSD, mobile money, or crypto. Your plan activates immediately after payment is confirmed." />
           <FAQItem q="What happens when my plan expires?" a="You automatically drop to Free. Your watchlist and history are always kept. You'll get warnings at 7 days, 3 days, and 1 day before expiry." />
           <FAQItem q="Is it really ad-free?" a="Yes. NovaSpark is completely ad-free across all plans. No ads, ever." />
         </div>

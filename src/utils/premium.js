@@ -5,17 +5,8 @@ const PREMIUM_KEY        = "ns_premium_record";
 const PREMIUM_FLAG_KEY   = "ns_premium";
 const WARN_DISMISSED_KEY = "ns_warn_dismissed";
 
-// ── API base — points to Vercel deployment ────────────────────────────────────
-// In Electron (file:// origin) we always need the absolute URL.
-// On the web the relative "/api/..." also works, but absolute is safe everywhere.
+// ── API base ──────────────────────────────────────────────────────────────────
 const API_BASE = "https://novaspark.app";
-
-// ── Exchange rate ─────────────────────────────────────────────────────────────
-export const NGN_TO_USD = 1600;
-export function ngn2usd(ngn) {
-  if (!ngn) return null;
-  return `~$${(ngn / NGN_TO_USD).toFixed(2)} USD`;
-}
 
 // ── Plans ─────────────────────────────────────────────────────────────────────
 export const PLANS = {
@@ -40,7 +31,7 @@ export const PLANS = {
   standard: {
     id:           "standard",
     name:         "Standard",
-    price:        800,
+    price:        0.99,          // USD
     color:        "#00b4a6",
     badge:        "Most Popular",
     durationDays: 30,
@@ -94,12 +85,12 @@ export const FEATURE_LABELS = {
   earlyAccess:      "Early access to new features",
 };
 
-// ── Subscription record in localStorage ──────────────────────────────────────
-// streambert_ns_premium_record = {
-//   planId, email, passwordHash, txnRef,
-//   startedAt, expiresAt, cancelledAt, warningSent, lastSyncedAt
-// }
+export function formatPrice(usd) {
+  if (!usd) return "Free";
+  return `$${Number(usd).toFixed(2)} / month`;
+}
 
+// ── Hash ──────────────────────────────────────────────────────────────────────
 export function simpleHash(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
@@ -108,6 +99,7 @@ export function simpleHash(str) {
   return h.toString(16);
 }
 
+// ── Write premium record ──────────────────────────────────────────────────────
 export function setPremiumPlan(planId, email, password, txnRef, durationDaysOverride) {
   const plan      = PLANS[planId];
   const days      = durationDaysOverride ?? plan?.durationDays ?? 30;
@@ -125,10 +117,17 @@ export function setPremiumPlan(planId, email, password, txnRef, durationDaysOver
     lastSyncedAt: now,
   };
   storage.set(PREMIUM_KEY,      record);
-  storage.set(PREMIUM_FLAG_KEY, { planId }); // object so gate.js can read planId
+  storage.set(PREMIUM_FLAG_KEY, { planId });
   return record;
 }
 
+/**
+ * Alias used by PaymentModal — same as setPremiumPlan.
+ * Exported separately so both names work without breaking anything.
+ */
+export const savePremiumRecord = setPremiumPlan;
+
+// ── Read ──────────────────────────────────────────────────────────────────────
 export function getPremiumRecord() {
   return storage.get(PREMIUM_KEY) || null;
 }
@@ -152,7 +151,6 @@ export function syncPremiumFlag() {
   const active = isPremiumActive();
   const rec    = getPremiumRecord();
   if (active && rec) {
-    // Keep flag as object with planId so gate.js can read it
     storage.set(PREMIUM_FLAG_KEY, { planId: rec.planId });
   } else {
     storage.remove(PREMIUM_FLAG_KEY);
@@ -203,34 +201,13 @@ export function canUpgradeTo(targetPlanId) {
   return (PLAN_RANK[targetPlanId] ?? 0) > (PLAN_RANK[getEffectivePlan()] ?? 0);
 }
 
-export function formatPrice(ngn) {
-  if (!ngn) return "Free";
-  return `${ngn2usd(ngn)} / ₦${ngn.toLocaleString()} per month`;
-}
-
 export function clearPremium() {
   storage.remove(PREMIUM_KEY);
   storage.remove(PREMIUM_FLAG_KEY);
   storage.remove(WARN_DISMISSED_KEY);
 }
 
-// ── Cross-device / offline sync ───────────────────────────────────────────────
-//
-// Flow:
-//   1. User pays on web → subscribe API saves to Supabase → client calls setPremiumPlan()
-//   2. User opens desktop app → RestoreModal calls syncPremiumFromServer(email, password)
-//   3. On success → setPremiumPlan() stores record locally → works offline from then on
-//   4. App startup → silently calls autoSyncPremium() if record is > 12h old
-//
-// Offline behaviour:
-//   If the server is unreachable, the locally stored record is trusted until expiresAt.
-//   This means the app works fully offline for the subscription duration.
-
-/**
- * Restore / sync subscription from server using email + password.
- * Called from RestoreModal and on first desktop launch.
- * Returns { ok, planId, expiresAt, error }
- */
+// ── Server sync ───────────────────────────────────────────────────────────────
 export async function syncPremiumFromServer(email, password) {
   try {
     const res = await fetch(`${API_BASE}/api/restore`, {
@@ -241,16 +218,13 @@ export async function syncPremiumFromServer(email, password) {
         passwordHash: simpleHash(password),
       }),
     });
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       return { ok: false, error: err.error || `Server error (${res.status})` };
     }
-
     const data = await res.json();
     if (!data.ok) return { ok: false, error: data.error || "Not found" };
 
-    // Store locally — works offline from now on
     const rec = {
       planId:       data.planId,
       email:        data.email,
@@ -264,26 +238,16 @@ export async function syncPremiumFromServer(email, password) {
     };
     storage.set(PREMIUM_KEY,      rec);
     storage.set(PREMIUM_FLAG_KEY, { planId: data.planId });
-
     return { ok: true, planId: data.planId, expiresAt: data.expiresAt };
   } catch {
-    // Network offline — trust local record
     return { ok: false, error: "offline" };
   }
 }
 
-/**
- * Silent background sync — call on app startup.
- * Only hits the server if the local record is > 12 hours old.
- * Quietly updates expiresAt if the server returns a newer value.
- * Never throws — safe to fire and forget.
- */
 export async function autoSyncPremium() {
   try {
     const rec = getPremiumRecord();
     if (!rec || rec.planId === "free" || !rec.email || !rec.passwordHash) return;
-
-    // Don't hit server if synced recently
     const twelveHours = 12 * 60 * 60 * 1000;
     if (rec.lastSyncedAt && Date.now() - rec.lastSyncedAt < twelveHours) return;
 
@@ -292,21 +256,13 @@ export async function autoSyncPremium() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: rec.email, passwordHash: rec.passwordHash }),
     });
-
-    if (!res.ok) return; // server error — keep local record
-
+    if (!res.ok) return;
     const data = await res.json();
     if (!data.ok) return;
 
-    // Update local record with fresh server data
-    storage.set(PREMIUM_KEY, {
-      ...rec,
-      planId:      data.planId,
-      expiresAt:   data.expiresAt,
-      lastSyncedAt: Date.now(),
-    });
+    storage.set(PREMIUM_KEY, { ...rec, planId: data.planId, expiresAt: data.expiresAt, lastSyncedAt: Date.now() });
     storage.set(PREMIUM_FLAG_KEY, { planId: data.planId });
   } catch {
-    // Offline or error — silent, keep using local record
+    // offline — keep local record
   }
 }
