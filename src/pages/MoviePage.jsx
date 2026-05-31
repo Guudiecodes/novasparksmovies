@@ -65,10 +65,10 @@ function ServerToast({ status, sourceLabel }) {
   return (
     <div style={{
       position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999,
-      background:"rgba(8,8,8,0.97)",border:"1px solid rgba(255,255,255,0.08)",
+      background:"transparent",border:"1px solid #fff",
       borderRadius:12,padding:"11px 22px",display:"flex",alignItems:"center",gap:10,
       color:"#fff",fontSize:13,fontWeight:500,backdropFilter:"blur(12px)",
-      boxShadow:"0 6px 32px rgba(0,0,0,0.7)",opacity:fade?0:1,
+      boxShadow:"none",opacity:fade?0:1,
       transition:"opacity 0.45s ease",pointerEvents:"none",
     }}>
       {(status === "testing" || status === "retrying") ? (<>

@@ -46,16 +46,15 @@
     padding: 0;
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   NovaSpark Design Tokens
-   ══════════════════════════════════════════════════════════════════ */
 :root {
-    --bg:       #050c0f;
-    --surface:  #0a1418;
-    --surface2: #0f1d23;
-    --surface3: #162530;
-    --border:   #1e3540;
+    /* ── Core backgrounds — rich dark gradients, not flat black ── */
+    --bg:       #04080d;
+    --surface:  #080f18;
+    --surface2: #0c1620;
+    --surface3: #111e2a;
+    --border:   #1a2d3d;
 
+    /* ── Accent — teal/cyan (matches your existing theme) ── */
     --red:      #00b4a6;
     --red2:     #00d4c4;
     --red-dim:  rgba(0, 180, 166, 0.12);
@@ -69,13 +68,18 @@
     --grad-dual:        linear-gradient(135deg, #00b4a6 0%, #f5a623 100%);
     --grad-dual-subtle: linear-gradient(135deg, rgba(0,180,166,0.15) 0%, rgba(245,166,35,0.15) 100%);
 
+    /* ── Deep space gradient mesh ── */
+    --bg-mesh: radial-gradient(ellipse 80% 60% at 20% 10%, rgba(0,180,166,0.07) 0%, transparent 60%),
+               radial-gradient(ellipse 60% 50% at 80% 90%, rgba(245,166,35,0.05) 0%, transparent 55%),
+               radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,40,60,0.4) 0%, transparent 100%),
+               linear-gradient(180deg, #04080d 0%, #060c14 40%, #050a10 100%);
+
     --gold: #f5a623;
 
-    --text:  #eef4f6;
-    --text2: #9ab8c2;
-    --text3: #5a7d8a;
+    --text:  #e8f2f6;
+    --text2: #8ab0be;
+    --text3: #4a7080;
 
-    /* Layout */
     --sidebar:        54px;
     --mobile-topbar:  52px;
     --mobile-nav:     62px;
@@ -83,6 +87,9 @@
 
     --font-display: "Bebas Neue", sans-serif;
     --font-body:    "DM Sans", sans-serif;
+
+    /* ── Draggable title bar height (Electron) ── */
+    --titlebar-height: 38px;
 }
 
 html,
@@ -95,22 +102,137 @@ body,
     overflow: hidden;
 }
 
-/* ── Scrollbars ── */
+/* ── Deep space background mesh on body ── */
+body {
+    background: var(--bg-mesh);
+    background-attachment: fixed;
+}
+
 ::-webkit-scrollbar              { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track        { background: transparent; }
 ::-webkit-scrollbar-thumb        { background: var(--border); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover  { background: var(--red); }
 
-/* ══════════════════════════════════════════════════════════════════
-   SIDEBAR — desktop only
-   ══════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   ELECTRON DRAGGABLE TITLEBAR
+   -webkit-app-region: drag on the bar itself
+   -webkit-app-region: no-drag on interactive children
+   ════════════════════════════════════════════════════════════════ */
+
+/* Custom titlebar shown only in Electron */
+.electron-titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--titlebar-height);
+    z-index: 9000;
+    background: linear-gradient(
+        135deg,
+        rgba(4, 10, 18, 0.96) 0%,
+        rgba(8, 15, 24, 0.94) 50%,
+        rgba(5, 12, 20, 0.96) 100%
+    );
+    border-bottom: 1px solid rgba(0,180,166,0.12);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+    /* The whole bar is draggable */
+    -webkit-app-region: drag;
+    app-region: drag;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 1px 0 rgba(0,180,166,0.08), 0 4px 16px rgba(0,0,0,0.4);
+    user-select: none;
+}
+
+/* Gradient accent line at bottom of titlebar */
+.electron-titlebar::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(0,180,166,0.4) 20%,
+        rgba(0,180,166,0.6) 50%,
+        rgba(245,166,35,0.3) 80%,
+        transparent 100%
+    );
+}
+
+/* All interactive children opt out of drag */
+.electron-titlebar button,
+.electron-titlebar a,
+.electron-titlebar input,
+.electron-titlebar .no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+/* App name / branding in titlebar */
+.electron-titlebar-title {
+    font-family: var(--font-display);
+    font-size: 15px;
+    letter-spacing: 2px;
+    color: var(--text);
+    opacity: 0.75;
+    margin-left: 4px;
+    pointer-events: none;
+}
+
+/* Window control buttons (close/min/max) on Windows */
+.electron-titlebar-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+.electron-titlebar-btn {
+    width: 34px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: background 0.15s, color 0.15s;
+    font-family: monospace;
+}
+.electron-titlebar-btn:hover        { background: rgba(255,255,255,0.08); color: var(--text); }
+.electron-titlebar-btn.close:hover  { background: rgba(229,9,20,0.75); color: #fff; }
+
+/* Push main content down when titlebar is present */
+html[data-electron] .sidebar { top: var(--titlebar-height); }
+html[data-electron] .main    { padding-top: var(--titlebar-height); }
+
+/* ════════════════════════════════════════════════════════════════
+   SIDEBAR
+   ════════════════════════════════════════════════════════════════ */
+
 .sidebar {
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
     width: var(--sidebar);
-    background: linear-gradient(180deg, var(--surface) 0%, #080f12 100%);
+    background: linear-gradient(
+        180deg,
+        rgba(8,15,24,0.98) 0%,
+        rgba(5,10,18,0.98) 50%,
+        rgba(4,8,14,0.98) 100%
+    );
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -118,9 +240,10 @@ body,
     padding: 16px 0;
     gap: 6px;
     z-index: 100;
-    /* GPU layer — avoids repaints from main scroll */
     will-change: transform;
     transform: translateZ(0);
+    /* Subtle teal glow on inner edge */
+    box-shadow: inset -1px 0 0 rgba(0,180,166,0.08), 4px 0 24px rgba(0,0,0,0.5);
 }
 
 .sidebar-logo {
@@ -266,30 +389,28 @@ body,
 
 .sidebar-bottom { margin-top: auto; flex-shrink: 0; }
 
-/* ══════════════════════════════════════════════════════════════════
-   MAIN LAYOUT
-   ══════════════════════════════════════════════════════════════════ */
 .main {
     margin-left: var(--sidebar);
     height: 100vh;
     overflow-y: auto;
     overflow-x: hidden;
-    /* Scroll performance — compositor thread scroll */
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: none;
+    /* Subtle gradient overlay on scroll container */
+    background: transparent;
 }
 
-/* ══════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    HERO
-   ══════════════════════════════════════════════════════════════════ */
+   ════════════════════════════════════════════════════════════════ */
+
 .hero {
     position: relative;
     height: 85vh;
     min-height: 600px;
     max-height: 1000px;
     overflow: hidden;
-    background: var(--surface);
-    /* Prevent hero from participating in main scroll jank */
+    background: transparent;
     contain: layout style;
 }
 
@@ -300,8 +421,7 @@ body,
     background-position: center top;
     transform: scale(1.06);
     transition: transform 12s ease;
-    filter: brightness(0.48) contrast(1.1) saturate(0.88);
-    /* Promote to GPU layer — avoids repaint on transform */
+    filter: brightness(0.42) contrast(1.12) saturate(0.82);
     will-change: transform;
 }
 
@@ -311,15 +431,14 @@ body,
     content: "";
     position: absolute;
     inset: 0;
-    background: rgba(5, 12, 15, 0.35);
+    background: none;
 }
 
 .hero-gradient {
     position: absolute;
     inset: 0;
     background:
-        linear-gradient(to top,  var(--bg) 0%, rgba(5,12,15,0.3) 50%, transparent 80%),
-        linear-gradient(to right, rgba(5,12,15,0.94) 0%, rgba(5,12,15,0.42) 45%, transparent 70%) !important;
+ none
 }
 
 .hero-content {
@@ -421,9 +540,10 @@ body,
 
 .hero-bg-transition { animation: heroFadeIn 0.8s ease; }
 
-/* ══════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    BUTTONS
-   ══════════════════════════════════════════════════════════════════ */
+   ════════════════════════════════════════════════════════════════ */
+
 .btn {
     display: flex;
     align-items: center;
@@ -458,17 +578,17 @@ body,
 }
 
 .btn-secondary {
-    background: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.08);
     color: var(--text);
-    border: 1px solid rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.14);
     backdrop-filter: blur(10px);
     padding: 14px 28px;
     font-size: 16px;
 }
 
 .btn-secondary:hover {
-    background: rgba(255,255,255,0.2);
-    border-color: rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.25);
 }
 
 .btn-ghost {
@@ -484,9 +604,10 @@ body,
 
 .btn-icon { padding: 8px; border-radius: var(--radius); }
 
-/* ══════════════════════════════════════════════════════════════════
-   SECTIONS
-   ══════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   SECTIONS & CARDS
+   ════════════════════════════════════════════════════════════════ */
+
 .section { padding: 15px 48px; }
 
 .section-title {
@@ -507,25 +628,19 @@ body,
     background: linear-gradient(to right, var(--border), transparent);
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   CARDS — performance-safe hover
-   ══════════════════════════════════════════════════════════════════ */
 .cards-grid {
     display: grid;
     gap: 16px;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    /* isolate stacking context so scaled cards don't escape grid bounds */
     isolation: isolate;
 }
 
-/* Compact mode */
 body.compact-mode .cards-grid               { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 10px; }
 body.compact-mode .card-info                { padding: 6px 8px; }
 body.compact-mode .card-title               { font-size: 11px; }
 body.compact-mode .card-year               { font-size: 10px; }
 body.compact-mode .scroll-row .card         { width: 108px; }
 
-/* No-animation mode */
 body.no-anim *,
 body.no-anim *::before,
 body.no-anim *::after {
@@ -538,7 +653,11 @@ body.no-anim *::after {
     cursor: pointer;
     border-radius: var(--radius);
     overflow: hidden;
-    background: var(--surface2);
+    background: linear-gradient(
+        145deg,
+        rgba(12, 22, 32, 0.9) 0%,
+        rgba(8, 16, 24, 0.95) 100%
+    );
     border: 1px solid var(--border);
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
     position: relative;
@@ -548,7 +667,7 @@ body.no-anim *::after {
 
 .card:hover {
     border-color: var(--red);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 12px rgba(0,180,166,0.14);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6), 0 0 14px rgba(0,180,166,0.18);
 }
 
 .card-poster {
@@ -619,29 +738,26 @@ body.no-anim *::after {
 .card-progress       { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: rgba(255,255,255,0.1); }
 .card-progress-fill  { height: 100%; background: var(--red); transition: width 0.3s; }
 
-/* ── Scroll rows ─────────────────────────────────────────────────────────── */
-/* KEY FIX: overflow-y must be visible (not clip) so scaled cards render     */
-/* correctly. Use padding-bottom on inner items to give hover scale room.    */
 .scroll-row {
     display: flex;
     gap: 14px;
     overflow-x: auto;
     overflow-y: visible;
     padding-bottom: 16px;
-    /* Let the parent handle clipping so cards can scale out of the row */
 }
 
 .scroll-row .card { flex-shrink: 0; width: 150px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   SEARCH MODAL
-   ══════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   MODALS & OVERLAYS
+   ════════════════════════════════════════════════════════════════ */
+
 .modal-overlay {
     position: fixed;
     inset: 0;
     z-index: 200;
-    background: rgba(0,0,0,0.82);
-    backdrop-filter: blur(10px);
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(12px);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -651,11 +767,15 @@ body.no-anim *::after {
 .search-box {
     width: 680px;
     max-width: 95vw;
-    background: var(--surface);
+    background: linear-gradient(
+        145deg,
+        rgba(8,18,28,0.98) 0%,
+        rgba(6,14,22,0.98) 100%
+    );
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.85);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.9), 0 0 40px rgba(0,180,166,0.06);
 }
 
 .search-input-wrap {
@@ -783,9 +903,10 @@ body.no-anim *::after {
 .search-history-item:hover .search-history-remove { opacity: 1; }
 .search-history-remove:hover         { color: var(--red); }
 
-/* ══════════════════════════════════════════════════════════════════
-   DETAIL PAGE
-   ══════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   DETAIL PAGES
+   ════════════════════════════════════════════════════════════════ */
+
 .detail-hero {
     position: relative;
     min-height: 85vh;
@@ -804,7 +925,7 @@ body.no-anim *::after {
     content: "";
     position: absolute;
     inset: 0;
-    background: rgba(5,12,15,0.55);
+    background: rgba(4,10,16,0.55);
 }
 
 .detail-gradient {
@@ -877,7 +998,7 @@ body.no-anim *::after {
 .detail-overview      { font-size: 16px; color: var(--text2); line-height: 1.6; margin-bottom: 24px; max-width: 540px; }
 .detail-actions       { display: flex; gap: 12px; flex-wrap: wrap; }
 .detail-actions .btn-primary  { padding: 14px 32px; font-size: 16px; }
-.detail-actions .btn-secondary { padding: 14px 28px; font-size: 16px; background: rgba(255,255,255,0.12); backdrop-filter: blur(10px); }
+.detail-actions .btn-secondary { padding: 14px 28px; font-size: 16px; background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); }
 
 .genres { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 
@@ -891,9 +1012,10 @@ body.no-anim *::after {
     color: var(--text2);
 }
 
-/* ══════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    PLAYER
-   ══════════════════════════════════════════════════════════════════ */
+   ════════════════════════════════════════════════════════════════ */
+
 .player-wrap {
     position: relative;
     background: #000;
@@ -924,9 +1046,6 @@ body.no-anim *::after {
 .progress-bar-fill   { height: 100%; background: var(--red); border-radius: 2px; }
 .progress-mark-row   { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* ══════════════════════════════════════════════════════════════════
-   SEASONS / EPISODES
-   ══════════════════════════════════════════════════════════════════ */
 .season-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
 
 .season-btn {
@@ -1104,9 +1223,6 @@ body.no-anim *::after {
 .episode-progress-bar  { margin-top: 6px; height: 2px; background: var(--border); border-radius: 1px; }
 .episode-progress-fill { height: 100%; background: var(--red); border-radius: 1px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   HISTORY / LIBRARY
-   ══════════════════════════════════════════════════════════════════ */
 .library-header    { padding: 48px 48px 0; }
 .library-title     { font-family: var(--font-display); font-size: 48px; letter-spacing: 1px; margin-bottom: 8px; }
 .library-sub       { color: var(--text3); font-size: 14px; }
@@ -1139,27 +1255,25 @@ body.no-anim *::after {
 .history-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .history-rows { display: flex; flex-direction: column; gap: 8px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   API KEY SETUP
-   ══════════════════════════════════════════════════════════════════ */
 .apikey-modal {
     position: fixed;
     inset: 0;
     z-index: 300;
-    background: rgba(0,0,0,0.96);
+    background: rgba(0,0,0,0.97);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .apikey-box {
-    background: var(--surface);
+    background: linear-gradient(145deg, rgba(8,18,28,0.99) 0%, rgba(6,14,22,0.99) 100%);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 48px;
     max-width: 480px;
     width: 100%;
     text-align: center;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.9), 0 0 40px rgba(0,180,166,0.05);
 }
 
 .apikey-logo   { width: 80px; height: 80px; margin: 0 auto 20px; filter: drop-shadow(0 0 20px rgba(0,180,166,0.65)); }
@@ -1246,9 +1360,6 @@ body.no-anim *::after {
 .api-status-btn:hover { opacity: 1; }
 .apikey-link { color: var(--red); font-size: 13px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   MISC UTILITIES
-   ══════════════════════════════════════════════════════════════════ */
 .spinner {
     width: 36px;
     height: 36px;
@@ -1273,13 +1384,13 @@ body.no-anim *::after {
     bottom: 24px;
     left: calc(var(--sidebar) + 24px);
     z-index: 500;
-    background: var(--surface2);
+    background: linear-gradient(135deg, rgba(8,18,28,0.97) 0%, rgba(6,14,22,0.97) 100%);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 12px 20px;
     border-radius: var(--radius);
     font-size: 14px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
     animation: slideUp 0.3s ease;
 }
 
@@ -1332,9 +1443,6 @@ a     { color: inherit; text-decoration: none; }
 input, button { font-family: var(--font-body); }
 kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-size: 11px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   WEBVIEW / PLAYER OVERLAYS
-   ══════════════════════════════════════════════════════════════════ */
 .player-wrap webview { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
 
 .player-overlay-btn {
@@ -1342,7 +1450,7 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
     top: 12px;
     right: 12px;
     z-index: 10;
-    background: rgba(0,0,0,0.72);
+    background: rgba(0,0,0,0.78);
     border: 1px solid rgba(255,255,255,0.15);
     color: white;
     border-radius: 8px;
@@ -1352,7 +1460,7 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
     align-items: center;
     gap: 6px;
     font-size: 12px;
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(8px);
     transition: background 0.2s;
 }
 
@@ -1391,15 +1499,12 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 
 .ep-downloaded-badge:hover { background: rgba(72,199,116,0.35); }
 
-/* ══════════════════════════════════════════════════════════════════
-   DOWNLOAD MODAL
-   ══════════════════════════════════════════════════════════════════ */
 .modal-backdrop {
     position: fixed;
     inset: 0;
     z-index: 99999;
-    background: rgba(0,0,0,0.78);
-    backdrop-filter: blur(6px);
+    background: rgba(0,0,0,0.82);
+    backdrop-filter: blur(8px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1407,12 +1512,12 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 }
 
 .download-modal {
-    background: var(--surface);
+    background: linear-gradient(145deg, rgba(8,18,28,0.99) 0%, rgba(6,14,22,0.99) 100%);
     border: 1px solid var(--border);
     border-radius: 14px;
     width: 560px;
     max-width: 100%;
-    box-shadow: 0 32px 80px rgba(0,0,0,0.85);
+    box-shadow: 0 32px 80px rgba(0,0,0,0.9);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -1472,16 +1577,10 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .download-found-badge   { font-size: 13px; color: #4caf50; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
 .download-success       { font-size: 13px; color: #4caf50; margin-top: 10px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   SETTINGS PAGE
-   ══════════════════════════════════════════════════════════════════ */
 .settings-section       { margin-bottom: 36px; }
 .settings-section-title { font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text3); margin-bottom: 14px; }
 .settings-sep           { border: none; border-top: 1px solid var(--border); margin: 0 0 36px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   DOWNLOAD CARDS
-   ══════════════════════════════════════════════════════════════════ */
 .dl-card {
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -1505,9 +1604,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 
 .dl-card-active { border-color: rgba(0,180,166,0.3); background: rgba(0,180,166,0.04); }
 
-/* ══════════════════════════════════════════════════════════════════
-   WATCHED BADGES
-   ══════════════════════════════════════════════════════════════════ */
 .card-watched-badge {
     position: absolute;
     top: 8px;
@@ -1560,18 +1656,15 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .card.ep-watched          { border-color: rgba(72,199,116,0.55); box-shadow: 0 0 0 1px rgba(72,199,116,0.2), inset 0 0 20px rgba(72,199,116,0.05); }
 .card.ep-watched:hover    { border-color: rgba(72,199,116,0.8); box-shadow: 0 0 12px rgba(72,199,116,0.35); }
 
-/* ══════════════════════════════════════════════════════════════════
-   CONTEXT MENU
-   ══════════════════════════════════════════════════════════════════ */
 .context-menu {
     position: fixed;
     z-index: 9999;
-    background: var(--surface2);
+    background: linear-gradient(145deg, rgba(10,20,30,0.98) 0%, rgba(8,16,24,0.98) 100%);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 4px;
     min-width: 180px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7);
     animation: ctxFadeIn 0.1s ease both;
 }
 
@@ -1601,29 +1694,26 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .saved-thumb.drag-over          { outline: 2px solid var(--red); outline-offset: 2px; border-radius: 4px; }
 .saved-thumb[draggable="true"]:active { cursor: grabbing; }
 
-/* ══════════════════════════════════════════════════════════════════
-   TRAILER MODAL
-   ══════════════════════════════════════════════════════════════════ */
 .trailer-overlay {
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: rgba(0,0,0,0.88);
+    background: rgba(0,0,0,0.9);
     display: flex;
     align-items: center;
     justify-content: center;
     animation: fadeIn 0.2s ease;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(6px);
 }
 
 .trailer-modal {
     width: 90vw;
     max-width: 960px;
-    background: var(--surface);
+    background: linear-gradient(145deg, rgba(8,18,28,0.99) 0%, rgba(6,14,22,0.99) 100%);
     border-radius: 12px;
     border: 1px solid var(--border);
     overflow: hidden;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.85);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.9);
     animation: slideUp 0.25s ease;
 }
 
@@ -1657,24 +1747,21 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .trailer-close-btn:hover  { background: rgba(255,255,255,0.1); color: var(--text); }
 .trailer-embed-wrap       { position: relative; width: 100%; padding-bottom: 56.25%; background: #000; }
 
-/* ══════════════════════════════════════════════════════════════════
-   CLOSE CONFIRM MODAL
-   ══════════════════════════════════════════════════════════════════ */
 .close-confirm-overlay {
     position: fixed;
     inset: 0;
     z-index: 99999;
-    background: rgba(0,0,0,0.78);
+    background: rgba(0,0,0,0.82);
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(8px);
     animation: fadeIn 0.15s ease;
 }
 
 .close-confirm-modal {
     width: 420px;
-    background: var(--surface);
+    background: linear-gradient(145deg, rgba(8,18,28,0.99) 0%, rgba(6,14,22,0.99) 100%);
     border: 1px solid rgba(0,180,166,0.4);
     border-radius: 16px;
     padding: 36px 32px 28px;
@@ -1684,7 +1771,7 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
     gap: 16px;
     box-shadow:
         0 0 0 1px rgba(0,180,166,0.15),
-        0 32px 80px rgba(0,0,0,0.85),
+        0 32px 80px rgba(0,0,0,0.9),
         0 0 60px rgba(0,180,166,0.08);
     animation: slideUp 0.2s ease;
 }
@@ -1726,9 +1813,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 }
 .close-confirm-btn-cancel:hover { background: var(--surface3) !important; }
 
-/* ══════════════════════════════════════════════════════════════════
-   AGE RATING
-   ══════════════════════════════════════════════════════════════════ */
 .age-rating-badge {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;
@@ -1763,9 +1847,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .age-rating-pill-cert        { font-size: 13px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; }
 .age-rating-pill-label       { font-size: 11px; font-weight: 500; color: rgba(0,212,196,0.85); letter-spacing: 0.2px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   UNRELEASED / ANIME BADGES
-   ══════════════════════════════════════════════════════════════════ */
 .card--unreleased .card-poster          { opacity: 0.55; filter: grayscale(40%); }
 .card-unreleased-overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -1781,9 +1862,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .episode-card--unreleased .episode-desc-wrap,
 .episode-card--unreleased .episode-progress-bar  { opacity: 0.6; }
 
-/* ══════════════════════════════════════════════════════════════════
-   DOWNLOADS PAGE
-   ══════════════════════════════════════════════════════════════════ */
 .dl-progress-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--surface3); border-radius: 5px; padding: 1px 7px; font-size: 11px; font-variant-numeric: tabular-nums; font-family: ui-monospace, "Cascadia Mono", monospace; }
 .dl-progress-pill--active { color: var(--text); }
 .dl-progress-pill--empty  { color: var(--text3); }
@@ -1856,19 +1934,16 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .dl-btn--sm-primary { padding: 6px 14px; font-size: 12px; gap: 5px; }
 .dl-btn--sm-icon { padding: 6px 10px; font-size: 12px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   SOURCE DROPDOWN
-   ══════════════════════════════════════════════════════════════════ */
 .source-dropdown {
     position: absolute;
     top: calc(100% + 8px);
     left: 0;
-    background: var(--surface2);
+    background: linear-gradient(145deg, rgba(10,20,30,0.98) 0%, rgba(8,16,24,0.98) 100%);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 6px;
     min-width: 180px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.75);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.8);
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -1887,9 +1962,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .source-dropdown--fixed { position: fixed; top: 0; left: 0; z-index: 9999; }
 .player-no-progress-hint { position: absolute; bottom: 10px; left: 12px; font-size: 10px; color: rgba(255,255,255,0.45); pointer-events: none; letter-spacing: 0.3px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   ANIME OVERRIDE
-   ══════════════════════════════════════════════════════════════════ */
 .anime-override-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 12px; background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); border-radius: 8px; font-size: 12px; color: var(--text2); }
 .anime-override-label  { flex-shrink: 0; color: #a78bfa; font-weight: 500; }
 .anime-override-field  { display: flex; align-items: center; gap: 4px; font-weight: 600; color: var(--text); }
@@ -1898,9 +1970,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .anime-override-reset { margin-left: auto; font-size: 14px; padding: 2px 8px; opacity: 0.6; }
 .anime-override-reset:hover { opacity: 1; }
 
-/* ══════════════════════════════════════════════════════════════════
-   CAROUSELS — GPU-accelerated, no layout thrash
-   ══════════════════════════════════════════════════════════════════ */
 .carousel-section   { padding: 14px 48px; }
 
 .carousel-wrapper {
@@ -1911,7 +1980,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
     height: 312px;
     overflow: hidden;
     user-select: none;
-    /* Isolate from scroll repaints */
     contain: layout style;
 }
 
@@ -1940,7 +2008,6 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
     align-items: center;
     gap: 8px;
     transition: transform 0.42s cubic-bezier(0.25,0.46,0.45,0.94), opacity 0.42s ease;
-    /* Only promote active/adjacent items — prevents excessive GPU layers */
     will-change: transform, opacity;
 }
 
@@ -1965,7 +2032,7 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .carousel-info__title  { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.4px; color: var(--text); margin-bottom: 3px; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .carousel-info__meta   { display: flex; gap: 6px; justify-content: center; font-size: 12px; color: var(--text2); align-items: center; }
 .carousel-info__type   { background: var(--surface2); border-radius: 3px; padding: 1px 5px; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; color: var(--text3); text-transform: uppercase; }
-.carousel-btn { position: absolute; top: 40%; transform: translateY(-50%); z-index: 20; background: rgba(10,20,24,0.82); border: 1px solid var(--border); color: var(--text); width: 34px; height: 48px; border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.18s, border-color 0.18s, color 0.18s; backdrop-filter: blur(4px); padding: 0; }
+.carousel-btn { position: absolute; top: 40%; transform: translateY(-50%); z-index: 20; background: rgba(10,20,24,0.85); border: 1px solid var(--border); color: var(--text); width: 34px; height: 48px; border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.18s, border-color 0.18s, color 0.18s; backdrop-filter: blur(4px); padding: 0; }
 .carousel-btn:hover     { background: rgba(0,180,166,0.85); border-color: var(--red); color: #050c0f; }
 .carousel-btn--left     { left: 0; }
 .carousel-btn--right    { right: 0; }
@@ -1975,16 +2042,10 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .carousel-dot:hover:not(.carousel-dot--active) { background: var(--text2); }
 .carousel-dots__more       { font-size: 11px; color: var(--text3); margin-left: 4px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   SIDEBAR CONTEXT MENU
-   ══════════════════════════════════════════════════════════════════ */
 .sidebar-context-menu { background: var(--surface3); border: 1px solid var(--border); border-radius: 6px; padding: 4px 0; min-width: 180px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); user-select: none; }
 .sidebar-context-menu-item { padding: 8px 14px; font-size: 13px; color: var(--text); cursor: pointer; transition: background 0.15s; }
 .sidebar-context-menu-item:hover { background: var(--surface2); color: var(--red); }
 
-/* ══════════════════════════════════════════════════════════════════
-   PLAYER OVERLAY GROUP
-   ══════════════════════════════════════════════════════════════════ */
 .player-overlay-group { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 6px; z-index: 10; }
 .player-overlay-group .player-overlay-btn { position: relative; top: auto; left: auto; right: auto; }
 .player-wrap .player-overlay-btn,
@@ -1993,11 +2054,8 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .player-wrap:hover .player-overlay-group { opacity: 1; }
 .player-blocked-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 8px; background: #3dba6f; color: #fff; font-size: 10px; font-weight: 700; line-height: 1; margin-left: 1px; flex-shrink: 0; }
 
-/* ══════════════════════════════════════════════════════════════════
-   BLOCKED STATS MODAL
-   ══════════════════════════════════════════════════════════════════ */
-.blocked-modal-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.78); display: flex; align-items: center; justify-content: center; }
-.blocked-modal { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; width: 360px; max-height: 520px; display: flex; flex-direction: column; box-shadow: 0 24px 70px rgba(0,0,0,0.88); overflow: hidden; animation: modal-pop 0.18s cubic-bezier(0.34,1.56,0.64,1); }
+.blocked-modal-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.82); display: flex; align-items: center; justify-content: center; }
+.blocked-modal { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; width: 360px; max-height: 520px; display: flex; flex-direction: column; box-shadow: 0 24px 70px rgba(0,0,0,0.9); overflow: hidden; animation: modal-pop 0.18s cubic-bezier(0.34,1.56,0.64,1); }
 @keyframes modal-pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
 .blocked-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface3); }
 .blocked-modal-title         { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text); }
@@ -2019,9 +2077,9 @@ kbd   { background: var(--surface3); padding: 2px 6px; border-radius: 3px; font-
 .blocked-modal-footer svg    { color: var(--text3); flex-shrink: 0; }
 .blocked-modal-footer strong { color: var(--text2); }
 
-/* ══════════════════════════════════════════════════════════════════
-   WINDOWS / LINUX CUSTOM TITLEBAR
-   ══════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   ELECTRON WINDOW TITLEBAR STATE MANAGEMENT
+   ════════════════════════════════════════════════════════════════ */
 html[data-win-titlebar] .sidebar { top: 32px; }
 html[data-win-titlebar] .main    { margin-top: 32px; height: calc(100vh - 32px); }
 html[data-win-titlebar][data-maximized] body { padding: 8px; }
@@ -2032,9 +2090,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
 ::highlight(settings-search-active) { background-color: rgba(245,166,35,0.85); color: #050c0f; }
 .episode-check-item:hover { color: var(--text) !important; }
 
-/* ══════════════════════════════════════════════════════════════════
-   SKELETON SHIMMER
-   ══════════════════════════════════════════════════════════════════ */
 .sk {
     background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.03) 75%);
     background-size: 200% 100%;
@@ -2043,9 +2098,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
 }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-/* ══════════════════════════════════════════════════════════════════
-   AUTO-SOURCE BADGE
-   ══════════════════════════════════════════════════════════════════ */
 .auto-source-badge { position: fixed; top: 16px; right: 16px; z-index: 1000; display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; backdrop-filter: blur(20px); transition: all 0.3s ease; pointer-events: none; }
 .auto-source-badge.testing { background: rgba(245,166,35,0.15); border: 1px solid rgba(245,166,35,0.3); color: var(--amber2); }
 .auto-source-badge.found   { background: rgba(72,199,116,0.15); border: 1px solid rgba(72,199,116,0.3); color: #48c774; }
@@ -2055,9 +2107,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
 .auto-source-badge.failed .dot { animation: none; }
 @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
 
-/* ══════════════════════════════════════════════════════════════════
-   NS ROW SECTIONS — Performance-safe horizontal scrolling
-   ══════════════════════════════════════════════════════════════════ */
 .ns-row-section { padding: 14px 0 20px 48px; }
 
 .ns-row-title { font-family: var(--font-display); font-size: 24px; letter-spacing: 1px; color: var(--text); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
@@ -2066,7 +2115,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     display: flex;
     gap: 12px;
     overflow-x: auto;
-    /* CRITICAL: overflow-y must be visible so card hover scale is not clipped */
     overflow-y: visible;
     padding: 8px 4px 24px 4px;
     cursor: grab;
@@ -2083,20 +2131,19 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     width: 150px;
     cursor: pointer;
     border-radius: var(--radius);
-    background: var(--surface2);
+    background: linear-gradient(145deg, rgba(12,22,32,0.92) 0%, rgba(8,16,24,0.95) 100%);
     border: 1px solid var(--border);
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
     position: relative;
     z-index: 1;
     contain: layout style;
     isolation: isolate;
-    border-radius: var(--radius);
 }
 
 .ns-row-card:hover {
     z-index: 20;
     border-color: var(--red);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 12px rgba(0,180,166,0.14);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 14px rgba(0,180,166,0.18);
 }
 
 .ns-row-card-poster {
@@ -2128,25 +2175,57 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
 .ns-row-card-meta  { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text3); flex-wrap: nowrap; }
 .ns-row-card-type  { font-size: 9px; font-weight: 700; letter-spacing: 0.4px; padding: 1px 5px; border-radius: 3px; background: var(--surface3); color: var(--text3); text-transform: uppercase; flex-shrink: 0; }
 
-/* ══════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    WATCH PAGE
-   ══════════════════════════════════════════════════════════════════ */
-.watch-page { min-height: 100vh; background: var(--bg); padding-bottom: 80px; }
+   ════════════════════════════════════════════════════════════════ */
+
+.watch-page { min-height: 100vh; background: transparent; padding-bottom: 80px; }
 
 .watch-topbar {
     display: flex;
     align-items: center;
     gap: 16px;
     padding: 1px 20px;
-    background: rgba(5,12,15,0.75);
-    backdrop-filter: blur(16px);
+    /* Rich dark gradient topbar — deepest color in the world */
+    background: linear-gradient(
+        135deg,
+        rgba(3, 8, 14, 0.97) 0%,
+        rgba(5, 11, 19, 0.95) 30%,
+        rgba(4, 9, 16, 0.96) 60%,
+        rgba(6, 13, 22, 0.94) 100%
+    );
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     position: sticky;
     top: 0;
     z-index: 50;
-    border-bottom: 1px solid var(--border);
-    /* GPU layer for sticky topbar — prevents repaint on scroll */
+    border-bottom: 1px solid rgba(0,180,166,0.1);
     will-change: transform;
     transform: translateZ(0);
+    /* Subtle teal accent line at bottom */
+    box-shadow:
+        0 1px 0 rgba(0,180,166,0.12),
+        0 4px 20px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* Gradient shimmer accent on topbar bottom edge */
+.watch-topbar::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(0,180,166,0.35) 20%,
+        rgba(0,180,166,0.55) 50%,
+        rgba(245,166,35,0.25) 80%,
+        transparent 100%
+    );
+    pointer-events: none;
 }
 
 .watch-topbar-title {
@@ -2169,7 +2248,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     aspect-ratio: 16 / 9;
     max-height: 85vh;
     overflow: hidden;
-    /* Contain player in own stacking context */
     isolation: isolate;
 }
 
@@ -2194,6 +2272,12 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     align-items: flex-start;
     padding: 28px 48px 16px;
     border-bottom: 1px solid var(--border);
+    /* Dark gradient background for meta section */
+    background: linear-gradient(
+        180deg,
+        rgba(3, 8, 14, 0.6) 0%,
+        transparent 100%
+    );
 }
 
 .watch-meta-left       { flex: 1; min-width: 0; }
@@ -2202,9 +2286,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
 .watch-meta-overview { font-size: 14px; color: var(--text2); line-height: 1.7; max-width: 720px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .watch-meta-actions { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; align-items: flex-start; padding-top: 8px; }
 
-/* ══════════════════════════════════════════════════════════════════
-   EPISODE SELECTOR — Watch Page
-   ══════════════════════════════════════════════════════════════════ */
 .watch-episode-section { padding-top: 8px; }
 .watch-season-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .watch-season-tab { padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text2); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.18s ease; }
@@ -2222,9 +2303,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
 .watch-episode-check { position: absolute; top: 6px; right: 8px; font-size: 11px; color: #4caf50; }
 .player-overlay-btn--active { background: rgba(0,180,166,0.2); border-color: var(--red); color: var(--red); }
 
-/* ══════════════════════════════════════════════════════════════════
-   MOVIE DETAIL PAGE
-   ══════════════════════════════════════════════════════════════════ */
 .movie-detail-page { min-height: 100vh; }
 .movie-preview-hero { position: relative; width: 100%; height: clamp(220px, 42vw, 480px); overflow: hidden; border-radius: 16px; margin-bottom: 0; cursor: pointer; }
 .movie-preview-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center 20%; background-color: var(--surface); transition: transform 0.4s ease; }
@@ -2281,12 +2359,12 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
 .movie-cast-name { font-size: 11px; font-weight: 600; color: var(--text); line-height: 1.3; word-break: break-word; }
 .movie-cast-role { font-size: 10px; color: var(--text3); line-height: 1.3; word-break: break-word; }
 
-/* ══════════════════════════════════════════════════════════════════
-   RESPONSIVE — TABLET 769px–1024px
-   ══════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ════════════════════════════════════════════════════════════════ */
+
 @media (min-width: 769px) and (max-width: 1024px) {
     :root { --sidebar: 50px; }
-
     .section          { padding: 12px 32px; }
     .carousel-section { padding: 12px 32px 16px; }
     .ns-row-section   { padding: 12px 0 16px 32px; }
@@ -2294,47 +2372,23 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     .dl-page          { padding: 32px 32px 60px; }
     .library-header   { padding: 32px 32px 0; }
     .library-section  { padding: 24px 32px; }
-
     .detail-title     { font-size: 60px; }
     .hero-title       { font-size: 68px; }
     .watch-meta-title { font-size: 36px; }
-
     .cards-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
     .scroll-row .card, .ns-row-card { width: 130px; }
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   RESPONSIVE — MOBILE ≤768px
-   Mobile uses the React-rendered top bar + bottom nav from Sidebar.jsx
-   The CSS .sidebar is still visible on desktop, hidden on mobile via
-   the component itself (isMobile check in Sidebar.jsx).
-   ══════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
-    :root {
-        --sidebar: 0px;
-    }
-
-    /* The .sidebar element is not rendered on mobile by Sidebar.jsx,
-       but guard it here too in case of SSR or unusual render paths */
+    :root { --sidebar: 0px; }
     .sidebar { display: none !important; }
-
-    /* Account for top bar + bottom nav */
     .main {
         margin-left: 0;
-        /* top: mobile topbar height, bottom: mobile nav height */
         padding-top: var(--mobile-topbar);
         padding-bottom: calc(var(--mobile-nav) + env(safe-area-inset-bottom, 0px));
         height: 100vh;
     }
-
-    /* ── Hero ── */
-    .hero {
-        height: clamp(240px, 60vw, 480px);
-        min-height: 240px;
-        max-height: 480px;
-        margin-top: 0;
-    }
-
+    .hero { height: clamp(240px, 60vw, 480px); min-height: 240px; max-height: 480px; margin-top: 0; }
     .hero-title     { font-size: clamp(28px, 8vw, 44px); }
     .hero-content   { padding: 0 16px 56px; }
     .hero-overview  { font-size: 13px; -webkit-line-clamp: 2; }
@@ -2342,93 +2396,48 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     .hero-actions .btn-primary,
     .hero-actions .btn-secondary { padding: 10px 18px; font-size: 14px; }
     .hero-dots      { right: 16px; bottom: 16px; }
-
-    /* ── Sections ── */
     .section          { padding: 10px 14px; }
     .section-title    { font-size: 20px; }
     .carousel-section { padding: 10px 14px 14px; }
     .ns-row-section   { padding: 10px 0 14px 14px; }
     .ns-row-title     { font-size: 18px; }
-
-    /* ── Cards ── */
-    .cards-grid {
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-        gap: 10px;
-        /* On mobile, disable the scale hover effect to prevent off-screen cards */
-    }
-
-    .card:hover {
-        border-color: var(--red);
-    }
-
-    .scroll-row .card,
-    .ns-row-card { width: 110px; }
-
-    /* ── Detail ── */
+    .cards-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+    .card:hover { border-color: var(--red); }
+    .scroll-row .card, .ns-row-card { width: 110px; }
     .detail-content { flex-direction: column; padding: 0 16px 40px; gap: 20px; }
     .detail-poster  { width: 140px; align-self: center; }
     .detail-title   { font-size: clamp(32px, 9vw, 48px); }
     .detail-overview { font-size: 14px; }
     .detail-actions .btn-primary,
     .detail-actions .btn-secondary { padding: 12px 20px; font-size: 14px; }
-
-    /* ── Watch page ── */
-    .watch-meta {
-        flex-direction: column;
-        padding: 16px 14px 10px;
-        gap: 14px;
-    }
+    .watch-meta { flex-direction: column; padding: 16px 14px 10px; gap: 14px; }
     .watch-meta-title { font-size: clamp(20px, 6vw, 32px); }
     .watch-topbar     { padding: 8px 14px; }
     .watch-topbar-title { font-size: 15px; }
-    /* Watch page: full-screen player on mobile */
     .watch-player-wrap { max-height: 56vw; }
-
-    /* ── Library ── */
     .library-header  { padding: 24px 14px 0; }
     .library-title   { font-size: clamp(28px, 8vw, 40px); }
     .library-section { padding: 20px 14px; }
-
-    /* ── Downloads ── */
     .dl-page         { padding: 20px 14px 80px; }
     .dl-page__title  { font-size: clamp(28px, 8vw, 40px); }
-
-    /* ── Episodes ── */
     .episodes-grid   { grid-template-columns: 1fr; }
     .episode-thumb   { width: 90px; }
-
-    /* ── Modals ── */
     .search-box { border-radius: 0 0 12px 12px; }
     .modal-overlay { padding-top: calc(var(--mobile-topbar) + 8px); }
     .close-confirm-modal { width: 92vw; }
-    .download-modal {
-        border-radius: 14px 14px 0 0;
-        max-height: 85vh;
-        overflow-y: auto;
-    }
+    .download-modal { border-radius: 14px 14px 0 0; max-height: 85vh; overflow-y: auto; }
     .modal-backdrop  { align-items: flex-end; padding: 0; }
-
-    /* ── Carousel ── */
     .carousel-wrapper { height: 250px; }
     .carousel-poster  { width: 130px; height: 196px; }
     .carousel-poster--placeholder { width: 130px; height: 196px; }
-
-    /* ── Movie detail ── */
     .movie-detail-card { flex-direction: column; gap: 16px; }
     .movie-preview-hero { height: clamp(160px, 50vw, 280px); border-radius: 10px; }
     .movie-preview-play-btn { width: 56px; height: 56px; }
     .movie-preview-play-icon { font-size: 20px; }
-
-    /* ── Buttons ── */
     .btn { font-size: 13px; }
-
-    /* Toast offset for mobile bottom nav */
     .toast { bottom: calc(var(--mobile-nav) + 12px); left: 14px; }
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   RESPONSIVE — SMALL MOBILE ≤420px
-   ══════════════════════════════════════════════════════════════════ */
 @media (max-width: 420px) {
     .hero-title      { font-size: clamp(22px, 7vw, 32px); }
     .hero-content    { padding: 0 12px 52px; }
@@ -2453,11 +2462,6 @@ html[data-win-titlebar][data-maximized] .main    { margin-top: calc(32px + 8px);
     .movie-detail-cta .btn { width: 100%; justify-content: center; }
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   DESKTOP ONLY — safety guard
-   ══════════════════════════════════════════════════════════════════ */
 @media (min-width: 769px) {
-    /* Mobile elements rendered by React (top bar, bottom nav) —
-       hide them in desktop via class targeting since they use inline styles */
     .mobile-nav { display: none !important; }
 }

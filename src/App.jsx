@@ -34,11 +34,13 @@ const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const WatchPage     = lazy(() => import("./pages/WatchPage"));
 const PricingPage   = lazy(() => import("./pages/PricingPage"));
 
+// ── World Cinema Reel ────────────────────────────────────────────────────────
+const ReelPage = lazy(() => import("./pages/Reelpage"));
+
 import { checkForUpdates } from "./utils/updates";
 
 import { autoSyncPremium } from "./utils/premium";
-// inside useEffect on mount:
-autoSyncPremium(); // silent background sync, safe to fire-and-forget
+autoSyncPremium();
 
 const NS_PREMIUM_KEY = "ns_premium";
 
@@ -47,11 +49,10 @@ export default function App() {
   const [apiKeyLoaded, setApiKeyLoaded] = useState(true);
   const [skipped,      setSkipped]      = useState(true);
 
-  // ── All TMDB/network errors are silenced — never shown to users ───────────
-  // setApiKeyStatus still exists internally but nothing renders from it
-  const [apiKeyStatus, setApiKeyStatus] = useState("ok"); // always 'ok' visually
+  const [apiKeyStatus, setApiKeyStatus] = useState("ok");
 
-  const [page,       setPage]       = useState(() => storage.get("startPage") || "home");
+  // ── DEFAULT PAGE: reels ───────────────────────────────────────────────────
+  const [page,       setPage]       = useState(() => storage.get("startPage") || "reel");
   const [selected,   setSelected]   = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
@@ -212,7 +213,7 @@ export default function App() {
                 nextEpDate: data.next_episode_to_air?.air_date || null,
                 checkedAt:  now,
               };
-            } catch {} // silent — network errors don't surface
+            } catch {}
           }),
         );
         if (i + BATCH < toCheck.length && !cancelled) {
@@ -251,7 +252,7 @@ export default function App() {
   const [highlightDownload,setHighlightDownload] = useState(null);
   const [closeConfirm,     setCloseConfirm]      = useState(null);
 
-  // ── Load API key — always force NS key ───────────────────────────────────
+  // ── Load API key ──────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     secureStorage.get("apikey").then((val) => {
@@ -263,23 +264,15 @@ export default function App() {
     return () => { mounted = false; };
   }, []);
 
-  // ── Register API error handlers — both silent, nothing shown to user ──────
   useEffect(() => {
-    setApiErrorHandlers(
-      () => {}, // auth error — silent
-      () => {}, // unreachable — silent
-    );
+    setApiErrorHandlers(() => {}, () => {});
   }, []);
 
-  // ── Validate API key silently — no UI feedback on failure ─────────────────
   useEffect(() => {
     if (!apiKey) return;
     const controller = new AbortController();
-    fetch(`https://api.themoviedb.org/3/configuration?api_key=${apiKey}`, {
-      signal: controller.signal,
-    })
-      .then(() => {}) // success — silent
-      .catch(() => {}); // failure — silent
+    fetch(`https://api.themoviedb.org/3/configuration?api_key=${apiKey}`, { signal: controller.signal })
+      .then(() => {}).catch(() => {});
     return () => controller.abort();
   }, [apiKey]);
 
@@ -401,7 +394,7 @@ export default function App() {
         setTrendingTV(tv);
         storage.set("trendingCache", { movies, tv, ts: Date.now() });
       })
-      .catch(() => {}) // silent
+      .catch(() => {})
       .finally(() => setLoadingHome(false));
   }, [apiKey]);
 
@@ -678,6 +671,15 @@ export default function App() {
     [navigate],
   );
 
+  // ── ReelPage: handle movie selection — goes to MoviePage ─────────────────
+  const handleReelSelect = useCallback(
+    (item) => {
+      const movieItem = { ...item, media_type: "movie" };
+      navigate("movie", movieItem);
+    },
+    [navigate],
+  );
+
   if (!apiKeyLoaded) return null;
 
   const hasCustomTitlebar = platform === "win32" || platform === "linux";
@@ -718,8 +720,6 @@ export default function App() {
         />
 
         <div className="main">
-          {/* ── All TMDB/network error banners removed — users never see them ── */}
-
           <Suspense
             fallback={
               <div style={{ color: "var(--text2)", padding: 48, textAlign: "center", fontSize: 15 }}>
@@ -743,6 +743,19 @@ export default function App() {
                 history={history}
                 apiKey={apiKey}
                 isPremium={isPremium}
+              />
+            )}
+
+            {/* ── World Cinema Reel — default landing page ── */}
+            {page === "reel" && (
+              <ReelPage
+                apiKey={apiKey}
+                onSelect={handleReelSelect}
+                onSave={toggleSave}
+                savedItems={savedList}
+                isPremium={isPremium}
+                onNavigate={navigate}
+                onSearch={() => setShowSearch(true)}
               />
             )}
 

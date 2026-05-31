@@ -1,6 +1,6 @@
 // localStorage-based persistence (works in both Vite dev and prod)
 
-const PREFIX = "streambert_";
+const PREFIX = "NovaSpark";
 
 export const storage = {
   get(key) {

@@ -1,0 +1,10 @@
+﻿const fs = require('fs');
+const p = 'C:\\Users\\HP\\Downloads\\novasparks\\src\\pages\\WatchPage.jsx';
+let c = fs.readFileSync(p, 'utf8');
+const idx = c.indexOf('const useHLSPath =');
+const end = c.indexOf(';', idx) + 1;
+const oldBlock = c.slice(idx, end);
+const newBlock = `const useHLSPath = !isElectron && (restricted || (typeof navigator !== "undefined" && /Chrome/.test(navigator.userAgent) && !/Electron/.test(navigator.userAgent)));`;
+c = c.slice(0, idx) + newBlock + c.slice(end);
+fs.writeFileSync(p, c, 'utf8');
+console.log('FIXED. Old:', oldBlock.slice(0,60));

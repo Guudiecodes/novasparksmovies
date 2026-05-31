@@ -222,6 +222,49 @@ function NSAIButton({ onNavigate }) {
   );
 }
 
+// ── World Reel Button ─────────────────────────────────────────────────────
+function ReelButton({ active, onNavigate }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      className={`sidebar-btn ${active ? "active" : ""}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => onNavigate("reel")}
+      style={{ position: "relative", overflow: "visible" }}
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+        style={{
+          filter: hovered || active ? "drop-shadow(0 0 5px rgba(255,180,0,0.7))" : "none",
+          transition: "filter 0.3s",
+        }}>
+        {/* Film reel icon */}
+        <circle cx="12" cy="12" r="9" stroke={active ? "#f5a623" : "currentColor"} strokeWidth="1.6" fill="none" />
+        <circle cx="12" cy="12" r="3" stroke={active ? "#f5a623" : "currentColor"} strokeWidth="1.6" fill="none" />
+        {/* Sprocket holes */}
+        <circle cx="12" cy="4"  r="1.2" fill={active ? "#f5a623" : "currentColor"} opacity="0.8" />
+        <circle cx="12" cy="20" r="1.2" fill={active ? "#f5a623" : "currentColor"} opacity="0.8" />
+        <circle cx="4"  cy="12" r="1.2" fill={active ? "#f5a623" : "currentColor"} opacity="0.8" />
+        <circle cx="20" cy="12" r="1.2" fill={active ? "#f5a623" : "currentColor"} opacity="0.8" />
+        <circle cx="6.3"  cy="6.3"  r="1"  fill={active ? "#f5a623" : "currentColor"} opacity="0.6" />
+        <circle cx="17.7" cy="17.7" r="1"  fill={active ? "#f5a623" : "currentColor"} opacity="0.6" />
+        <circle cx="17.7" cy="6.3"  r="1"  fill={active ? "#f5a623" : "currentColor"} opacity="0.6" />
+        <circle cx="6.3"  cy="17.7" r="1"  fill={active ? "#f5a623" : "currentColor"} opacity="0.6" />
+      </svg>
+      <span className="tooltip">World Reel 🌍</span>
+      {/* "NEW" badge */}
+      <span style={{
+        position: "absolute", top: 3, right: 3,
+        background: "linear-gradient(135deg, #f5a623, #e74c3c)",
+        borderRadius: 3, padding: "1px 4px",
+        fontSize: 7, fontWeight: 900, color: "#fff",
+        letterSpacing: 0.3, lineHeight: 1.4,
+        pointerEvents: "none",
+      }}>NEW</span>
+    </button>
+  );
+}
+
 function NovasparkLogo({ tier }) {
   const t   = TIER_CFG[tier] || TIER_CFG.free;
   const gid = `nsg-${tier}`;
@@ -356,14 +399,9 @@ export default function Sidebar({
 
   const isWeb = !window.electron;
 
-  // ── MOBILE BOTTOM NAV ─────────────────────────────────────────────────────
-  // Rendered in the same component, not via CSS .mobile-nav class
-  // (which relies on nothing rendering it). We detect viewport width
-  // and return the mobile nav instead of the full sidebar.
-  // ── Shared icon size token — every nav icon is exactly this ─────────────
-  const ICO = 22; // px — enforced on every SVG in mobile nav
+  const ICO = 22;
 
-  // ── Primary nav items (bottom bar row 1) ─────────────────────────────────
+  // ── Mobile nav items ──────────────────────────────────────────────────────
   const mobileNavItems = [
     {
       id:    "search",
@@ -387,6 +425,23 @@ export default function Sidebar({
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/>
           <path d="M9 21V12h6v9"/>
+        </svg>
+      ),
+    },
+    // ── World Reel tab — mobile ───────────────────────────────────────────
+    {
+      id:    "reel",
+      label: "Reel",
+      icon: (active) => (
+        <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
+          stroke={active ? "#f5a623" : "var(--text3)"}
+          strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="3" />
+          <circle cx="12" cy="4"  r="1.2" fill={active ? "#f5a623" : "var(--text3)"} stroke="none" />
+          <circle cx="12" cy="20" r="1.2" fill={active ? "#f5a623" : "var(--text3)"} stroke="none" />
+          <circle cx="4"  cy="12" r="1.2" fill={active ? "#f5a623" : "var(--text3)"} stroke="none" />
+          <circle cx="20" cy="12" r="1.2" fill={active ? "#f5a623" : "var(--text3)"} stroke="none" />
         </svg>
       ),
     },
@@ -455,7 +510,6 @@ export default function Sidebar({
         </svg>
       ),
     },
-    // Download desktop app — web only
     ...(isWeb ? [{
       id:    "get-app",
       label: "Get App",
@@ -469,7 +523,6 @@ export default function Sidebar({
         </svg>
       ),
     }] : []),
-    // Quit — Electron only
     ...(window.electron?.quitApp ? [{
       id:    "quit",
       label: "Quit",
@@ -502,56 +555,39 @@ export default function Sidebar({
           justifyContent: "space-between",
           padding: "0 16px",
           zIndex: 100,
-          // GPU layer
           willChange: "transform",
           transform: "translateZ(0)",
         }}>
-          {/* Logo + plan tier badge */}
           <div
             onClick={() => onNavigate("pricing")}
             title={logoLabel}
-            style={{
-              position: "relative",
-              width: 34, height: 34,
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
+            style={{ position: "relative", width: 34, height: 34, cursor: "pointer", flexShrink: 0 }}
           >
             <NovasparkLogo tier={tier} />
             <TierBadge tier={tier} />
           </div>
 
-          {/* App wordmark — centred */}
           <div style={{
             fontFamily: "var(--font-display)",
-            fontSize: 19,
-            letterSpacing: 3,
-            color: "var(--text)",
-            flex: 1,
-            textAlign: "center",
-            userSelect: "none",
+            fontSize: 19, letterSpacing: 3,
+            color: "var(--text)", flex: 1,
+            textAlign: "center", userSelect: "none",
           }}>
             NOVASPARK
           </div>
 
-          {/* Plan label pill — right side */}
           <div
             onClick={() => onNavigate("pricing")}
             style={{
-              flexShrink: 0,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "4px 10px",
-              borderRadius: 20,
+              flexShrink: 0, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 5,
+              padding: "4px 10px", borderRadius: 20,
               border: `1px solid ${tier === "free" ? "var(--border)" : TIER_CFG[tier].ring}`,
               background: tier === "free"
                 ? "rgba(255,255,255,0.04)"
                 : `rgba(${tier === "diamond" ? "0,212,255" : tier === "gold" ? "245,166,35" : "192,200,208"},0.08)`,
             }}
           >
-            {/* Tier dot */}
             <span style={{
               width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
               background: tier === "free"    ? "var(--red)"
@@ -570,7 +606,7 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* ── Mobile bottom navigation — horizontally scrollable so all icons fit ── */}
+        {/* ── Mobile bottom nav ─────────────────────────────────────────── */}
         <nav style={{
           position: "fixed",
           bottom: 0, left: 0, right: 0,
@@ -583,53 +619,40 @@ export default function Sidebar({
           willChange: "transform",
           transform: "translateZ(0)",
         }}>
-          {/* Scrollable icon strip */}
           <div style={{
-            display: "flex",
-            alignItems: "stretch",
-            overflowX: "auto",
-            overflowY: "visible",
+            display: "flex", alignItems: "stretch",
+            overflowX: "auto", overflowY: "visible",
             scrollbarWidth: "none",
             WebkitOverflowScrolling: "touch",
-            // Fade out edges to hint scrollability
             maskImage: "linear-gradient(to right, transparent 0%, black 12px, black calc(100% - 12px), transparent 100%)",
             WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 12px, black calc(100% - 12px), transparent 100%)",
           }}>
             <div style={{ width: 8, flexShrink: 0 }} />
-
             {mobileNavItems.map(({ id, icon, label, badge, onTap }) => {
               const isActive = id !== "search" && id !== "help" && id !== "donate" && id !== "get-app" && id !== "quit" && page === id;
               const handleClick = onTap ?? (() => onNavigate(id));
-
+              const isReel = id === "reel";
               return (
                 <button
                   key={id}
                   onClick={handleClick}
                   style={{
                     flexShrink: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 4,
-                    height: 58,
-                    minWidth: 60,
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "0 8px",
+                    display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center",
+                    gap: 4, height: 58, minWidth: 60,
+                    background: "none", border: "none",
+                    cursor: "pointer", padding: "0 8px",
                     position: "relative",
                     fontFamily: "var(--font-body)",
                     borderTop: isActive
-                      ? "2px solid var(--red)"
+                      ? `2px solid ${isReel ? "#f5a623" : "var(--red)"}`
                       : "2px solid transparent",
                     transition: "border-color 0.2s",
                   }}
                 >
                   <span style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
+                    display: "flex", alignItems: "center", justifyContent: "center",
                     width: ICO, height: ICO,
                     transition: "transform 0.15s",
                     transform: isActive ? "scale(1.12)" : "scale(1)",
@@ -637,49 +660,44 @@ export default function Sidebar({
                     {icon(isActive)}
                   </span>
                   <span style={{
-                    fontSize: 9,
-                    fontWeight: 600,
-                    letterSpacing: 0.3,
-                    color: isActive ? "var(--red)" : "var(--text3)",
-                    textTransform: "capitalize",
-                    lineHeight: 1,
-                    transition: "color 0.2s",
-                    whiteSpace: "nowrap",
+                    fontSize: 9, fontWeight: 600, letterSpacing: 0.3,
+                    color: isActive ? (isReel ? "#f5a623" : "var(--red)") : "var(--text3)",
+                    textTransform: "capitalize", lineHeight: 1,
+                    transition: "color 0.2s", whiteSpace: "nowrap",
                   }}>
                     {label}
                   </span>
                   {badge && (
                     <span style={{
-                      position: "absolute",
-                      top: 8, right: 4,
-                      minWidth: 16, height: 16,
-                      borderRadius: 8,
-                      background: "var(--red)",
-                      color: "#050c0f",
+                      position: "absolute", top: 8, right: 4,
+                      minWidth: 16, height: 16, borderRadius: 8,
+                      background: "var(--red)", color: "#050c0f",
                       fontSize: 9, fontWeight: 800,
-                      lineHeight: "16px",
-                      textAlign: "center",
-                      padding: "0 4px",
-                    }}>
-                      {badge}
-                    </span>
+                      lineHeight: "16px", textAlign: "center", padding: "0 4px",
+                    }}>{badge}</span>
+                  )}
+                  {/* NEW badge on Reel */}
+                  {isReel && !isActive && (
+                    <span style={{
+                      position: "absolute", top: 6, right: 2,
+                      background: "linear-gradient(135deg, #f5a623, #e74c3c)",
+                      borderRadius: 3, padding: "1px 3px",
+                      fontSize: 6, fontWeight: 900, color: "#fff",
+                      lineHeight: 1.4, pointerEvents: "none",
+                    }}>NEW</span>
                   )}
                 </button>
               );
             })}
-
             <div style={{ width: 8, flexShrink: 0 }} />
           </div>
         </nav>
 
-        {/* Download popup — outside nav so it renders above everything */}
         {showDownload && isWeb && (
           <div data-download-popup style={{ position: "fixed", bottom: 68, left: 12, zIndex: 99999 }}>
             <DownloadPopup onClose={() => setShowDownload(false)} />
           </div>
         )}
-
-        {/* Modals — outside nav, at document level */}
         {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
       </>
     );
@@ -724,6 +742,9 @@ export default function Sidebar({
       <SideBtn active={page === "history"}   onClick={() => onNavigate("history")}   icon={<HistoryIcon />}        label="Library & History" />
       <SideBtn active={page === "downloads"} onClick={() => onNavigate("downloads")} icon={<DownloadsQueueIcon />} label="Downloads"
         badge={activeDownloads > 0 ? activeDownloads : null} />
+
+      {/* ── World Reel ── */}
+      <ReelButton active={page === "reel"} onNavigate={onNavigate} />
 
       {/* ── NS AI ── */}
       <NSAIButton onNavigate={onNavigate} />
@@ -777,16 +798,8 @@ export default function Sidebar({
           </div>
         </div>
       )}
-
     </div>
 
-    {/* ══════════════════════════════════════════════════════════════════════
-        FLOATING MENU — top-right corner, visible on ALL devices (desktop +
-        tablet). Holds utility actions that were previously buried at the
-        bottom of the sidebar: Settings, Help, Donate, Download App, Quit.
-        Transparent glass pill with a "⋮" trigger. Renders outside the
-        sidebar so it is never clipped.
-       ══════════════════════════════════════════════════════════════════════ */}
     <FloatingMenu
       page={page}
       onNavigate={onNavigate}
@@ -798,7 +811,6 @@ export default function Sidebar({
       isWeb={isWeb}
     />
 
-    {/* Donate Modal — always outside any clipping container */}
     {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
     {showDownload && isWeb && (
       <div data-download-popup>
@@ -809,14 +821,11 @@ export default function Sidebar({
   );
 }
 
-// ── FloatingMenu — top-right glass pill, visible on desktop + tablet ─────────
-// Holds all utility actions removed from the sidebar bottom.
-// On mobile the mobile bottom nav already includes these.
+// ── FloatingMenu ──────────────────────────────────────────────────────────────
 function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDonate, showDownload, setShowDownload, isWeb }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const h = (e) => {
@@ -885,60 +894,23 @@ function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDo
   ];
 
   return (
-    <div
-      ref={menuRef}
-      style={{
-        position: "fixed",
-        top: 14,
-        right: 16,
-        zIndex: 200,
-        // Hide on mobile — mobile bottom nav handles these
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        gap: 8,
-      }}
-    >
-      {/* ── Trigger pill ── */}
+    <div ref={menuRef} style={{ position: "fixed", top: 14, right: 16, zIndex: 200, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
       <button
         onClick={() => setOpen((v) => !v)}
         title="Menu"
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "7px 13px",
-          borderRadius: 20,
-          border: open
-            ? "1px solid rgba(0,180,166,0.5)"
-            : "1px solid rgba(255,255,255,0.10)",
-          background: open
-            ? "rgba(0,180,166,0.12)"
-            : "rgba(10,20,24,0.55)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "7px 13px", borderRadius: 20,
+          border: open ? "1px solid rgba(0,180,166,0.5)" : "1px solid rgba(255,255,255,0.10)",
+          background: open ? "rgba(0,180,166,0.12)" : "rgba(10,20,24,0.55)",
+          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
           color: open ? "var(--red)" : "var(--text2)",
-          cursor: "pointer",
-          transition: "all 0.18s ease",
-          fontFamily: "var(--font-body)",
-          fontSize: 12,
-          fontWeight: 600,
-          letterSpacing: 0.3,
+          cursor: "pointer", transition: "all 0.18s ease",
+          fontFamily: "var(--font-body)", fontSize: 12, fontWeight: 600, letterSpacing: 0.3,
         }}
-        onMouseEnter={(e) => {
-          if (!open) {
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)";
-            e.currentTarget.style.color = "var(--text)";
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!open) {
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
-            e.currentTarget.style.color = "var(--text2)";
-          }
-        }}
+        onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; e.currentTarget.style.color = "var(--text)"; } }}
+        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)"; e.currentTarget.style.color = "var(--text2)"; } }}
       >
-        {/* Three-dot icon */}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="5"  cy="12" r="2"/>
           <circle cx="12" cy="12" r="2"/>
@@ -947,17 +919,13 @@ function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDo
         <span>Menu</span>
       </button>
 
-      {/* ── Dropdown ── */}
       {open && (
         <div style={{
           background: "rgba(10,18,22,0.96)",
           border: "1px solid rgba(255,255,255,0.10)",
-          borderRadius: 12,
-          padding: "6px",
-          minWidth: 210,
+          borderRadius: 12, padding: "6px", minWidth: 210,
           boxShadow: "0 16px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(0,180,166,0.08)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
+          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
           animation: "menuDrop 0.15s cubic-bezier(0.34,1.56,0.64,1)",
         }}>
           <style>{`
@@ -966,53 +934,27 @@ function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDo
               to   { opacity:1; transform:translateY(0) scale(1); }
             }
           `}</style>
-
           {items.map(({ label, icon, accent, active, action }) => (
             <button
               key={label}
               onClick={action}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
+                display: "flex", alignItems: "center", gap: 10,
                 width: "100%",
                 background: active ? "var(--red-dim)" : "none",
-                border: "none",
-                borderRadius: 8,
-                padding: "10px 12px",
+                border: "none", borderRadius: 8, padding: "10px 12px",
                 color: accent ?? (active ? "var(--red)" : "var(--text2)"),
-                cursor: "pointer",
-                fontSize: 13,
+                cursor: "pointer", fontSize: 13,
                 fontWeight: active ? 600 : 500,
-                fontFamily: "var(--font-body)",
-                textAlign: "left",
+                fontFamily: "var(--font-body)", textAlign: "left",
                 transition: "background 0.13s, color 0.13s",
               }}
-              onMouseEnter={(e) => {
-                if (!active) {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                  e.currentTarget.style.color = accent ?? "var(--text)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!active) {
-                  e.currentTarget.style.background = "none";
-                  e.currentTarget.style.color = accent ?? "var(--text2)";
-                }
-              }}
+              onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = accent ?? "var(--text)"; } }}
+              onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = accent ?? "var(--text2)"; } }}
             >
-              <span style={{
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                opacity: 0.8,
-              }}>
-                {icon}
-              </span>
+              <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: 0.8 }}>{icon}</span>
               {label}
-              {active && (
-                <span style={{ marginLeft: "auto", color: "var(--red)", fontSize: 11 }}>✓</span>
-              )}
+              {active && <span style={{ marginLeft: "auto", color: "var(--red)", fontSize: 11 }}>✓</span>}
             </button>
           ))}
         </div>

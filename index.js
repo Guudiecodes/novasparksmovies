@@ -219,14 +219,25 @@ function createWindow() {
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     frame: process.platform !== "win32",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, app.isPackaged ? "dist/preload.js" : "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
       backgroundThrottling: true,
       spellcheck: false,
+      devTools: false,
       additionalArguments: ["--js-flags=--max-old-space-size=256 --expose-gc"],
     },
+  });
+
+  // -- Source protection: prevent DevTools / source inspection -------------------
+  mainWindow.webContents.on('devtools-opened', () => {
+    mainWindow.webContents.closeDevTools();
+  });
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      event.preventDefault();
+    }
   });
 
   // FIX: if the renderer crashes, reload instead of closing the window
@@ -413,6 +424,7 @@ ipcMain.handle("wyzie-open-redeem", async () => {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        devTools: false,
         session: redeemSession,
       },
       backgroundColor: "#ffffff",
@@ -530,7 +542,8 @@ ipcMain.handle("open-pip-window", (_, { url, title }) => {
       partition: "persist:player",
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "popout-preload.js"),
+      devTools: false,
+      preload: path.join(__dirname, app.isPackaged ? "dist/popout-preload.js" : "popout-preload.js"),
     },
   });
 
