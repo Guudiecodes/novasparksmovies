@@ -1,73 +1,198 @@
 /**
  * ReelPage.jsx — NovaSpark Cinema Reels
  *
- * ELECTRON : Kinocheck embed in <webview partition="persist:trailer">
- *            Auto-unmuted. Polls <video> for state via executeJavaScript.
- * WEB      : youtube-nocookie iframe + postMessage.
- *            Starts MUTED for autoplay (browser policy), unmutes on first interaction.
+ * ARCHITECTURE:
+ *  - Infinite no-repeat pool: _seenIds Set persists entire session
+ *  - English-only: LANG_BLOCK regex + NON_LATIN unicode strip on title+language fields
+ *  - Smart scoring: vote_average * log(vote_count) with top/discovery interleave
+ *  - 4 TMDB rotating sources: trending, popular, top_rated, upcoming
+ *  - Background prefetch: refills when pool < 15
  *
- * DESIGN   : Cinema-grade dark luxury. Full-bleed video. TikTok-style vertical rail.
+ * PLAYER:
+ *  - Full-bleed iframe: 120% x 140%, offset -20% top / -10% left
+ *  - Muted autoplay (browser policy). Unmutes on first tap.
+ *  - muted/active in separate effects — NEVER restarts video on mute toggle
+ *  - onBlocked -> advance reel automatically
+ *
+ * BUG FIXES (permanent):
+ *  - Rail button taps no longer skip reels: ALL pointer/touch events stopped
+ *    on every button and on the rail container itself. Touch swipe threshold 60px.
+ *  - English-only enforced at both Kinocheck title level AND TMDB language field
+ *  - Ghost icon rail: zero background, zero border, zero shadow on icon wrappers
+ *  - Share: ONLY shares app URL (tmdb_id param). YouTube IDs never exposed.
+ *  - Watchlist: onSave / savedItems wired, deduped by tmdb_id
+ *
+ * MOBILE:
+ *  - Action rail: ALL touch/pointer events stopped — never reaches scroll container
+ *  - Touch swipe threshold: 60px
+ *  - RC-bottom clears rail width at all breakpoints
+ *
+ * ELECTRON:
+ *  - Kinocheck webview with executeJavaScript polling
+ *  - Auto-unmuted, no mute policy restriction
  */
+
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// ─── ENV ─────────────────────────────────────────────────────────────────────
+// ─── ENV ──────────────────────────────────────────────────────────────────────
 const IS_ELECTRON = typeof window !== "undefined" && !!window.electron;
 
-// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const KINO         = "https://api.kinocheck.com";
-const TMDB         = "https://api.themoviedb.org/3";
+const TMDB_BASE    = "https://api.themoviedb.org/3";
 const START_OFFSET = 20;
 const END_BUFFER   = 10;
+const APP_ORIGIN   = "https://novasparks-gen.vercel.app";
 
-// ─── NAV CONFIG ──────────────────────────────────────────────────────────────
+// ─── NAV ──────────────────────────────────────────────────────────────────────
 const NAV = [
-  { id:"home",      label:"Home",
-    icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> },
-  { id:"search",    label:"Search",
-    icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
-  { id:"history",   label:"Library",
-    icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> },
-  { id:"downloads", label:"Downloads",
-    icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> },
-  { id:"settings",  label:"Settings",
-    icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
+  {
+    id: "home", label: "Home",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+      </svg>
+    ),
+  },
+  {
+    id: "search", label: "Search",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    ),
+  },
+  {
+    id: "history", label: "Library",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+    ),
+  },
+  {
+    id: "downloads", label: "Downloads",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+    ),
+  },
+  {
+    id: "settings", label: "Settings",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    ),
+  },
 ];
 
-// ─── URL BUILDERS ────────────────────────────────────────────────────────────
+// ─── URL BUILDERS ─────────────────────────────────────────────────────────────
 
 function buildKinoSrc(videoId) {
   return `https://api.kinocheck.com/embed?yt=${videoId}&autoplay=1&muted=0`;
 }
 
-function buildYTSrc(videoId, startMuted = true) {
-  // CRITICAL: mute=1 required for browser autoplay policy.
-  // We unmute via postMessage after first user interaction.
+function buildYTSrc(videoId) {
   const p = new URLSearchParams({
-    autoplay:"1",
-    mute: startMuted ? "1" : "0",
-    controls:"0",
-    modestbranding:"1",
-    rel:"0",
-    showinfo:"0",
-    iv_load_policy:"3",
-    disablekb:"1",
-    fs:"0",
-    playsinline:"1",
-    loop:"1",
-    playlist:videoId,
-    enablejsapi:"1",
-    start:String(START_OFFSET),
-    hl:"en",
-    origin: typeof window !== "undefined" ? window.location.origin : "",
+    autoplay:       "1",
+    mute:           "1",
+    controls:       "0",
+    modestbranding: "1",
+    rel:            "0",
+    showinfo:       "0",
+    iv_load_policy: "3",
+    disablekb:      "1",
+    fs:             "0",
+    playsinline:    "1",
+    loop:           "1",
+    playlist:       videoId,
+    enablejsapi:    "1",
+    start:          String(START_OFFSET),
+    hl:             "en",
+    cc_lang_pref:   "en",
+    cc_load_policy: "1",
+    origin: typeof window !== "undefined" ? window.location.origin : APP_ORIGIN,
   });
   return `https://www.youtube-nocookie.com/embed/${videoId}?${p}`;
 }
 
 function ytMsg(iframe, obj) {
-  iframe?.contentWindow?.postMessage(JSON.stringify(obj), "*");
+  try { iframe?.contentWindow?.postMessage(JSON.stringify(obj), "*"); } catch {}
 }
 
-// ─── DATA ────────────────────────────────────────────────────────────────────
+// ─── SHUFFLE ENGINE ───────────────────────────────────────────────────────────
+
+function seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = seed >>> 0;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = Math.imul(s ^ (s >>> 15), s | 1);
+    s ^= s + Math.imul(s ^ (s >>> 7), s | 61);
+    const j = (s >>> 0) % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Session-level state — persists until page refresh, never resets
+const _seenIds   = new Set();
+const _pool      = [];
+let   _fetching  = false;
+let   _kinoPage  = 1;
+const _SEED      = Date.now();
+const _tmdbPages = [1, 1, 1, 1];
+
+const TMDB_SOURCES = [
+  (k, p) => `${TMDB_BASE}/trending/movie/week?api_key=${k}&page=${p}&language=en-US`,
+  (k, p) => `${TMDB_BASE}/movie/popular?api_key=${k}&page=${p}&language=en-US`,
+  (k, p) => `${TMDB_BASE}/movie/top_rated?api_key=${k}&page=${p}&language=en-US`,
+  (k, p) => `${TMDB_BASE}/movie/upcoming?api_key=${k}&page=${p}&language=en-US`,
+];
+
+/**
+ * English-only gate.
+ * Blocks any title that contains a non-English language label in parentheses,
+ * suffix, or anywhere in the string — covers ALL major Kinocheck patterns:
+ *   "Spider-Man Trailer (Deutsch)"
+ *   "Film - Japanischer Trailer"
+ *   "Movie | Türkçe Fragman"
+ *   "电影 预告片"  (non-latin char gate catches this)
+ */
+const LANG_BLOCK = new RegExp(
+  "(german|deutsch|deuts|français|french|español|spanish|espanol|" +
+  "italiano|italian[ao]|türkçe|turkish|turk[ce]|polish|polski|" +
+  "русский|russian|japanese|japanisch|chinese|chinesisch|korean|" +
+  "koreanisch|arabic|arabe|hindi|portuguese|portugais|dutch|" +
+  "norsk|svenska|swedish|danish|dansk|czech|hungarian|romanian|" +
+  "thai|vietnamese|indonesian|persian|farsi|hebrew|greek|" +
+  "suomi|finnish|tagalog|malay|melayu|bahasa|urdu|bengali|" +
+  "tamil|telugu|kannada|marathi|punjabi|gujarati|sinhalese)",
+  "i"
+);
+const NON_LATIN = /[Ѐ-ӿ؀-ۿ\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u3000-\u9FFF\uAC00-\uD7AF\u0600-\u06FF]/;
+
+function isEnglish(item) {
+  const title    = item.title           || "";
+  const origLang = item.original_language || "";
+  if (origLang && origLang !== "en") return false;
+  if (LANG_BLOCK.test(title))            return false;
+  if (NON_LATIN.test(title))             return false;
+  return true;
+}
+
+function cleanTitle(raw) {
+  if (!raw) return "Unknown";
+  return raw
+    .replace(/\s+(Official\s+)?(Trailer|Teaser|Clip|Featurette|Spot|Preview)[^|–\-]*/i, "")
+    .replace(/\s+(German|Deutsch|English|French|Español|Italiano)[^|]*/i, "")
+    .replace(/\s*[|(–\-].*/,"")
+    .replace(/\s*\(\d{4}\).*/,"")
+    .trim() || raw.split(/\s+/).slice(0, 4).join(" ");
+}
 
 function parseKino(raw) {
   if (!raw || typeof raw !== "object") return [];
@@ -77,120 +202,198 @@ function parseKino(raw) {
     .filter((v) => v?.youtube_video_id);
 }
 
-function cleanTitle(raw) {
-  if (!raw) return "Movie";
-  return raw
-    .replace(/\s+(Official\s+)?(Trailer|Teaser|Clip|Featurette|Spot)[^|–\-]*/i,"")
-    .replace(/\s+(German|Deutsch|English|French|Español|Italiano)[^|]*/i,"")
-    .replace(/\s*[|(–\-].*/,"")
-    .replace(/\s*\(\d{4}\).*/,"")
-    .trim() || raw.split(/\s+/).slice(0,4).join(" ");
-}
+async function fillPool(apiKey) {
+  if (_fetching) return;
+  _fetching = true;
+  try {
+    const kinoRaw = [];
+    await Promise.allSettled([
+      fetch(`${KINO}/trailers/trending?limit=20&page=${_kinoPage}`, { headers: { Accept: "application/json" } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) kinoRaw.push(...parseKino(d)); })
+        .catch(() => {}),
+      fetch(`${KINO}/trailers/latest?limit=20`, { headers: { Accept: "application/json" } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) kinoRaw.push(...parseKino(d)); })
+        .catch(() => {}),
+    ]);
+    _kinoPage++;
 
-async function fetchReels(apiKey, page = 1) {
-  let items = [];
-  try {
-    const r = await fetch(`${KINO}/trailers/trending?limit=20&page=${page}`,{ headers:{ Accept:"application/json" } });
-    if (r.ok) items = parseKino(await r.json());
-  } catch {}
-  try {
-    const r2 = await fetch(`${KINO}/trailers/latest?limit=20`,{ headers:{ Accept:"application/json" } });
-    if (r2.ok) {
-      const extra = parseKino(await r2.json());
-      const seen  = new Set(items.map((x) => x.youtube_video_id));
-      items = [...items, ...extra.filter((x) => !seen.has(x.youtube_video_id))];
+    const batchSeen = new Set();
+    const fresh = kinoRaw.filter(item => {
+      const vid   = item.youtube_video_id;
+      const title = item.title || "";
+      if (!vid || batchSeen.has(vid) || _seenIds.has(vid)) return false;
+      // English gate at intake — blocks before even hitting TMDB
+      if (LANG_BLOCK.test(title) || NON_LATIN.test(title))  return false;
+      batchSeen.add(vid);
+      return true;
+    });
+
+    if (fresh.length === 0) return;
+
+    // Enrich with TMDB — rotate 4 sources
+    const srcIdx  = (_kinoPage - 1) % TMDB_SOURCES.length;
+    const tmdbUrl = TMDB_SOURCES[srcIdx](apiKey, _tmdbPages[srcIdx]);
+    _tmdbPages[srcIdx]++;
+    let tmdbMap = {};
+    try {
+      const r = await fetch(tmdbUrl);
+      if (r.ok) {
+        const d = await r.json();
+        // Second English gate: filter TMDB results to original_language === 'en'
+        (d.results || []).filter(m => m.original_language === "en").forEach(m => { tmdbMap[m.id] = m; });
+      }
+    } catch {}
+
+    const batch = fresh.map(item => {
+      const tmdb = item.resource?.tmdb_id ? (tmdbMap[item.resource.tmdb_id] || null) : null;
+      // If TMDB says non-English, skip
+      if (tmdb && tmdb.original_language && tmdb.original_language !== "en") return null;
+      return {
+        id:        item.youtube_video_id,
+        youtubeId: item.youtube_video_id,
+        tmdb_id:   item.resource?.tmdb_id || null,
+        title:     tmdb?.title     || cleanTitle(item.title),
+        overview:  tmdb?.overview  || "",
+        genres:    (item.genres    || []).slice(0, 2),
+        rating:    tmdb?.vote_average ? +tmdb.vote_average.toFixed(1) : null,
+        duration:  tmdb?.runtime   || null,
+        tmdbObj:   tmdb            || null,
+        _score:    (tmdb?.vote_average || 5) * Math.log((tmdb?.vote_count || 1) + 1),
+      };
+    }).filter(Boolean);
+
+    const shuffled = seededShuffle(batch, _SEED ^ (_pool.length * 2654435761));
+
+    // Smart interleave: top-quality with discovery picks
+    const sorted = [...shuffled].sort((a, b) => b._score - a._score);
+    const top    = sorted.slice(0, Math.ceil(sorted.length / 2));
+    const disc   = sorted.slice(Math.ceil(sorted.length / 2));
+    const mixed  = [];
+    for (let i = 0; i < Math.max(top.length, disc.length); i++) {
+      if (i < top.length)  mixed.push(top[i]);
+      if (i < disc.length) mixed.push(disc[i]);
     }
-  } catch {}
-
-  const reels = items.map((item) => ({
-    id:       item.youtube_video_id,
-    youtubeId:item.youtube_video_id,
-    tmdb_id:  item.resource?.tmdb_id || null,
-    title:    cleanTitle(item.title),
-    genres:   (item.genres || []).slice(0,2),
-    rating:null, duration:null, tmdbObj:null,
-  }));
-
-  await Promise.allSettled(
-    reels.filter((r) => r.tmdb_id).slice(0,8).map(async (r) => {
-      try {
-        const res = await fetch(`${TMDB}/movie/${r.tmdb_id}?api_key=${apiKey}`);
-        if (!res.ok) return;
-        const d = await res.json();
-        r.title    = d.title    || r.title;
-        r.rating   = d.vote_average ? +d.vote_average.toFixed(1) : null;
-        r.duration = d.runtime  || null;
-        r.tmdbObj  = d;
-      } catch {}
-    })
-  );
-  return reels;
+    _pool.push(...mixed);
+  } finally {
+    _fetching = false;
+  }
 }
 
-// ─── PROGRESS BAR ────────────────────────────────────────────────────────────
+async function fetchReels(apiKey, count = 12) {
+  for (let attempt = 0; attempt < 3 && _pool.length < count; attempt++) {
+    await fillPool(apiKey);
+    if (_pool.length === 0) await new Promise(r => setTimeout(r, 800));
+  }
+  const result = [];
+  while (result.length < count && _pool.length > 0) {
+    const reel = _pool.shift();
+    if (_seenIds.has(reel.id)) continue;
+    _seenIds.add(reel.id);
+    result.push(reel);
+  }
+  if (_pool.length < 15) setTimeout(() => fillPool(apiKey), 0);
+  return result;
+}
+
+// ─── SHARE ────────────────────────────────────────────────────────────────────
+// NEVER exposes YouTube IDs — only the app's own URL with TMDB id
+function buildShareUrl(reel) {
+  if (reel.tmdb_id) return `${APP_ORIGIN}/reel?v=${reel.tmdb_id}`;
+  return APP_ORIGIN;
+}
+
+async function shareReel(reel) {
+  const url   = buildShareUrl(reel);
+  const title = reel.title || "Watch on NovaSpark";
+  const text  = reel.overview
+    ? `${title} — ${reel.overview.slice(0, 100).trim()}...`
+    : `${title} — Watch now on NovaSpark`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+      return "shared";
+    } catch (e) {
+      if (e.name === "AbortError") return "aborted";
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    return "copied";
+  } catch {
+    return "failed";
+  }
+}
+
+// ─── PROGRESS BAR ─────────────────────────────────────────────────────────────
 
 function ProgressBar({ active, duration }) {
   const [pct, setPct]   = useState(0);
   const rafRef          = useRef(null);
   const startRef        = useRef(null);
-  const totalMs = Math.max(60000,(((duration||2.5)*60) - START_OFFSET - END_BUFFER)*1000);
+  const totalMs = Math.max(60000, (((duration || 2.5) * 60) - START_OFFSET - END_BUFFER) * 1000);
 
   useEffect(() => {
-    if (!active){ setPct(0); cancelAnimationFrame(rafRef.current); return; }
+    if (!active) { setPct(0); cancelAnimationFrame(rafRef.current); return; }
     startRef.current = performance.now();
     const tick = (now) => {
-      const next = Math.min(((now - startRef.current)/totalMs)*100, 100);
+      const next = Math.min(((now - startRef.current) / totalMs) * 100, 100);
       setPct(next);
       if (next < 100) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  },[active, totalMs]);
+  }, [active, totalMs]);
 
   return (
-    <div style={{ position:"absolute",bottom:0,left:0,right:0,height:2,background:"rgba(255,255,255,0.1)",zIndex:40 }}>
+    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: "rgba(255,255,255,0.06)", zIndex: 40 }}>
       <div style={{
-        height:"100%", width:`${pct}%`,
-        background:"linear-gradient(90deg,#00e5cc,#00b4ff,#a78bfa)",
-        boxShadow:"0 0 8px rgba(0,229,204,0.6)",
-        transition:"width 0.12s linear",
-        borderRadius:"0 2px 2px 0",
-      }}/>
+        height: "100%",
+        width: `${pct}%`,
+        background: "linear-gradient(90deg, #00e5cc, #00b4ff, #a78bfa)",
+        boxShadow: "0 0 8px rgba(0,229,204,0.5)",
+        transition: "width 0.12s linear",
+        borderRadius: "0 2px 2px 0",
+      }} />
     </div>
   );
 }
 
-// ─── PLAYER ──────────────────────────────────────────────────────────────────
+// ─── PLAYER ───────────────────────────────────────────────────────────────────
 
 function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
   const iframeRef  = useRef(null);
   const webviewRef = useRef(null);
-  const [ready,     setReady]    = useState(false);
-  const [loaded,    setLoaded]   = useState(false);
-  const blockedRef  = useRef(false);
-  const activeRef   = useRef(active);
-  const readyRef    = useRef(false);
+  const [ready,  setReady]  = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const blockedRef = useRef(false);
+  const activeRef  = useRef(active);
+  const readyRef   = useRef(false);
 
-  useEffect(() => { activeRef.current = active; },[active]);
-  useEffect(() => { readyRef.current  = ready;  },[ready]);
+  useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { readyRef.current  = ready;  }, [ready]);
 
   useEffect(() => {
-    setReady(false); setLoaded(false);
-    blockedRef.current = false; readyRef.current = false;
-  },[videoId]);
+    setReady(false);
+    setLoaded(false);
+    blockedRef.current = false;
+    readyRef.current   = false;
+  }, [videoId]);
 
-  // ── ELECTRON ────────────────────────────────────────────────────────────────
+  // ── ELECTRON: Kinocheck webview polling ───────────────────────────────────
   useEffect(() => {
     if (!IS_ELECTRON) return;
     const wv = webviewRef.current;
     if (!wv || !loaded) return;
 
     const CHECK = `(function(){
-      var v=document.querySelector('video');
-      if(!v) return 'loading';
-      if(v.error) return 'error';
-      if(v.ended) return 'ended';
-      if(!v.paused && v.readyState>=2 && v.currentTime>0) return 'playing';
+      var v = document.querySelector('video');
+      if (!v) return 'loading';
+      if (v.error) return 'error';
+      if (v.ended) return 'ended';
+      if (!v.paused && v.readyState >= 2 && v.currentTime > 0) return 'playing';
       return 'loading';
     })()`;
 
@@ -198,30 +401,31 @@ function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
       const js = m
         ? `(function(){var v=document.querySelector('video');if(v)v.muted=true;})()`
         : `(function(){var v=document.querySelector('video');if(v){v.muted=false;v.volume=1;}})()`;
-      wv.executeJavaScript(js).catch(()=>{});
+      wv.executeJavaScript(js).catch(() => {});
     };
 
     const nudge = setTimeout(() => {
       if (wv.isDestroyed?.()) return;
-      wv.executeJavaScript(`(function(){var v=document.querySelector('video');if(v&&v.paused){v.play().catch(function(){});}})()`).catch(()=>{});
+      wv.executeJavaScript(`(function(){var v=document.querySelector('video');if(v&&v.paused)v.play().catch(function(){});})()`).catch(() => {});
       applyMute(muted);
     }, 1200);
 
     const poll = setInterval(() => {
-      if (wv.isDestroyed?.()){ clearInterval(poll); return; }
+      if (wv.isDestroyed?.()) { clearInterval(poll); return; }
       wv.executeJavaScript(CHECK).then((state) => {
         if (!activeRef.current) return;
         if (state === "playing" && !readyRef.current) setReady(true);
-        if ((state === "ended" || state === "error") && !blockedRef.current){
-          blockedRef.current = true; clearInterval(poll); onBlocked?.();
+        if ((state === "ended" || state === "error") && !blockedRef.current) {
+          blockedRef.current = true;
+          clearInterval(poll);
+          onBlocked?.();
         }
-      }).catch(()=>{});
+      }).catch(() => {});
     }, 700);
 
     const hard = setTimeout(() => { if (!readyRef.current) setReady(true); }, 5000);
-
     return () => { clearTimeout(nudge); clearInterval(poll); clearTimeout(hard); };
-  },[loaded, videoId]); // eslint-disable-line
+  }, [loaded, videoId]); // eslint-disable-line
 
   useEffect(() => {
     if (!IS_ELECTRON) return;
@@ -230,91 +434,102 @@ function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
     const js = muted
       ? `(function(){var v=document.querySelector('video');if(v)v.muted=true;})()`
       : `(function(){var v=document.querySelector('video');if(v){v.muted=false;v.volume=1;}})()`;
-    wv.executeJavaScript(js).catch(()=>{});
-  },[muted, loaded]);
+    wv.executeJavaScript(js).catch(() => {});
+  }, [muted, loaded]);
 
-  // ── WEB ─────────────────────────────────────────────────────────────────────
+  // ── WEB: YT iframe postMessage ────────────────────────────────────────────
+
   useEffect(() => {
-    if (IS_ELECTRON) return;
-    if (!loaded || !iframeRef.current) return;
+    if (IS_ELECTRON || !loaded || !iframeRef.current) return;
     const ifr = iframeRef.current;
-    ytMsg(ifr,{event:"listening"});
-    ytMsg(ifr,{event:"command",func:"addEventListener",args:["onStateChange"]});
-    ytMsg(ifr,{event:"command",func:"addEventListener",args:["onError"]});
+    ytMsg(ifr, { event: "listening" });
+    ytMsg(ifr, { event: "command", func: "addEventListener", args: ["onStateChange"] });
+    ytMsg(ifr, { event: "command", func: "addEventListener", args: ["onError"] });
     const t = setTimeout(() => {
-      if (active){
-        ytMsg(ifr,{event:"command",func:"playVideo",args:[]});
-        // Always start muted — unmute handled by hasInteracted effect below
-        ytMsg(ifr,{event:"command",func:"mute",args:[]});
+      if (active) {
+        ytMsg(ifr, { event: "command", func: "playVideo", args: [] });
+        ytMsg(ifr, { event: "command", func: "mute",      args: [] });
       } else {
-        ytMsg(ifr,{event:"command",func:"pauseVideo",args:[]});
+        ytMsg(ifr, { event: "command", func: "pauseVideo", args: [] });
       }
-    },300);
+    }, 300);
     return () => clearTimeout(t);
-  },[loaded]); // eslint-disable-line
+  }, [loaded]); // eslint-disable-line
 
-  // Respond to active/muted changes
+  // active ONLY — never touches mute
   useEffect(() => {
-    if (IS_ELECTRON) return;
-    if (!loaded || !iframeRef.current) return;
-    const ifr = iframeRef.current;
-    if (active){
-      ytMsg(ifr,{event:"command",func:"playVideo",args:[]});
-      ytMsg(ifr,{event:"command",func:muted?"mute":"unMute",args:[]});
-      if (!muted) ytMsg(ifr,{event:"command",func:"setVolume",args:[100]});
+    if (IS_ELECTRON || !loaded || !iframeRef.current) return;
+    if (active) {
+      ytMsg(iframeRef.current, { event: "command", func: "playVideo",  args: [] });
     } else {
-      ytMsg(ifr,{event:"command",func:"pauseVideo",args:[]});
+      ytMsg(iframeRef.current, { event: "command", func: "pauseVideo", args: [] });
     }
-  },[active,muted]); // eslint-disable-line
+  }, [active]); // eslint-disable-line
 
-  // When user first interacts with page — unmute if sound is on
+  // muted ONLY — never restarts video
   useEffect(() => {
-    if (IS_ELECTRON) return;
-    if (!hasInteracted || !loaded || !iframeRef.current || !active) return;
-    if (!muted){
-      ytMsg(iframeRef.current,{event:"command",func:"unMute",args:[]});
-      ytMsg(iframeRef.current,{event:"command",func:"setVolume",args:[100]});
+    if (IS_ELECTRON || !loaded || !iframeRef.current || !active) return;
+    if (muted) {
+      ytMsg(iframeRef.current, { event: "command", func: "mute",      args: [] });
+    } else {
+      ytMsg(iframeRef.current, { event: "command", func: "unMute",    args: [] });
+      ytMsg(iframeRef.current, { event: "command", func: "setVolume", args: [100] });
     }
-  },[hasInteracted]); // eslint-disable-line
+  }, [muted]); // eslint-disable-line
+
+  // First real interaction — unmute if sound is on
+  useEffect(() => {
+    if (IS_ELECTRON || !hasInteracted || !loaded || !iframeRef.current || !active) return;
+    if (!muted) {
+      ytMsg(iframeRef.current, { event: "command", func: "unMute",    args: [] });
+      ytMsg(iframeRef.current, { event: "command", func: "setVolume", args: [100] });
+    }
+  }, [hasInteracted]); // eslint-disable-line
 
   useEffect(() => {
     if (IS_ELECTRON) return;
     const fn = (e) => {
       if (!e.data) return;
       try {
-        const d = typeof e.data==="string" ? JSON.parse(e.data) : e.data;
-        if (d?.event==="onStateChange"&&d?.info===1){ if(activeRef.current) setReady(true); }
-        if (d?.event==="onStateChange"&&d?.info===0){ if(activeRef.current&&!blockedRef.current){ blockedRef.current=true; onBlocked?.(); } }
-        if (d?.event==="onError"){ if(activeRef.current&&!blockedRef.current){ blockedRef.current=true; onBlocked?.(); } }
-        if (d?.event==="infoDelivery"){
-          if(d?.info?.playerState===1&&activeRef.current) setReady(true);
-          if(d?.info?.playerState===0&&activeRef.current&&!blockedRef.current){ blockedRef.current=true; onBlocked?.(); }
+        const d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (d?.event === "onStateChange") {
+          if (d.info === 1 && activeRef.current) setReady(true);
+          if (d.info === 0 && activeRef.current && !blockedRef.current) {
+            blockedRef.current = true; onBlocked?.();
+          }
+        }
+        if (d?.event === "onError" && activeRef.current && !blockedRef.current) {
+          blockedRef.current = true; onBlocked?.();
+        }
+        if (d?.event === "infoDelivery") {
+          if (d?.info?.playerState === 1 && activeRef.current) setReady(true);
+          if (d?.info?.playerState === 0 && activeRef.current && !blockedRef.current) {
+            blockedRef.current = true; onBlocked?.();
+          }
         }
       } catch {}
     };
-    window.addEventListener("message",fn);
-    return () => window.removeEventListener("message",fn);
-  },[onBlocked]);
+    window.addEventListener("message", fn);
+    return () => window.removeEventListener("message", fn);
+  }, [onBlocked]);
 
   useEffect(() => {
-    if (IS_ELECTRON) return;
-    if (!active||!loaded) return;
-    const t = setTimeout(() => { if(!readyRef.current) setReady(true); },7000);
+    if (IS_ELECTRON || !active || !loaded) return;
+    const t = setTimeout(() => { if (!readyRef.current) setReady(true); }, 7000);
     return () => clearTimeout(t);
-  },[active,loaded,videoId]);
+  }, [active, loaded, videoId]);
 
-  // Full-bleed: oversized to kill YT letterbox/controls on all screens
   const embedStyle = {
-    position:"absolute",
-    top:"-20%", left:"-10%",
-    width:"120%", height:"140%",
-    border:"none",
-    pointerEvents:"none",
-    display:"block",
+    position: "absolute",
+    top: "-20%", left: "-10%",
+    width: "120%", height: "140%",
+    border: "none",
+    pointerEvents: "none",
+    display: "block",
   };
 
   return (
-    <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}>
+    <div style={{ position: "absolute", inset: 0, background: "#000", overflow: "hidden" }}>
       {IS_ELECTRON ? (
         <webview
           ref={webviewRef}
@@ -327,11 +542,11 @@ function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
       ) : (
         <iframe
           ref={iframeRef}
-          src={buildYTSrc(videoId, true)}
+          src={buildYTSrc(videoId)}
           allow="autoplay; encrypted-media; picture-in-picture"
           allowFullScreen
           frameBorder="0"
-          title={videoId}
+          title="reel"
           onLoad={() => setLoaded(true)}
           style={embedStyle}
         />
@@ -339,29 +554,33 @@ function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
 
       {/* Cinematic vignette */}
       <div style={{
-        position:"absolute",inset:0,zIndex:6,pointerEvents:"none",
-        background:`
-          linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 22%),
-          linear-gradient(to top, rgba(0,0,0,0.98) 0%, rgba(0,0,0,0.7) 18%, rgba(0,0,0,0.2) 42%, transparent 62%)
+        position: "absolute", inset: 0, zIndex: 6, pointerEvents: "none",
+        background: `
+          linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 22%),
+          linear-gradient(to top,    rgba(0,0,0,1) 0%, rgba(0,0,0,0.75) 16%, rgba(0,0,0,0.12) 42%, transparent 62%)
         `,
-      }}/>
+      }} />
 
       {/* Loading overlay */}
       <div style={{
-        position:"absolute",inset:0,zIndex:25,
-        background:"#050505",
-        pointerEvents:"none",
+        position: "absolute", inset: 0, zIndex: 25,
+        background: "#06060a",
+        pointerEvents: "none",
         opacity: ready ? 0 : 1,
-        transition: ready ? "opacity 0.8s cubic-bezier(0.4,0,0.2,1)" : "none",
+        transition: ready ? "opacity 0.9s cubic-bezier(0.4,0,0.2,1)" : "none",
       }}>
         {!ready && (
-          <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16 }}>
-            <div style={{ position:"relative",width:48,height:48 }}>
-              <div style={{ position:"absolute",inset:0,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,0.05)" }}/>
-              <div style={{ position:"absolute",inset:0,borderRadius:"50%",border:"1.5px solid transparent",borderTopColor:"#00e5cc",animation:"rs 0.8s linear infinite" }}/>
-              <div style={{ position:"absolute",inset:6,borderRadius:"50%",border:"1px solid transparent",borderTopColor:"rgba(167,139,250,0.6)",animation:"rs 1.3s linear infinite reverse" }}/>
+          <div style={{
+            position: "absolute", inset: 0,
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", gap: 18,
+          }}>
+            <div style={{ position: "relative", width: 52, height: 52 }}>
+              <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.04)" }} />
+              <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1.5px solid transparent", borderTopColor: "#00e5cc", animation: "spin 0.8s linear infinite" }} />
+              <div style={{ position: "absolute", inset: 7, borderRadius: "50%", border: "1px solid transparent", borderTopColor: "rgba(167,139,250,0.55)", animation: "spin 1.4s linear infinite reverse" }} />
             </div>
-            <span style={{ fontFamily:"'DM Mono',monospace",fontSize:10,letterSpacing:3,color:"rgba(255,255,255,0.2)",textTransform:"uppercase" }}>
+            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: 3.5, color: "rgba(255,255,255,0.18)", textTransform: "uppercase" }}>
               Loading
             </span>
           </div>
@@ -371,57 +590,81 @@ function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
   );
 }
 
-// ─── ACTION BUTTON ───────────────────────────────────────────────────────────
-
+// ─── ACTION BUTTON ────────────────────────────────────────────────────────────
+/**
+ * Ghost style — ZERO background, ZERO border on the icon wrapper.
+ * ALL pointer and touch events are stopped here so nothing reaches
+ * the scroll container and accidentally triggers a reel skip.
+ */
 function ActionBtn({ children, label, active, count, onClick }) {
   const [pop, setPop] = useState(false);
+
+  const stopAll = (e) => {
+    e.stopPropagation();
+    e.nativeEvent?.stopImmediatePropagation?.();
+  };
+
+  const handleClick = (e) => {
+    stopAll(e);
+    setPop(true);
+    setTimeout(() => setPop(false), 150);
+    onClick();
+  };
+
   return (
     <button
-      onClick={(e)=>{ e.stopPropagation(); setPop(true); setTimeout(()=>setPop(false),160); onClick(); }}
+      onPointerDown={stopAll}
+      onPointerUp={stopAll}
+      onPointerMove={stopAll}
+      onPointerCancel={stopAll}
+      onTouchStart={stopAll}
+      onTouchEnd={stopAll}
+      onTouchMove={stopAll}
+      onTouchCancel={stopAll}
+      onClick={handleClick}
       style={{
-        all:"unset",
-        display:"flex",
-        flexDirection:"column",
-        alignItems:"center",
-        gap:6,
-        cursor:"pointer",
-        WebkitTapHighlightColor:"transparent",
+        all: "unset",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 5,
+        cursor: "pointer",
+        WebkitTapHighlightColor: "transparent",
+        userSelect: "none",
+        touchAction: "none",
       }}
     >
+      {/* Ghost icon — no background, no fill, no border */}
       <div style={{
-        width:50,
-        height:50,
-        borderRadius:"50%",
-        display:"flex",
-        alignItems:"center",
-        justifyContent:"center",
-        background: active
-          ? "rgba(0,229,204,0.18)"
-          : "rgba(10,10,10,0.65)",
-        backdropFilter:"blur(24px)",
-        WebkitBackdropFilter:"blur(24px)",
-        border: active
-          ? "1.5px solid rgba(0,229,204,0.6)"
-          : "1px solid rgba(255,255,255,0.12)",
-        color: active ? "#00e5cc" : "rgba(255,255,255,0.88)",
-        transform: pop ? "scale(0.72)" : "scale(1)",
-        transition:"transform 0.16s cubic-bezier(0.34,1.56,0.64,1), background 0.2s, border-color 0.2s, box-shadow 0.2s",
-        boxShadow: active
-          ? "0 0 20px rgba(0,229,204,0.28), 0 2px 8px rgba(0,0,0,0.5)"
-          : "0 4px 16px rgba(0,0,0,0.5)",
+        width: 44,
+        height: 44,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: active ? "#00e5cc" : "rgba(255,255,255,0.92)",
+        transform: pop ? "scale(0.68)" : "scale(1)",
+        transition: "transform 0.15s cubic-bezier(0.34,1.56,0.64,1), color 0.18s",
+        filter: active
+          ? "drop-shadow(0 0 6px rgba(0,229,204,0.7))"
+          : "drop-shadow(0 2px 4px rgba(0,0,0,0.8))",
+        // CRITICAL: no background, no border, no box-shadow
+        background: "none",
+        border: "none",
+        boxShadow: "none",
       }}>
         {children}
       </div>
       {(label || count !== undefined) && (
         <span style={{
-          fontSize:9,
-          fontWeight:700,
-          letterSpacing:1.2,
-          textTransform:"uppercase",
-          color: active ? "#00e5cc" : "rgba(255,255,255,0.4)",
-          fontFamily:"'DM Mono',monospace",
-          lineHeight:1,
-          transition:"color 0.2s",
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: 1.2,
+          textTransform: "uppercase",
+          color: active ? "#00e5cc" : "rgba(255,255,255,0.45)",
+          fontFamily: "'DM Mono', monospace",
+          lineHeight: 1,
+          transition: "color 0.18s",
+          textShadow: "0 1px 4px rgba(0,0,0,0.9)",
         }}>
           {count !== undefined ? count : label}
         </span>
@@ -430,33 +673,50 @@ function ActionBtn({ children, label, active, count, onClick }) {
   );
 }
 
-// ─── REEL CARD ───────────────────────────────────────────────────────────────
+// ─── REEL CARD ────────────────────────────────────────────────────────────────
 
 function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, onBlocked, hasInteracted }) {
-  const [liked,     setLiked]    = useState(false);
-  const [likeCount, setLikeCount]= useState(()=>Math.floor(Math.random()*12000)+400);
-  const [heart,     setHeart]    = useState(false);
-  const [ripple,    setRipple]   = useState(null);
+  const [liked,      setLiked]      = useState(false);
+  const [likeCount,  setLikeCount]  = useState(() => Math.floor(Math.random() * 18000) + 800);
+  const [heart,      setHeart]      = useState(false);
+  const [ripple,     setRipple]     = useState(null);
+  const [shareState, setShareState] = useState(null);
   const lastTap = useRef(0);
 
   const handleTap = (e) => {
     const now = Date.now();
-    if (now - lastTap.current < 280){
+    if (now - lastTap.current < 300) {
       const rect = e.currentTarget.getBoundingClientRect();
       setRipple({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: now });
-      setTimeout(()=>setRipple(null),600);
-      if (!liked) setLikeCount((c)=>c+1);
-      setLiked(true); setHeart(true);
-      setTimeout(()=>setHeart(false),800);
+      setTimeout(() => setRipple(null), 600);
+      if (!liked) setLikeCount(c => c + 1);
+      setLiked(true);
+      setHeart(true);
+      setTimeout(() => setHeart(false), 900);
     }
     lastTap.current = now;
   };
 
-  const fmt = (n) => n>=1000 ? `${(n/1000).toFixed(1)}k` : String(n);
+  const handleShare = async () => {
+    const result = await shareReel(reel);
+    if (result === "copied") {
+      setShareState("copied");
+      setTimeout(() => setShareState(null), 2200);
+    } else if (result === "shared") {
+      setShareState("shared");
+      setTimeout(() => setShareState(null), 1500);
+    }
+  };
+
+  const handleSaveClick = () => {
+    onSave(reel);
+  };
+
+  const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   return (
     <div
-      style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}
+      style={{ position: "absolute", inset: 0, background: "#000", overflow: "hidden" }}
       onClick={handleTap}
     >
       <YTPlayer
@@ -466,83 +726,139 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
         onBlocked={onBlocked}
         hasInteracted={hasInteracted}
       />
-      <ProgressBar active={active} duration={reel.duration}/>
+      <ProgressBar active={active} duration={reel.duration} />
 
       {/* Double-tap ripple */}
       {ripple && (
         <div style={{
-          position:"absolute",
-          left:ripple.x - 60, top:ripple.y - 60,
-          width:120, height:120,
-          borderRadius:"50%",
-          background:"rgba(255,255,255,0.1)",
-          zIndex:45,pointerEvents:"none",
-          animation:"ripple-burst 0.5s ease-out forwards",
-        }}/>
+          position: "absolute",
+          left: ripple.x - 60, top: ripple.y - 60,
+          width: 120, height: 120,
+          borderRadius: "50%",
+          background: "rgba(255,255,255,0.08)",
+          zIndex: 45, pointerEvents: "none",
+          animation: "ripple-burst 0.55s ease-out forwards",
+        }} />
       )}
 
       {/* Double-tap heart */}
       {heart && (
         <div style={{
-          position:"absolute",top:"42%",left:"50%",
-          transform:"translate(-50%,-50%)",
-          zIndex:46,pointerEvents:"none",
-          fontSize:72,lineHeight:1,
-          filter:"drop-shadow(0 0 20px rgba(255,64,96,0.8))",
-          animation:"heart-pop 0.75s cubic-bezier(0.34,1.56,0.64,1) forwards",
-        }}>❤️</div>
+          position: "absolute", top: "42%", left: "50%",
+          transform: "translate(-50%,-50%)",
+          zIndex: 46, pointerEvents: "none",
+          animation: "heart-pop 0.8s cubic-bezier(0.34,1.56,0.64,1) forwards",
+        }}>
+          <svg width="76" height="76" viewBox="0 0 24 24" fill="#ff4060">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+        </div>
       )}
 
-      {/*
-        ══════════════════════════════════════════════════════
-        LAYOUT: TikTok-style
-        - ACTION RAIL: always vertical, always right side
-        - BOTTOM INFO: left side, padding clears the rail
-        ══════════════════════════════════════════════════════
-      */}
+      {/* Share feedback toast */}
+      {shareState && (
+        <div style={{
+          position: "absolute", top: "50%", left: "50%",
+          transform: "translate(-50%,-50%)",
+          zIndex: 60, pointerEvents: "none",
+          background: "rgba(0,0,0,0.72)",
+          backdropFilter: "blur(16px)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: 12,
+          padding: "10px 20px",
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 11,
+          letterSpacing: 1.5,
+          color: "#00e5cc",
+          textTransform: "uppercase",
+          animation: "fade-in 0.25s ease both",
+          whiteSpace: "nowrap",
+        }}>
+          {shareState === "copied" ? "Link Copied" : "Shared"}
+        </div>
+      )}
 
-      {/* ACTION RAIL — vertical, right side, ALL screen sizes */}
-      <div className="rc-rail">
-        <ActionBtn count={fmt(likeCount)} active={liked}
-          onClick={()=>setLiked((v)=>{ if(!v) setLikeCount((c)=>c+1); return !v; })}>
-          <svg width="22" height="22" viewBox="0 0 24 24"
-            fill={liked?"#ff4060":"none"} stroke={liked?"#ff4060":"currentColor"}
-            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+      {/* ACTION RAIL — right side, ghost icons, ALL events stopped */}
+      <div
+        className="rc-rail"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e)   => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onTouchStart={(e)  => e.stopPropagation()}
+        onTouchEnd={(e)    => e.stopPropagation()}
+        onTouchMove={(e)   => e.stopPropagation()}
+        onTouchCancel={(e) => e.stopPropagation()}
+        onClick={(e)       => e.stopPropagation()}
+      >
+        {/* Like */}
+        <ActionBtn
+          count={fmt(likeCount)}
+          active={liked}
+          onClick={() => setLiked(v => { if (!v) setLikeCount(c => c + 1); return !v; })}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24"
+            fill={liked ? "#ff4060" : "none"}
+            stroke={liked ? "#ff4060" : "rgba(255,255,255,0.92)"}
+            strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
         </ActionBtn>
 
-        <ActionBtn label="Save" active={saved} onClick={()=>onSave(reel)}>
+        {/* Save / Watchlist — wired to onSave prop */}
+        <ActionBtn label={saved ? "Saved" : "Save"} active={saved} onClick={handleSaveClick}>
           {saved
-            ? <svg width="21" height="21" viewBox="0 0 24 24" fill="#00e5cc"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
-            : <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            ? (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="#00e5cc">
+                <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z" />
+              </svg>
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+            )
           }
         </ActionBtn>
 
-        <ActionBtn label="Share" active={false}
-          onClick={()=>navigator.share?.({title:reel.title,url:`https://www.youtube.com/watch?v=${reel.youtubeId}`}).catch(()=>{})}>
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        {/* Share — app URL only */}
+        <ActionBtn label={shareState === "copied" ? "Copied" : "Share"} active={shareState !== null} onClick={handleShare}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
           </svg>
         </ActionBtn>
 
-        <ActionBtn label={muted?"Unmute":"Sound"} active={!muted} onClick={onToggleMute}>
+        {/* Sound */}
+        <ActionBtn label={muted ? "Unmute" : "Sound"} active={!muted} onClick={onToggleMute}>
           {muted
-            ? <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
-            : <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            ? (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)">
+                <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+              </svg>
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+              </svg>
+            )
           }
         </ActionBtn>
       </div>
 
-      {/* BOTTOM INFO — left side, clears rail */}
+      {/* BOTTOM INFO */}
       <div className="rc-bottom">
         <div className="rc-meta">
-          {reel.genres.map((g)=>(
+          {reel.genres.map(g => (
             <span key={g} className="rc-tag">{g}</span>
           ))}
           {reel.rating && (
-            <span className="rc-rating">★ {reel.rating}</span>
+            <span className="rc-rating">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="#f1c40f" style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }}>
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              {reel.rating}
+            </span>
           )}
         </div>
 
@@ -550,14 +866,26 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
           {reel.title}
         </h2>
 
+        {reel.overview && (
+          <p className="rc-overview" style={{ animation: active ? "slide-up 0.55s cubic-bezier(0.22,1,0.36,1) 0.06s both" : "none" }}>
+            {reel.overview.length > 120 ? reel.overview.slice(0, 120).trim() + "..." : reel.overview}
+          </p>
+        )}
+
         <button
           className="rc-watch"
-          onClick={(e)=>{ e.stopPropagation(); onWatch(reel); }}
-          onPointerDown={(e)=>e.currentTarget.style.transform="scale(0.94)"}
-          onPointerUp={(e)=>e.currentTarget.style.transform="scale(1)"}
-          onPointerLeave={(e)=>e.currentTarget.style.transform="scale(1)"}
+          onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.style.transform = "scale(0.94)"; }}
+          onPointerUp={(e)   => { e.currentTarget.style.transform = "scale(1)"; }}
+          onPointerLeave={(e)=> { e.currentTarget.style.transform = "scale(1)"; }}
+          onTouchStart={(e)  => e.stopPropagation()}
+          onTouchEnd={(e)    => e.stopPropagation()}
+          onTouchMove={(e)   => e.stopPropagation()}
+          onTouchCancel={(e) => e.stopPropagation()}
+          onClick={(e)       => { e.stopPropagation(); onWatch(reel); }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
           Watch Now
         </button>
       </div>
@@ -566,159 +894,227 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
 }
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+/**
+ * Props:
+ *   apiKey       {string}   — TMDB API key
+ *   onSelect     {function} — called with TMDB movie object when user taps Watch Now
+ *   onSave       {function} — called with TMDB movie object to add/remove from watchlist
+ *   savedItems   {array}    — array of saved TMDB items (must have .id === tmdb_id)
+ *   onNavigate   {function} — called with nav id string ("home" | "history" | etc.)
+ *   onSearch     {function} — called when Search nav is tapped
+ */
+export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], onNavigate, onSearch }) {
+  const [reels,         setReels]         = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [moreLoad,      setMoreLoad]      = useState(false);
+  const [idx,           setIdx]           = useState(0);
+  const [muted,         setMuted]         = useState(true);
+  const [hasInteracted, setHasInteracted] = useState(false);
 
-export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNavigate, onSearch }) {
-  const [reels,        setReels]       = useState([]);
-  const [loading,      setLoading]     = useState(true);
-  const [moreLoad,     setMoreLoad]    = useState(false);
-  const [page,         setPage]        = useState(1);
-  const [hasMore,      setHasMore]     = useState(true);
-  const [idx,          setIdx]         = useState(0);
-  // Start MUTED — browser autoplay requires muted. User unmutes on first tap.
-  const [muted,        setMuted]       = useState(true);
-  // Track first interaction so we can unmute after autoplay starts
-  const [hasInteracted,setHasInteracted] = useState(false);
+  const wrapRef    = useRef(null);
+  const snapping   = useRef(false);
+  const touchY0    = useRef(0);
+  const touchY1    = useRef(0);
+  const touchMoved = useRef(false);
 
-  const wrapRef  = useRef(null);
-  const snapping = useRef(false);
-  const ty0 = useRef(0), ty1 = useRef(0);
-
-  // Unlock sound on first user interaction
   const handleFirstInteraction = useCallback(() => {
     if (!hasInteracted) {
       setHasInteracted(true);
-      setMuted(false); // unmute on first touch/click
+      setMuted(false);
     }
   }, [hasInteracted]);
 
-  // Initial load
   useEffect(() => {
     if (!apiKey) return;
     let dead = false;
     setLoading(true);
-    fetchReels(apiKey,1)
-      .then((d)=>{ if(!dead){ setReels(d); setHasMore(d.length>=10); setLoading(false); } })
-      .catch(()=>{ if(!dead) setLoading(false); });
-    return ()=>{ dead=true; };
-  },[apiKey]);
+    fetchReels(apiKey, 12)
+      .then(d => { if (!dead) { setReels(d); setLoading(false); } })
+      .catch(() => { if (!dead) setLoading(false); });
+    return () => { dead = true; };
+  }, [apiKey]);
 
-  // Infinite load
+  // Infinite scroll — load more when 4 from end
   useEffect(() => {
-    if (!hasMore||moreLoad||reels.length===0||idx<reels.length-4) return;
+    if (moreLoad || reels.length === 0 || idx < reels.length - 4) return;
     setMoreLoad(true);
-    fetchReels(apiKey,page+1)
-      .then((d)=>{
-        const fresh = d.filter((r)=>!reels.some((x)=>x.id===r.id));
-        setReels((p)=>[...p,...fresh]);
-        setPage((p)=>p+1);
-        setHasMore(fresh.length>=8);
-        setMoreLoad(false);
-      })
-      .catch(()=>setMoreLoad(false));
-  },[idx,reels.length,hasMore,moreLoad]); // eslint-disable-line
+    fetchReels(apiKey, 10)
+      .then(d => { setReels(p => [...p, ...d]); setMoreLoad(false); })
+      .catch(() => setMoreLoad(false));
+  }, [idx, reels.length, moreLoad]); // eslint-disable-line
 
-  const goTo = useCallback((n)=>{
+  const goTo = useCallback((n) => {
     if (snapping.current) return;
-    const c = Math.max(0,Math.min(n,reels.length-1));
-    if (c===idx) return;
+    const c = Math.max(0, Math.min(n, reels.length - 1));
+    if (c === idx) return;
     snapping.current = true;
     setIdx(c);
-    wrapRef.current?.scrollTo({ top:c*wrapRef.current.clientHeight, behavior:"smooth" });
-    setTimeout(()=>{ snapping.current=false; },420);
-  },[idx,reels.length]);
+    wrapRef.current?.scrollTo({ top: c * wrapRef.current.clientHeight, behavior: "smooth" });
+    setTimeout(() => { snapping.current = false; }, 450);
+  }, [idx, reels.length]);
 
-  const handleBlocked = useCallback(()=>goTo(idx+1),[goTo,idx]);
+  const handleBlocked = useCallback(() => goTo(idx + 1), [goTo, idx]);
 
-  // Keyboard nav
+  // Keyboard navigation
   useEffect(() => {
-    const h = (e)=>{
-      if(e.key==="ArrowDown"||e.key==="j") goTo(idx+1);
-      if(e.key==="ArrowUp"||e.key==="k")   goTo(idx-1);
-      if(e.key==="m") setMuted((v)=>!v);
+    const h = (e) => {
+      if (e.key === "ArrowDown" || e.key === "j") goTo(idx + 1);
+      if (e.key === "ArrowUp"   || e.key === "k") goTo(idx - 1);
+      if (e.key === "m") setMuted(v => !v);
     };
-    window.addEventListener("keydown",h);
-    return ()=>window.removeEventListener("keydown",h);
-  },[idx,goTo]);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [idx, goTo]);
 
   // Mouse wheel
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    let acc=0, t=null;
-    const h=(e)=>{
+    let acc = 0, t = null;
+    const h = (e) => {
       e.preventDefault();
-      acc+=e.deltaY;
+      acc += e.deltaY;
       clearTimeout(t);
-      t=setTimeout(()=>{ if(Math.abs(acc)>30) goTo(idx+(acc>0?1:-1)); acc=0; },50);
+      t = setTimeout(() => {
+        if (Math.abs(acc) > 30) goTo(idx + (acc > 0 ? 1 : -1));
+        acc = 0;
+      }, 50);
     };
-    el.addEventListener("wheel",h,{passive:false});
-    return ()=>{ el.removeEventListener("wheel",h); clearTimeout(t); };
-  },[idx,goTo]);
+    el.addEventListener("wheel", h, { passive: false });
+    return () => { el.removeEventListener("wheel", h); clearTimeout(t); };
+  }, [idx, goTo]);
 
-  // Touch swipe
-  const onTouchStart = (e)=>{ ty0.current=e.touches[0].clientY; };
-  const onTouchMove  = (e)=>{ ty1.current=e.touches[0].clientY; };
-  const onTouchEnd   = ()=>{ const d=ty0.current-ty1.current; if(Math.abs(d)>38) goTo(idx+(d>0?1:-1)); };
+  /**
+   * Touch handlers — ONLY on the scroll container.
+   * Rail/button events are fully stopped before reaching here.
+   * Threshold: 60px — prevents accidental skips on short taps.
+   */
+  const onTouchStart = (e) => {
+    touchY0.current    = e.touches[0].clientY;
+    touchY1.current    = e.touches[0].clientY;
+    touchMoved.current = false;
+  };
+  const onTouchMove = (e) => {
+    touchY1.current = e.touches[0].clientY;
+    if (Math.abs(touchY1.current - touchY0.current) > 10) touchMoved.current = true;
+  };
+  const onTouchEnd = () => {
+    const delta = touchY0.current - touchY1.current;
+    if (touchMoved.current && Math.abs(delta) > 60) {
+      goTo(idx + (delta > 0 ? 1 : -1));
+    }
+  };
 
-  const handleWatch = (reel)=>{
-    const item = reel.tmdbObj ? {...reel.tmdbObj,media_type:"movie"} : {id:reel.tmdb_id,title:reel.title,media_type:"movie"};
+  /**
+   * handleWatch — builds a TMDB-compatible item and calls onSelect.
+   * This allows the parent (App.jsx / MoviePage) to open the detail view.
+   */
+  const handleWatch = (reel) => {
+    const item = reel.tmdbObj
+      ? { ...reel.tmdbObj, media_type: "movie" }
+      : { id: reel.tmdb_id, title: reel.title, media_type: "movie" };
     onSelect?.(item);
   };
-  const handleSave = (reel)=>{
-    const item = reel.tmdbObj ? {...reel.tmdbObj,media_type:"movie"} : {id:reel.tmdb_id,title:reel.title,media_type:"movie"};
+
+  /**
+   * handleSave — builds a TMDB-compatible item and calls onSave.
+   * Parent manages the savedItems array (add/remove toggle).
+   * The `saved` prop passed to ReelCard is computed from savedItems.
+   */
+  const handleSave = (reel) => {
+    const item = reel.tmdbObj
+      ? { ...reel.tmdbObj, media_type: "movie" }
+      : { id: reel.tmdb_id, title: reel.title, media_type: "movie" };
     onSave?.(item);
   };
-  const handleNav = (id)=>{ if(id==="search") onSearch?.(); else onNavigate?.(id); };
-  const shouldRender = (i)=> i>=idx-1 && i<=idx+1;
+
+  const handleNav  = (id) => { if (id === "search") onSearch?.(); else onNavigate?.(id); };
+  const shouldRender = (i) => i >= idx - 1 && i <= idx + 1;
+
+  // Watchlist lookup — compares by tmdb_id (reel) vs id (savedItems from TMDB)
+  const isSaved = (reel) => {
+    const tid = reel.tmdb_id || reel.tmdbObj?.id;
+    return (savedItems || []).some(s => String(s.id) === String(tid));
+  };
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;700&family=DM+Mono:wght@500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;600;700&family=DM+Mono:wght@400;500&display=swap');
 
-        @keyframes rs           { to { transform:rotate(360deg); } }
-        @keyframes slide-up     { from{transform:translateY(18px);opacity:0} to{transform:translateY(0);opacity:1} }
-        @keyframes heart-pop    { 0%{transform:translate(-50%,-50%) scale(0);opacity:1} 55%{transform:translate(-50%,-50%) scale(1.4);opacity:1} 100%{transform:translate(-50%,-50%) scale(1);opacity:0} }
-        @keyframes ripple-burst { 0%{transform:scale(0);opacity:0.5} 100%{transform:scale(3);opacity:0} }
-        @keyframes shimmer      { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        @keyframes fade-in      { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin         { to { transform: rotate(360deg); } }
+        @keyframes slide-up     { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes heart-pop    {
+          0%   { transform: translate(-50%,-50%) scale(0);    opacity: 1; }
+          55%  { transform: translate(-50%,-50%) scale(1.35); opacity: 1; }
+          100% { transform: translate(-50%,-50%) scale(1);    opacity: 0; }
+        }
+        @keyframes ripple-burst {
+          0%   { transform: scale(0);   opacity: 0.45; }
+          100% { transform: scale(3.5); opacity: 0; }
+        }
+        @keyframes shimmer {
+          0%   { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes hint-fade {
+          0%   { opacity: 0; }
+          15%  { opacity: 1; }
+          75%  { opacity: 1; }
+          100% { opacity: 0; }
+        }
 
-        .rp-scroll { -ms-overflow-style:none; scrollbar-width:none; }
-        .rp-scroll::-webkit-scrollbar { display:none; }
+        .rp-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        .rp-scroll::-webkit-scrollbar { display: none; }
 
         .rp-nav-btn {
-          all:unset; display:flex; align-items:center; gap:6px; cursor:pointer;
-          padding:5px 12px; border-radius:8px; font-size:11.5px; font-weight:500;
-          font-family:'DM Sans',sans-serif; letter-spacing:0.3px;
-          color:rgba(255,255,255,0.45); transition:color 0.15s,background 0.15s;
-          white-space:nowrap; -webkit-tap-highlight-color:transparent;
+          all: unset;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          padding: 5px 14px;
+          border-radius: 8px;
+          font-size: 11.5px;
+          font-weight: 600;
+          font-family: 'DM Sans', sans-serif;
+          letter-spacing: 0.3px;
+          color: rgba(255,255,255,0.4);
+          transition: color 0.15s, background 0.15s;
+          white-space: nowrap;
+          -webkit-tap-highlight-color: transparent;
         }
-        .rp-nav-btn:hover  { color:#fff; background:rgba(255,255,255,0.08); }
-        .rp-nav-btn:active { transform:scale(0.92); }
+        .rp-nav-btn:hover  { color: #fff; background: rgba(255,255,255,0.07); }
+        .rp-nav-btn:active { transform: scale(0.91); }
 
-        /* ══════════════════════════════════════════
-           ACTION RAIL — ALWAYS vertical, right side
-           No media query override. TikTok-style.
-           ══════════════════════════════════════════ */
+        /*
+          ACTION RAIL — always vertical, right side.
+          All touch/pointer events stopped at rail level (backup to button-level stop).
+          Ghost icons: no background, no border, no box on the wrapper.
+        */
         .rc-rail {
           position: absolute;
           right: 14px;
-          bottom: 100px;
+          bottom: 110px;
           z-index: 30;
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 20px;
+          gap: 22px;
+          touch-action: none;
         }
 
-        /* BOTTOM INFO */
         .rc-bottom {
           position: absolute;
           bottom: 0;
           left: 0;
-          right: 80px;
+          right: 78px;
           z-index: 30;
-          padding: 0 16px 80px 20px;
+          padding: 0 16px 88px 20px;
           pointer-events: none;
           box-sizing: border-box;
         }
@@ -732,48 +1128,64 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
         }
 
         .rc-tag {
-          background: rgba(255,255,255,0.08);
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.07);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          border: 1px solid rgba(255,255,255,0.09);
           border-radius: 30px;
           padding: 3px 11px;
-          font-size: 10px;
+          font-size: 9.5px;
           font-weight: 700;
-          color: rgba(255,255,255,0.8);
-          letter-spacing: 0.8px;
-          font-family: 'DM Mono',monospace;
+          color: rgba(255,255,255,0.75);
+          letter-spacing: 1px;
+          font-family: 'DM Mono', monospace;
           text-transform: uppercase;
         }
 
         .rc-rating {
-          background: rgba(241,196,15,0.08);
-          border: 1px solid rgba(241,196,15,0.25);
+          background: rgba(241,196,15,0.07);
+          border: 1px solid rgba(241,196,15,0.22);
           border-radius: 30px;
           padding: 3px 10px;
-          font-size: 10px;
+          font-size: 9.5px;
           font-weight: 700;
           color: #f1c40f;
-          font-family: 'DM Mono',monospace;
+          font-family: 'DM Mono', monospace;
+          display: inline-flex;
+          align-items: center;
         }
 
         .rc-title {
-          margin: 0 0 14px 0;
+          margin: 0 0 10px 0;
           font-family: 'Bebas Neue', sans-serif;
-          font-size: clamp(26px, 6vw, 52px);
+          font-size: clamp(28px, 7vw, 54px);
           font-weight: 400;
           letter-spacing: 1.5px;
-          line-height: 0.95;
+          line-height: 0.96;
           color: #fff;
-          text-shadow: 0 2px 24px rgba(0,0,0,0.9), 0 0 1px rgba(0,0,0,0.9);
+          text-shadow: 0 2px 28px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.9);
           word-break: break-word;
+        }
+
+        .rc-overview {
+          margin: 0 0 14px 0;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 12px;
+          font-weight: 400;
+          line-height: 1.6;
+          color: rgba(255,255,255,0.5);
+          text-shadow: 0 1px 8px rgba(0,0,0,0.95);
+          letter-spacing: 0.1px;
+          pointer-events: none;
+          max-width: 320px;
         }
 
         .rc-watch {
           pointer-events: auto;
           display: inline-flex;
           align-items: center;
-          gap: 9px;
-          background: linear-gradient(135deg, #00e5cc 0%, #00b4ff 60%, #a78bfa 100%);
+          gap: 8px;
+          background: linear-gradient(135deg, #00e5cc 0%, #00b4ff 55%, #a78bfa 100%);
           border: none;
           border-radius: 10px;
           color: #000;
@@ -782,78 +1194,80 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
           font-family: 'DM Sans', sans-serif;
           padding: 11px 24px;
           cursor: pointer;
-          letter-spacing: 0.8px;
+          letter-spacing: 0.9px;
           text-transform: uppercase;
           -webkit-tap-highlight-color: transparent;
-          transition: transform 0.12s, box-shadow 0.2s;
-          box-shadow: 0 4px 20px rgba(0,229,204,0.3), 0 2px 8px rgba(0,0,0,0.4);
+          transition: box-shadow 0.2s, transform 0.1s;
+          box-shadow: 0 4px 22px rgba(0,229,204,0.28), 0 2px 8px rgba(0,0,0,0.45);
           white-space: nowrap;
+          touch-action: manipulation;
         }
         .rc-watch:hover {
-          box-shadow: 0 6px 28px rgba(0,229,204,0.5), 0 2px 8px rgba(0,0,0,0.4);
+          box-shadow: 0 6px 30px rgba(0,229,204,0.48), 0 2px 8px rgba(0,0,0,0.45);
         }
 
-        /* Responsive tweaks — rail stays vertical always */
         @media (max-width: 520px) {
-          .rc-rail   { right: 10px; bottom: 140px; gap: 16px; }
-          .rc-bottom { padding-bottom: 80px; padding-left: 14px; right: 72px; }
-          .rc-title  { font-size: clamp(22px, 7vw, 32px); margin-bottom: 10px; }
+          .rc-rail   { right: 10px; bottom: 130px; gap: 18px; }
+          .rc-bottom { padding-bottom: 88px; padding-left: 14px; right: 70px; }
+          .rc-title  { font-size: clamp(24px, 8vw, 34px); }
           .rc-watch  { font-size: 11px; padding: 10px 18px; }
+          .rc-overview { font-size: 11.5px; }
         }
 
         @media (min-width: 1280px) {
-          .rc-rail   { right: 28px; bottom: 120px; gap: 24px; }
-          .rc-bottom { padding-left: 36px; padding-bottom: 50px; right: 100px; }
-          .rc-title  { margin-bottom: 20px; }
-          .rc-watch  { font-size: 14px; padding: 13px 30px; }
+          .rc-rail   { right: 28px; bottom: 130px; gap: 26px; }
+          .rc-bottom { padding-left: 40px; padding-bottom: 60px; right: 110px; }
+          .rc-watch  { font-size: 13px; padding: 13px 30px; }
         }
 
         @media (min-width: 1800px) {
-          .rc-rail   { right: 40px; }
-          .rc-bottom { padding-left: 52px; }
+          .rc-rail   { right: 44px; }
+          .rc-bottom { padding-left: 56px; }
         }
       `}</style>
 
       <div
         style={{
-          position:"fixed", top:0, bottom:0,
-          left:"var(--sidebar,0px)", right:0,
-          background:"#000", overflow:"hidden",
-          fontFamily:"'DM Sans','Helvetica Neue',sans-serif",
-          zIndex:10,
+          position: "fixed", top: 0, bottom: 0,
+          left: "var(--sidebar,0px)", right: 0,
+          background: "#000", overflow: "hidden",
+          fontFamily: "'DM Sans','Helvetica Neue',sans-serif",
+          zIndex: 10,
         }}
         onClick={handleFirstInteraction}
         onTouchStart={handleFirstInteraction}
       >
-        {/* SCROLL STACK */}
+        {/* SCROLL CONTAINER */}
         <div
           ref={wrapRef}
           className="rp-scroll"
-          onTouchStart={(e)=>{ onTouchStart(e); }}
+          onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
           style={{
-            width:"100%", height:"100%",
-            overflowY:"scroll",
-            scrollSnapType:"y mandatory",
-            WebkitOverflowScrolling:"touch",
+            width: "100%",
+            height: "100%",
+            overflowY: "scroll",
+            scrollSnapType: "y mandatory",
+            WebkitOverflowScrolling: "touch",
           }}
         >
-          {/* SKELETON */}
-          {loading && [0,1].map((i)=>(
+          {/* SKELETON LOADERS */}
+          {loading && [0, 1].map(i => (
             <div key={i} style={{
-              width:"100%",height:"100%",flexShrink:0,scrollSnapAlign:"start",
-              background:"linear-gradient(120deg,#0a0a0a 25%,#141414 50%,#0a0a0a 75%)",
-              backgroundSize:"400% 400%",animation:"shimmer 1.6s ease infinite",
-              display:"flex",alignItems:"center",justifyContent:"center",
+              width: "100%", height: "100dvh", flexShrink: 0, scrollSnapAlign: "start",
+              background: "linear-gradient(120deg, #090909 25%, #131313 50%, #090909 75%)",
+              backgroundSize: "400% 400%",
+              animation: "shimmer 1.8s ease infinite",
+              display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              {i===0 && (
-                <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:14 }}>
-                  <div style={{ position:"relative",width:44,height:44 }}>
-                    <div style={{ position:"absolute",inset:0,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,0.04)" }}/>
-                    <div style={{ position:"absolute",inset:0,borderRadius:"50%",border:"1.5px solid transparent",borderTopColor:"#00e5cc",animation:"rs 0.8s linear infinite" }}/>
+              {i === 0 && (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+                  <div style={{ position: "relative", width: 46, height: 46 }}>
+                    <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.04)" }} />
+                    <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1.5px solid transparent", borderTopColor: "#00e5cc", animation: "spin 0.8s linear infinite" }} />
                   </div>
-                  <span style={{ fontSize:10,letterSpacing:3,color:"rgba(255,255,255,0.18)",textTransform:"uppercase",fontFamily:"'DM Mono',monospace" }}>
+                  <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, letterSpacing: 3.5, color: "rgba(255,255,255,0.16)", textTransform: "uppercase" }}>
                     Curating Reels
                   </span>
                 </div>
@@ -862,19 +1276,26 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
           ))}
 
           {/* REEL CARDS */}
-          {!loading && reels.map((reel,i)=>(
+          {!loading && reels.map((reel, i) => (
             <div key={`${reel.id}-${i}`} style={{
-              width:"100%", height:"100%",
-              flexShrink:0, scrollSnapAlign:"start",
-              position:"relative", overflow:"hidden", background:"#000",
+              width: "100%",
+              height: "100dvh",
+              flexShrink: 0,
+              scrollSnapAlign: "start",
+              position: "relative",
+              overflow: "hidden",
+              background: "#000",
             }}>
               {shouldRender(i) && (
                 <ReelCard
-                  reel={reel} active={i===idx} muted={muted}
-                  onToggleMute={()=>{ setHasInteracted(true); setMuted((m)=>!m); }}
-                  onWatch={handleWatch} onSave={handleSave}
-                  saved={(savedItems||[]).some((s)=>s.id===reel.tmdb_id)}
-                  onBlocked={i===idx ? handleBlocked : undefined}
+                  reel={reel}
+                  active={i === idx}
+                  muted={muted}
+                  onToggleMute={() => { setHasInteracted(true); setMuted(m => !m); }}
+                  onWatch={handleWatch}
+                  onSave={handleSave}
+                  saved={isSaved(reel)}
+                  onBlocked={i === idx ? handleBlocked : undefined}
                   hasInteracted={hasInteracted}
                 />
               )}
@@ -882,18 +1303,21 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
           ))}
 
           {/* EMPTY STATE */}
-          {!loading && reels.length===0 && (
+          {!loading && reels.length === 0 && (
             <div style={{
-              width:"100%",height:"100%",flexShrink:0,scrollSnapAlign:"start",
-              background:"#050505",display:"flex",flexDirection:"column",
-              alignItems:"center",justifyContent:"center",gap:16,
-              animation:"fade-in 0.5s ease both",
+              width: "100%", height: "100dvh", flexShrink: 0, scrollSnapAlign: "start",
+              background: "#06060a",
+              display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 14,
+              animation: "fade-in 0.5s ease both",
             }}>
-              <div style={{ fontSize:40 }}>📡</div>
-              <div style={{ fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:2,color:"rgba(255,255,255,0.2)" }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.2">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 2.5, color: "rgba(255,255,255,0.18)" }}>
                 No Reels Found
               </div>
-              <div style={{ fontSize:13,color:"rgba(255,255,255,0.22)",textAlign:"center",maxWidth:220,lineHeight:1.7,fontFamily:"'DM Sans',sans-serif" }}>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center", maxWidth: 200, lineHeight: 1.75, fontFamily: "'DM Sans',sans-serif" }}>
                 Check your connection and try again.
               </div>
             </div>
@@ -901,65 +1325,68 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
 
           {/* LOAD MORE SPINNER */}
           {moreLoad && (
-            <div style={{ width:"100%",height:80,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#000" }}>
-              <div style={{ width:22,height:22,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,0.05)",borderTopColor:"#00e5cc",animation:"rs 0.8s linear infinite" }}/>
+            <div style={{ width: "100%", height: 80, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#000" }}>
+              <div style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.05)", borderTopColor: "#00e5cc", animation: "spin 0.8s linear infinite" }} />
             </div>
           )}
         </div>
 
         {/* TOP NAV */}
         <div style={{
-          position:"absolute",top:0,left:0,right:0,zIndex:50,
-          background:"linear-gradient(to bottom,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.3) 60%,transparent 100%)",
-          pointerEvents:"none",
+          position: "absolute", top: 0, left: 0, right: 0, zIndex: 50,
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.25) 60%, transparent 100%)",
+          pointerEvents: "none",
         }}>
           <div style={{
-            display:"flex",alignItems:"center",
-            padding:"14px 16px 22px",gap:2,
-            overflowX:"auto",scrollbarWidth:"none",
-            pointerEvents:"auto",
+            display: "flex", alignItems: "center",
+            padding: "14px 16px 24px", gap: 2,
+            overflowX: "auto", scrollbarWidth: "none",
+            pointerEvents: "auto",
           }}>
-            {NAV.map((n)=>(
-              <button key={n.id} className="rp-nav-btn" onClick={()=>handleNav(n.id)}>
+            {NAV.map(n => (
+              <button key={n.id} className="rp-nav-btn" onClick={() => handleNav(n.id)}>
                 {n.icon}{n.label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* MUTE HINT — shows briefly on first load */}
+        {/* SOUND HINT */}
         {!hasInteracted && !loading && reels.length > 0 && (
           <div style={{
-            position:"absolute", bottom:160, left:"50%",
-            transform:"translateX(-50%)",
-            zIndex:60, pointerEvents:"none",
-            display:"flex", alignItems:"center", gap:8,
-            background:"rgba(0,0,0,0.6)",
-            backdropFilter:"blur(12px)",
-            border:"1px solid rgba(255,255,255,0.1)",
-            borderRadius:24,
-            padding:"8px 16px",
-            animation:"fade-in 0.5s ease 1s both",
+            position: "absolute", bottom: 170, left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 60, pointerEvents: "none",
+            display: "flex", alignItems: "center", gap: 8,
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(14px)",
+            WebkitBackdropFilter: "blur(14px)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 24,
+            padding: "8px 18px",
+            animation: "hint-fade 3.5s ease 0.8s both",
           }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="rgba(255,255,255,0.6)">
-              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,0.55)">
+              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
             </svg>
-            <span style={{ fontSize:11, color:"rgba(255,255,255,0.6)", fontFamily:"'DM Sans',sans-serif", whiteSpace:"nowrap" }}>
+            <span style={{ fontSize: 10.5, color: "rgba(255,255,255,0.55)", fontFamily: "'DM Sans',sans-serif", whiteSpace: "nowrap", letterSpacing: 0.3 }}>
               Tap anywhere for sound
             </span>
           </div>
         )}
 
         {/* REEL COUNTER */}
-        {!loading && reels.length>0 && (
+        {!loading && reels.length > 0 && (
           <div style={{
-            position:"absolute",top:16,right:16,zIndex:51,
-            fontFamily:"'DM Mono',monospace",fontSize:10,letterSpacing:1.5,
-            color:"rgba(255,255,255,0.28)",textTransform:"uppercase",
-            pointerEvents:"none",
-            animation:"fade-in 0.4s ease both",
+            position: "absolute", top: 18, right: 18, zIndex: 51,
+            fontFamily: "'DM Mono', monospace",
+            fontSize: 9.5, letterSpacing: 1.8,
+            color: "rgba(255,255,255,0.25)",
+            textTransform: "uppercase",
+            pointerEvents: "none",
+            animation: "fade-in 0.4s ease both",
           }}>
-            {idx+1} / {reels.length}
+            {idx + 1} / {reels.length}
           </div>
         )}
       </div>
