@@ -253,8 +253,8 @@ export const PLAYER_SOURCES = [
     browserPriority: 99,   // sends redirect/ad payloads to Chrome user agents
     browserSafe: false,
     supportsProgress: true, progressViaFrames: true,
-    movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}?autoPlay=true`,
+    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
   {
     id: "vidsrc_fyi",
@@ -269,28 +269,28 @@ export const PLAYER_SOURCES = [
   },
 
   // ── TIER 2: Fast & reliable ───────────────────────────────────────────────
-  {
-    id: "embedsu",
-    label: "Server 4",
-    tag: null, note: null,
-    tier: 2, moviePriority: 4, tvPriority: 4,
-    browserPriority: 99,   // embed.su DNS unreliable — removed from Chrome priority
-    browserSafe: true,
-    supportsProgress: true, progressViaFrames: true,
-    movieUrl: (id) => `https://embed.su/embed/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://embed.su/embed/tv/${id}/${s}/${e}`,
-  },
-  {
-    id: "moviesapi",
-    label: "Server 5",
-    tag: null, note: null,
-    tier: 2, moviePriority: 5, tvPriority: 6,
-    browserPriority: 2,    // #2 Chrome: clean iframe, good coverage
-    browserSafe: true,
-    supportsProgress: true,
-    movieUrl: (id) => `https://moviesapi.club/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://moviesapi.club/tv/${id}-${s}-${e}`,
-  },
+  // {
+  //   id: "embedsu",
+  //   label: "Server 4",
+  //   tag: null, note: null,
+  //   tier: 2, moviePriority: 4, tvPriority: 4,
+  //   browserPriority: 99,   // embed.su DNS unreliable — removed from Chrome priority
+  //   browserSafe: true,
+  //   supportsProgress: true, progressViaFrames: true,
+  //   movieUrl: (id) => `https://embed.su/embed/movie/${id}`,
+  //   tvUrl:    (id, s, e) => `https://embed.su/embed/tv/${id}/${s}/${e}`,
+  // },
+  // {
+  //   id: "moviesapi",
+  //   label: "Server 5",
+  //   tag: null, note: null,
+  //   tier: 2, moviePriority: 5, tvPriority: 6,
+  //   browserPriority: 2,    // #2 Chrome: clean iframe, good coverage
+  //   browserSafe: true,
+  //   supportsProgress: true,
+  //   movieUrl: (id) => `https://moviesapi.club/movie/${id}`,
+  //   tvUrl:    (id, s, e) => `https://moviesapi.club/tv/${id}-${s}-${e}`,
+  // },
   {
     id: "vidsrc_net",
     label: "Server 6",
@@ -339,17 +339,17 @@ export const PLAYER_SOURCES = [
     movieUrl: (id) => `https://vidfast.pro/movie/${id}?autoPlay=true`,
     tvUrl:    (id, s, e) => `https://vidfast.pro/tv/${id}/${s}/${e}?autoPlay=true`,
   },
-  {
-    id: "smashy",
-    label: "Server 10",
-    tag: null, note: null,
-    tier: 3, moviePriority: 10, tvPriority: 10,
-    browserPriority: 4,    // #4 Chrome: no redirect in Chrome iframes
-    browserSafe: true,
-    supportsProgress: true,
-    movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://player.smashy.stream/tv/${id}?s=${s}&e=${e}`,
-  },
+  // {
+  //   id: "smashy",
+  //   label: "Server 10",
+  //   tag: null, note: null,
+  //   tier: 3, moviePriority: 10, tvPriority: 10,
+  //   browserPriority: 4,    // #4 Chrome: no redirect in Chrome iframes
+  //   browserSafe: true,
+  //   supportsProgress: true,
+  //   movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
+  //   tvUrl:    (id, s, e) => `https://player.smashy.stream/tv/${id}?s=${s}&e=${e}`,
+  // },
   {
     id: "videasy",
     label: "Server 11",
