@@ -1,35 +1,40 @@
 /**
  * ReelPage.jsx — NovaSpark Cinema Reels
  *
+ * ROOT CAUSE FIX:
+ *  Kinocheck returns 403 "Host not in allowlist" from Vercel/any deployed domain.
+ *  Removed Kinocheck entirely. All trailer data now comes from TMDB exclusively:
+ *    1. Fetch movie list from 4 rotating TMDB sources
+ *    2. For each movie batch, fetch /movie/{id}/videos in parallel
+ *    3. Pick the best English official trailer (YouTube, official=true, type=Trailer, iso_639_1=en)
+ *    4. Fall back to Teaser if no Trailer found
+ *  This works from ANY domain, zero third-party dependency on Kinocheck.
+ *
  * ARCHITECTURE:
  *  - Infinite no-repeat pool: _seenIds Set persists entire session
- *  - English-only: LANG_BLOCK regex + NON_LATIN unicode strip on title+language fields
- *  - Smart scoring: vote_average * log(vote_count) with top/discovery interleave
+ *  - English-only: TMDB original_language=en + video iso_639_1=en filter
+ *  - Smart scoring: vote_average × log(vote_count) with top/discovery interleave
  *  - 4 TMDB rotating sources: trending, popular, top_rated, upcoming
  *  - Background prefetch: refills when pool < 15
+ *  - Parallel video fetching: batches of 6 movies fetched simultaneously
  *
  * PLAYER:
- *  - Full-bleed iframe: 120% x 140%, offset -20% top / -10% left
+ *  - Full-bleed iframe: 120% × 140%, offset -20% top / -10% left
  *  - Muted autoplay (browser policy). Unmutes on first tap.
  *  - muted/active in separate effects — NEVER restarts video on mute toggle
- *  - onBlocked -> advance reel automatically
+ *  - onBlocked → advance reel automatically
  *
  * BUG FIXES (permanent):
  *  - Rail button taps no longer skip reels: ALL pointer/touch events stopped
- *    on every button and on the rail container itself. Touch swipe threshold 60px.
- *  - English-only enforced at both Kinocheck title level AND TMDB language field
- *  - Ghost icon rail: zero background, zero border, zero shadow on icon wrappers
- *  - Share: ONLY shares app URL (tmdb_id param). YouTube IDs never exposed.
+ *    on every button AND on the rail container. Touch swipe threshold 60px.
+ *  - English-only enforced at TMDB movie level AND video level (iso_639_1=en)
+ *  - Ghost icon rail: zero background, zero border, zero shadow
+ *  - Share: ONLY shares app URL (?v=tmdb_id). YouTube IDs never exposed.
  *  - Watchlist: onSave / savedItems wired, deduped by tmdb_id
  *
- * MOBILE:
- *  - Action rail: ALL touch/pointer events stopped — never reaches scroll container
- *  - Touch swipe threshold: 60px
- *  - RC-bottom clears rail width at all breakpoints
- *
  * ELECTRON:
- *  - Kinocheck webview with executeJavaScript polling
- *  - Auto-unmuted, no mute policy restriction
+ *  - Kinocheck webview still works in Electron (no allowlist restriction there)
+ *  - Web path uses TMDB-sourced YouTube ID in youtube-nocookie embed
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -38,8 +43,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 const IS_ELECTRON = typeof window !== "undefined" && !!window.electron;
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const KINO         = "https://api.kinocheck.com";
 const TMDB_BASE    = "https://api.themoviedb.org/3";
+const KINO         = "https://api.kinocheck.com"; // Electron only
 const START_OFFSET = 20;
 const END_BUFFER   = 10;
 const APP_ORIGIN   = "https://novasparks-gen.vercel.app";
@@ -138,11 +143,11 @@ function seededShuffle(arr, seed) {
   return a;
 }
 
-// Session-level state — persists until page refresh, never resets
-const _seenIds   = new Set();
+// ─── SESSION STATE (never resets until page refresh) ──────────────────────────
+const _seenIds   = new Set();  // YouTube video IDs already shown
+const _seenMovies = new Set(); // TMDB movie IDs already fetched
 const _pool      = [];
 let   _fetching  = false;
-let   _kinoPage  = 1;
 const _SEED      = Date.now();
 const _tmdbPages = [1, 1, 1, 1];
 
@@ -154,119 +159,115 @@ const TMDB_SOURCES = [
 ];
 
 /**
- * English-only gate.
- * Blocks any title that contains a non-English language label in parentheses,
- * suffix, or anywhere in the string — covers ALL major Kinocheck patterns:
- *   "Spider-Man Trailer (Deutsch)"
- *   "Film - Japanischer Trailer"
- *   "Movie | Türkçe Fragman"
- *   "电影 预告片"  (non-latin char gate catches this)
+ * Pick the best English trailer from TMDB video results.
+ * Priority: official Trailer in English > any Trailer in English > Teaser in English
  */
-const LANG_BLOCK = new RegExp(
-  "(german|deutsch|deuts|français|french|español|spanish|espanol|" +
-  "italiano|italian[ao]|türkçe|turkish|turk[ce]|polish|polski|" +
-  "русский|russian|japanese|japanisch|chinese|chinesisch|korean|" +
-  "koreanisch|arabic|arabe|hindi|portuguese|portugais|dutch|" +
-  "norsk|svenska|swedish|danish|dansk|czech|hungarian|romanian|" +
-  "thai|vietnamese|indonesian|persian|farsi|hebrew|greek|" +
-  "suomi|finnish|tagalog|malay|melayu|bahasa|urdu|bengali|" +
-  "tamil|telugu|kannada|marathi|punjabi|gujarati|sinhalese)",
-  "i"
-);
-const NON_LATIN = /[Ѐ-ӿ؀-ۿ\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u3000-\u9FFF\uAC00-\uD7AF\u0600-\u06FF]/;
+function pickBestTrailer(videos) {
+  const results = (videos || []).filter(v =>
+    v.site === "YouTube" &&
+    v.key &&
+    (v.iso_639_1 === "en" || !v.iso_639_1) &&
+    (v.type === "Trailer" || v.type === "Teaser")
+  );
 
-function isEnglish(item) {
-  const title    = item.title           || "";
-  const origLang = item.original_language || "";
-  if (origLang && origLang !== "en") return false;
-  if (LANG_BLOCK.test(title))            return false;
-  if (NON_LATIN.test(title))             return false;
-  return true;
+  // Official English Trailer first
+  const officialTrailer = results.find(v => v.type === "Trailer" && v.official === true && v.iso_639_1 === "en");
+  if (officialTrailer) return officialTrailer.key;
+
+  // Any English Trailer
+  const anyTrailer = results.find(v => v.type === "Trailer" && v.iso_639_1 === "en");
+  if (anyTrailer) return anyTrailer.key;
+
+  // English Teaser fallback
+  const teaser = results.find(v => v.type === "Teaser" && v.iso_639_1 === "en");
+  if (teaser) return teaser.key;
+
+  // Last resort: any English YouTube video
+  const anyEn = results.find(v => v.iso_639_1 === "en");
+  if (anyEn) return anyEn.key;
+
+  return null;
 }
 
-function cleanTitle(raw) {
-  if (!raw) return "Unknown";
-  return raw
-    .replace(/\s+(Official\s+)?(Trailer|Teaser|Clip|Featurette|Spot|Preview)[^|–\-]*/i, "")
-    .replace(/\s+(German|Deutsch|English|French|Español|Italiano)[^|]*/i, "")
-    .replace(/\s*[|(–\-].*/,"")
-    .replace(/\s*\(\d{4}\).*/,"")
-    .trim() || raw.split(/\s+/).slice(0, 4).join(" ");
-}
-
-function parseKino(raw) {
-  if (!raw || typeof raw !== "object") return [];
-  return Object.entries(raw)
-    .filter(([k]) => !isNaN(Number(k)))
-    .map(([, v]) => v)
-    .filter((v) => v?.youtube_video_id);
-}
-
+/**
+ * fillPool — TMDB-only, no Kinocheck.
+ * 1. Fetch a page of movies from a rotating source
+ * 2. Filter to original_language=en, not seen, has a poster
+ * 3. Batch-fetch /movie/{id}/videos for all movies in parallel (6 at a time)
+ * 4. Score, shuffle, interleave top/discovery, push to pool
+ */
 async function fillPool(apiKey) {
   if (_fetching) return;
   _fetching = true;
   try {
-    const kinoRaw = [];
-    await Promise.allSettled([
-      fetch(`${KINO}/trailers/trending?limit=20&page=${_kinoPage}`, { headers: { Accept: "application/json" } })
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d) kinoRaw.push(...parseKino(d)); })
-        .catch(() => {}),
-      fetch(`${KINO}/trailers/latest?limit=20`, { headers: { Accept: "application/json" } })
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d) kinoRaw.push(...parseKino(d)); })
-        .catch(() => {}),
-    ]);
-    _kinoPage++;
-
-    const batchSeen = new Set();
-    const fresh = kinoRaw.filter(item => {
-      const vid   = item.youtube_video_id;
-      const title = item.title || "";
-      if (!vid || batchSeen.has(vid) || _seenIds.has(vid)) return false;
-      // English gate at intake — blocks before even hitting TMDB
-      if (LANG_BLOCK.test(title) || NON_LATIN.test(title))  return false;
-      batchSeen.add(vid);
-      return true;
-    });
-
-    if (fresh.length === 0) return;
-
-    // Enrich with TMDB — rotate 4 sources
-    const srcIdx  = (_kinoPage - 1) % TMDB_SOURCES.length;
-    const tmdbUrl = TMDB_SOURCES[srcIdx](apiKey, _tmdbPages[srcIdx]);
+    // Rotate through all 4 TMDB sources — fetch 2 pages at a time for variety
+    const srcIdx  = (_pool.length === 0 ? 0 : Math.floor(Math.random() * 4));
+    const page    = _tmdbPages[srcIdx];
     _tmdbPages[srcIdx]++;
-    let tmdbMap = {};
+
+    const url = TMDB_SOURCES[srcIdx](apiKey, page);
+    let movies = [];
     try {
-      const r = await fetch(tmdbUrl);
+      const r = await fetch(url);
       if (r.ok) {
         const d = await r.json();
-        // Second English gate: filter TMDB results to original_language === 'en'
-        (d.results || []).filter(m => m.original_language === "en").forEach(m => { tmdbMap[m.id] = m; });
+        movies = (d.results || []).filter(m =>
+          m.original_language === "en" &&
+          m.poster_path &&
+          !_seenMovies.has(m.id)
+        );
       }
     } catch {}
 
-    const batch = fresh.map(item => {
-      const tmdb = item.resource?.tmdb_id ? (tmdbMap[item.resource.tmdb_id] || null) : null;
-      // If TMDB says non-English, skip
-      if (tmdb && tmdb.original_language && tmdb.original_language !== "en") return null;
-      return {
-        id:        item.youtube_video_id,
-        youtubeId: item.youtube_video_id,
-        tmdb_id:   item.resource?.tmdb_id || null,
-        title:     tmdb?.title     || cleanTitle(item.title),
-        overview:  tmdb?.overview  || "",
-        genres:    (item.genres    || []).slice(0, 2),
-        rating:    tmdb?.vote_average ? +tmdb.vote_average.toFixed(1) : null,
-        duration:  tmdb?.runtime   || null,
-        tmdbObj:   tmdb            || null,
-        _score:    (tmdb?.vote_average || 5) * Math.log((tmdb?.vote_count || 1) + 1),
-      };
-    }).filter(Boolean);
+    if (movies.length === 0) return;
 
-    const shuffled = seededShuffle(batch, _SEED ^ (_pool.length * 2654435761));
+    // Mark movies as seen before fetching videos (prevents double-fetch on concurrent calls)
+    movies.forEach(m => _seenMovies.add(m.id));
 
-    // Smart interleave: top-quality with discovery picks
+    // Parallel video fetch — 6 at a time to stay within rate limits
+    const BATCH = 6;
+    const reels = [];
+    for (let i = 0; i < movies.length; i += BATCH) {
+      const slice = movies.slice(i, i + BATCH);
+      const videoResults = await Promise.allSettled(
+        slice.map(m =>
+          fetch(`${TMDB_BASE}/movie/${m.id}/videos?api_key=${apiKey}&language=en-US`)
+            .then(r => r.ok ? r.json() : { results: [] })
+            .then(d => ({ movie: m, videos: d.results || [] }))
+            .catch(() => ({ movie: m, videos: [] }))
+        )
+      );
+
+      for (const result of videoResults) {
+        if (result.status !== "fulfilled") continue;
+        const { movie: m, videos } = result.value;
+
+        const youtubeId = pickBestTrailer(videos);
+        if (!youtubeId) continue;           // no English trailer — skip
+        if (_seenIds.has(youtubeId)) continue; // already shown this trailer
+
+        const genres = (m.genre_ids || []).slice(0, 2).map(id => GENRE_MAP[id]).filter(Boolean);
+
+        reels.push({
+          id:        youtubeId,
+          youtubeId,
+          tmdb_id:   m.id,
+          title:     m.title || m.original_title || "Unknown",
+          overview:  m.overview  || "",
+          genres,
+          rating:    m.vote_average ? +m.vote_average.toFixed(1) : null,
+          duration:  m.runtime    || null,
+          tmdbObj:   m,
+          _score:    (m.vote_average || 5) * Math.log((m.vote_count || 1) + 1),
+        });
+      }
+    }
+
+    if (reels.length === 0) return;
+
+    const shuffled = seededShuffle(reels, _SEED ^ (_pool.length * 2654435761));
+
+    // Interleave: top-scored with discovery
     const sorted = [...shuffled].sort((a, b) => b._score - a._score);
     const top    = sorted.slice(0, Math.ceil(sorted.length / 2));
     const disc   = sorted.slice(Math.ceil(sorted.length / 2));
@@ -282,9 +283,10 @@ async function fillPool(apiKey) {
 }
 
 async function fetchReels(apiKey, count = 12) {
-  for (let attempt = 0; attempt < 3 && _pool.length < count; attempt++) {
+  // Retry up to 4x — TMDB is reliable but first page of videos may be sparse
+  for (let attempt = 0; attempt < 4 && _pool.length < count; attempt++) {
     await fillPool(apiKey);
-    if (_pool.length === 0) await new Promise(r => setTimeout(r, 800));
+    if (_pool.length === 0) await new Promise(r => setTimeout(r, 600));
   }
   const result = [];
   while (result.length < count && _pool.length > 0) {
@@ -293,12 +295,21 @@ async function fetchReels(apiKey, count = 12) {
     _seenIds.add(reel.id);
     result.push(reel);
   }
+  // Background prefetch — keeps pool full
   if (_pool.length < 15) setTimeout(() => fillPool(apiKey), 0);
   return result;
 }
 
+// TMDB genre ID → name map
+const GENRE_MAP = {
+  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
+  80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
+  14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
+  9648: "Mystery", 10749: "Romance", 878: "Sci-Fi", 10770: "TV Movie",
+  53: "Thriller", 10752: "War", 37: "Western",
+};
+
 // ─── SHARE ────────────────────────────────────────────────────────────────────
-// NEVER exposes YouTube IDs — only the app's own URL with TMDB id
 function buildShareUrl(reel) {
   if (reel.tmdb_id) return `${APP_ORIGIN}/reel?v=${reel.tmdb_id}`;
   return APP_ORIGIN;
@@ -477,7 +488,6 @@ function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
     }
   }, [muted]); // eslint-disable-line
 
-  // First real interaction — unmute if sound is on
   useEffect(() => {
     if (IS_ELECTRON || !hasInteracted || !loaded || !iframeRef.current || !active) return;
     if (!muted) {
@@ -592,9 +602,8 @@ function YTPlayer({ videoId, active, muted, onBlocked, hasInteracted }) {
 
 // ─── ACTION BUTTON ────────────────────────────────────────────────────────────
 /**
- * Ghost style — ZERO background, ZERO border on the icon wrapper.
- * ALL pointer and touch events are stopped here so nothing reaches
- * the scroll container and accidentally triggers a reel skip.
+ * Ghost icon — NO background, NO border, NO box-shadow on wrapper.
+ * ALL pointer/touch events stopped so nothing bubbles to scroll container.
  */
 function ActionBtn({ children, label, active, count, onClick }) {
   const [pop, setPop] = useState(false);
@@ -634,7 +643,6 @@ function ActionBtn({ children, label, active, count, onClick }) {
         touchAction: "none",
       }}
     >
-      {/* Ghost icon — no background, no fill, no border */}
       <div style={{
         width: 44,
         height: 44,
@@ -647,7 +655,6 @@ function ActionBtn({ children, label, active, count, onClick }) {
         filter: active
           ? "drop-shadow(0 0 6px rgba(0,229,204,0.7))"
           : "drop-shadow(0 2px 4px rgba(0,0,0,0.8))",
-        // CRITICAL: no background, no border, no box-shadow
         background: "none",
         border: "none",
         boxShadow: "none",
@@ -708,10 +715,6 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
     }
   };
 
-  const handleSaveClick = () => {
-    onSave(reel);
-  };
-
   const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   return (
@@ -728,7 +731,6 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
       />
       <ProgressBar active={active} duration={reel.duration} />
 
-      {/* Double-tap ripple */}
       {ripple && (
         <div style={{
           position: "absolute",
@@ -741,7 +743,6 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
         }} />
       )}
 
-      {/* Double-tap heart */}
       {heart && (
         <div style={{
           position: "absolute", top: "42%", left: "50%",
@@ -755,7 +756,6 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
         </div>
       )}
 
-      {/* Share feedback toast */}
       {shareState && (
         <div style={{
           position: "absolute", top: "50%", left: "50%",
@@ -778,7 +778,7 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
         </div>
       )}
 
-      {/* ACTION RAIL — right side, ghost icons, ALL events stopped */}
+      {/* ACTION RAIL — all events stopped at container level too */}
       <div
         className="rc-rail"
         onPointerDown={(e) => e.stopPropagation()}
@@ -804,8 +804,8 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
           </svg>
         </ActionBtn>
 
-        {/* Save / Watchlist — wired to onSave prop */}
-        <ActionBtn label={saved ? "Saved" : "Save"} active={saved} onClick={handleSaveClick}>
+        {/* Save / Watchlist */}
+        <ActionBtn label={saved ? "Saved" : "Save"} active={saved} onClick={() => onSave(reel)}>
           {saved
             ? (
               <svg width="22" height="22" viewBox="0 0 24 24" fill="#00e5cc">
@@ -819,7 +819,7 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
           }
         </ActionBtn>
 
-        {/* Share — app URL only */}
+        {/* Share */}
         <ActionBtn label={shareState === "copied" ? "Copied" : "Share"} active={shareState !== null} onClick={handleShare}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="18" cy="5" r="3" />
@@ -896,12 +896,12 @@ function ReelCard({ reel, active, muted, onToggleMute, onWatch, onSave, saved, o
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 /**
  * Props:
- *   apiKey       {string}   — TMDB API key
- *   onSelect     {function} — called with TMDB movie object when user taps Watch Now
- *   onSave       {function} — called with TMDB movie object to add/remove from watchlist
- *   savedItems   {array}    — array of saved TMDB items (must have .id === tmdb_id)
- *   onNavigate   {function} — called with nav id string ("home" | "history" | etc.)
- *   onSearch     {function} — called when Search nav is tapped
+ *   apiKey     {string}   TMDB API key
+ *   onSelect   {function} called with TMDB movie object when Watch Now is tapped
+ *   onSave     {function} called with TMDB movie object to toggle watchlist
+ *   savedItems {array}    saved TMDB items — each must have .id matching tmdb_id
+ *   onNavigate {function} called with nav id ("home" | "history" | "downloads" | "settings")
+ *   onSearch   {function} called when Search is tapped
  */
 export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], onNavigate, onSearch }) {
   const [reels,         setReels]         = useState([]);
@@ -934,7 +934,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
     return () => { dead = true; };
   }, [apiKey]);
 
-  // Infinite scroll — load more when 4 from end
   useEffect(() => {
     if (moreLoad || reels.length === 0 || idx < reels.length - 4) return;
     setMoreLoad(true);
@@ -955,7 +954,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
 
   const handleBlocked = useCallback(() => goTo(idx + 1), [goTo, idx]);
 
-  // Keyboard navigation
   useEffect(() => {
     const h = (e) => {
       if (e.key === "ArrowDown" || e.key === "j") goTo(idx + 1);
@@ -966,7 +964,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
     return () => window.removeEventListener("keydown", h);
   }, [idx, goTo]);
 
-  // Mouse wheel
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -984,11 +981,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
     return () => { el.removeEventListener("wheel", h); clearTimeout(t); };
   }, [idx, goTo]);
 
-  /**
-   * Touch handlers — ONLY on the scroll container.
-   * Rail/button events are fully stopped before reaching here.
-   * Threshold: 60px — prevents accidental skips on short taps.
-   */
   const onTouchStart = (e) => {
     touchY0.current    = e.touches[0].clientY;
     touchY1.current    = e.touches[0].clientY;
@@ -1005,10 +997,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
     }
   };
 
-  /**
-   * handleWatch — builds a TMDB-compatible item and calls onSelect.
-   * This allows the parent (App.jsx / MoviePage) to open the detail view.
-   */
   const handleWatch = (reel) => {
     const item = reel.tmdbObj
       ? { ...reel.tmdbObj, media_type: "movie" }
@@ -1016,11 +1004,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
     onSelect?.(item);
   };
 
-  /**
-   * handleSave — builds a TMDB-compatible item and calls onSave.
-   * Parent manages the savedItems array (add/remove toggle).
-   * The `saved` prop passed to ReelCard is computed from savedItems.
-   */
   const handleSave = (reel) => {
     const item = reel.tmdbObj
       ? { ...reel.tmdbObj, media_type: "movie" }
@@ -1028,10 +1011,9 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
     onSave?.(item);
   };
 
-  const handleNav  = (id) => { if (id === "search") onSearch?.(); else onNavigate?.(id); };
+  const handleNav    = (id) => { if (id === "search") onSearch?.(); else onNavigate?.(id); };
   const shouldRender = (i) => i >= idx - 1 && i <= idx + 1;
 
-  // Watchlist lookup — compares by tmdb_id (reel) vs id (savedItems from TMDB)
   const isSaved = (reel) => {
     const tid = reel.tmdb_id || reel.tmdbObj?.id;
     return (savedItems || []).some(s => String(s.id) === String(tid));
@@ -1091,11 +1073,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
         .rp-nav-btn:hover  { color: #fff; background: rgba(255,255,255,0.07); }
         .rp-nav-btn:active { transform: scale(0.91); }
 
-        /*
-          ACTION RAIL — always vertical, right side.
-          All touch/pointer events stopped at rail level (backup to button-level stop).
-          Ghost icons: no background, no border, no box on the wrapper.
-        */
         .rc-rail {
           position: absolute;
           right: 14px;
@@ -1207,22 +1184,22 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
         }
 
         @media (max-width: 520px) {
-          .rc-rail   { right: 10px; bottom: 130px; gap: 18px; }
-          .rc-bottom { padding-bottom: 88px; padding-left: 14px; right: 70px; }
-          .rc-title  { font-size: clamp(24px, 8vw, 34px); }
-          .rc-watch  { font-size: 11px; padding: 10px 18px; }
+          .rc-rail    { right: 10px; bottom: 130px; gap: 18px; }
+          .rc-bottom  { padding-bottom: 88px; padding-left: 14px; right: 70px; }
+          .rc-title   { font-size: clamp(24px, 8vw, 34px); }
+          .rc-watch   { font-size: 11px; padding: 10px 18px; }
           .rc-overview { font-size: 11.5px; }
         }
 
         @media (min-width: 1280px) {
-          .rc-rail   { right: 28px; bottom: 130px; gap: 26px; }
-          .rc-bottom { padding-left: 40px; padding-bottom: 60px; right: 110px; }
-          .rc-watch  { font-size: 13px; padding: 13px 30px; }
+          .rc-rail    { right: 28px; bottom: 130px; gap: 26px; }
+          .rc-bottom  { padding-left: 40px; padding-bottom: 60px; right: 110px; }
+          .rc-watch   { font-size: 13px; padding: 13px 30px; }
         }
 
         @media (min-width: 1800px) {
-          .rc-rail   { right: 44px; }
-          .rc-bottom { padding-left: 56px; }
+          .rc-rail    { right: 44px; }
+          .rc-bottom  { padding-left: 56px; }
         }
       `}</style>
 
@@ -1237,7 +1214,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
         onClick={handleFirstInteraction}
         onTouchStart={handleFirstInteraction}
       >
-        {/* SCROLL CONTAINER */}
         <div
           ref={wrapRef}
           className="rp-scroll"
@@ -1252,7 +1228,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
             WebkitOverflowScrolling: "touch",
           }}
         >
-          {/* SKELETON LOADERS */}
           {loading && [0, 1].map(i => (
             <div key={i} style={{
               width: "100%", height: "100dvh", flexShrink: 0, scrollSnapAlign: "start",
@@ -1275,7 +1250,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
             </div>
           ))}
 
-          {/* REEL CARDS */}
           {!loading && reels.map((reel, i) => (
             <div key={`${reel.id}-${i}`} style={{
               width: "100%",
@@ -1302,7 +1276,6 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
             </div>
           ))}
 
-          {/* EMPTY STATE */}
           {!loading && reels.length === 0 && (
             <div style={{
               width: "100%", height: "100dvh", flexShrink: 0, scrollSnapAlign: "start",
@@ -1317,13 +1290,12 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems = [], on
               <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 2.5, color: "rgba(255,255,255,0.18)" }}>
                 No Reels Found
               </div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center", maxWidth: 200, lineHeight: 1.75, fontFamily: "'DM Sans',sans-serif" }}>
-                Check your connection and try again.
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center", maxWidth: 220, lineHeight: 1.75, fontFamily: "'DM Sans',sans-serif" }}>
+                Check your TMDB API key is valid and try again.
               </div>
             </div>
           )}
 
-          {/* LOAD MORE SPINNER */}
           {moreLoad && (
             <div style={{ width: "100%", height: 80, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#000" }}>
               <div style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.05)", borderTopColor: "#00e5cc", animation: "spin 0.8s linear infinite" }} />

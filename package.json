@@ -1,12 +1,12 @@
 {
   "name": "novaspark",
   "version": "4.0.4",
-  "description": "NovaSpark — Ad-free streaming. Movies, TV, Anime. All in one.",
+  "description": "NovaSpark",
   "author": {
     "name": "NovaSpark",
     "email": "admin@novaspark.app"
   },
-  "license": "NS-3.0",
+  "license": "NS-4.0",
   "main": "index.js",
   "private": true,
   "scripts": {
