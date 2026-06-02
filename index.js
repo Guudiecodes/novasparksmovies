@@ -428,7 +428,7 @@ ipcMain.handle("wyzie-open-redeem", async () => {
         session: redeemSession,
       },
       backgroundColor: "#ffffff",
-      // autoHideMenuBar: true,
+      autoHideMenuBar: true,
     });
 
     let resolved = false;
