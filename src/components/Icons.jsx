@@ -369,3 +369,12 @@ export const PopOutIcon = ({ size = 16 }) => (
     <path d="M10 14L21 3" />
   </svg>
 );
+
+export function SparkleIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z"/>
+    </svg>
+  );
+}

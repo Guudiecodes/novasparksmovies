@@ -25,7 +25,6 @@ import UpdateModal from "./components/UpdateModal";
 const NS_TMDB_KEY = "4bea51722649d28dcd5453a94f8f40ad";
 
 const HomePage      = lazy(() => import("./pages/HomePage"));
-const AiPage        = lazy(() => import("./pages/NSAIPage"));
 const MoviePage     = lazy(() => import("./pages/MoviePage"));
 const TVPage        = lazy(() => import("./pages/TVPage"));
 const LibraryPage   = lazy(() => import("./pages/LibraryPage"));
@@ -33,6 +32,8 @@ const SettingsPage  = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const WatchPage     = lazy(() => import("./pages/WatchPage"));
 const PricingPage   = lazy(() => import("./pages/PricingPage"));
+const NSAIPage = lazy(() => import("./pages/NSAIPage"));
+
 
 // ── World Cinema Reel ────────────────────────────────────────────────────────
 const ReelPage = lazy(() => import("./pages/Reelpage"));
@@ -857,6 +858,22 @@ export default function App() {
                 }
               />
             )}
+
+
+{page === "nsai" && (
+  <NSAIPage
+    apiKey={apiKey}
+    onWatch={handleWatch}
+    onNavigate={navigate}
+    onSave={toggleSave}
+    savedItems={savedList}
+    watchHistory={history}
+    continueWatching={inProgress}
+    accentColor="var(--red, #e50914)"
+  />
+)}
+
+
           </Suspense>
         </div>
 

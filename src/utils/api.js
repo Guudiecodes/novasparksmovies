@@ -291,17 +291,17 @@ export const PLAYER_SOURCES = [
   //   movieUrl: (id) => `https://moviesapi.club/movie/${id}`,
   //   tvUrl:    (id, s, e) => `https://moviesapi.club/tv/${id}-${s}-${e}`,
   // },
-  {
-    id: "vidsrc_net",
-    label: "Server 6",
-    tag: null, note: null,
-    tier: 2, moviePriority: 6, tvPriority: 5,
-    browserPriority: 99,   // injects popunder ads in Chrome iframes
-    browserSafe: false,
-    supportsProgress: true, progressViaFrames: true,
-    movieUrl: (id) => `https://vidsrc.net/embed/movie?tmdb=${id}`,
-    tvUrl:    (id, s, e) => `https://vidsrc.net/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
-  },
+  // {
+  //   id: "vidsrc_net",
+  //   label: "Server 6",
+  //   tag: null, note: null,
+  //   tier: 2, moviePriority: 6, tvPriority: 5,
+  //   browserPriority: 99,   // injects popunder ads in Chrome iframes
+  //   browserSafe: false,
+  //   supportsProgress: true, progressViaFrames: true,
+  //   movieUrl: (id) => `https://vidsrc.net/embed/movie?tmdb=${id}`,
+  //   tvUrl:    (id, s, e) => `https://vidsrc.net/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
+  // },
   {
     id: "autoembed",
     label: "Server 7",

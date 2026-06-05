@@ -14,6 +14,7 @@ import {
   QuitIcon,
   BackIcon,
   HelpIcon,
+  SparkleIcon,
 } from "./Icons";
 
 // ── GitHub repo for auto-fetching latest release ──────────────────────────
@@ -736,19 +737,20 @@ export default function Sidebar({
         <TierBadge tier={tier} />
       </div>
 
-      {canGoBack && <SideBtn onClick={onBack}                          icon={<BackIcon />}           label="Back (Ctrl+Z)" />}
       <SideBtn onClick={onSearch}                                      icon={<SearchIcon />}          label="Search (⌘F)" />
       <SideBtn active={page === "home"}      onClick={() => onNavigate("home")}      icon={<HomeIcon />}           label="Home" />
-      <SideBtn active={page === "history"}   onClick={() => onNavigate("history")}   icon={<HistoryIcon />}        label="Library & History" />
-      <SideBtn active={page === "downloads"} onClick={() => onNavigate("downloads")} icon={<DownloadsQueueIcon />} label="Downloads"
-        badge={activeDownloads > 0 ? activeDownloads : null} />
-
       {/* ── World Reel ── */}
       <ReelButton active={page === "reel"} onNavigate={onNavigate} />
-
       {/* ── NS AI ── */}
       <NSAIButton onNavigate={onNavigate} />
 
+      <SideBtn active={page === "history"}   onClick={() => onNavigate("history")}   icon={<HistoryIcon />}        label="Library & History" />
+      <SideBtn active={page === "downloads"} onClick={() => onNavigate("downloads")} icon={<DownloadsQueueIcon />} label="Downloads" />
+      {/* <SideBtn active={page === "nsai"} onClick={() => onNavigate("nsai")} icon={<SparkleIcon />} label="NS AI" /> */}
+      {canGoBack && <SideBtn onClick={onBack}                          icon={<BackIcon />}           label="Back (Ctrl+Z)" />}
+
+      
+     
       <div className="sidebar-sep" />
 
       {/* ── Saved thumbnails ── */}

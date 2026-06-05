@@ -49,6 +49,7 @@ export default defineConfig(() => {
             movie:     ["./src/pages/MoviePage"],
             tv:        ["./src/pages/TVPage"],
             downloads: ["./src/pages/DownloadsPage"],
+            nsai:     ["./src/pages/NSAIPage"],
           },
         },
       },
