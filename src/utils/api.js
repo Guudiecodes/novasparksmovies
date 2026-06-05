@@ -256,17 +256,17 @@ export const PLAYER_SOURCES = [
     movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
     tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
-  {
-    id: "vidsrc_fyi",
-    label: "Server 3",
-    tag: null, note: "Fast",
-    tier: 1, moviePriority: 3, tvPriority: 3,
-    browserPriority: 99,   // fingerprints Chrome and triggers redirect layers
-    browserSafe: false,
-    supportsProgress: true, progressViaFrames: true,
-    movieUrl: (id) => `https://vidsrc.fyi/embed/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://vidsrc.fyi/embed/tv/${id}/${s}/${e}`,
-  },
+  // {
+  //   id: "vidsrc_fyi",
+  //   label: "Server 3",
+  //   tag: null, note: "Fast",
+  //   tier: 1, moviePriority: 3, tvPriority: 3,
+  //   browserPriority: 99,   
+  //   browserSafe: false,
+  //   supportsProgress: true, progressViaFrames: true,
+  //   movieUrl: (id) => `https://vidsrc.fyi/embed/movie/${id}`,
+  //   tvUrl:    (id, s, e) => `https://vidsrc.fyi/embed/tv/${id}/${s}/${e}`,
+  // },
 
   // ── TIER 2: Fast & reliable ───────────────────────────────────────────────
   // {

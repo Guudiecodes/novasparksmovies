@@ -211,7 +211,7 @@ function NSAIButton({ onNavigate }) {
         <line x1="19.1" y1="4.9"  x2="16.2" y2="7.8"   stroke="url(#ai-grad)" strokeWidth="1.2" strokeLinecap="round" />
         <line x1="7.8"  y1="16.2" x2="4.9"  y2="19.1"  stroke="url(#ai-grad)" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
-      <span className="tooltip">NS AI · Coming Soon</span>
+      <span className="tooltip">NS AI</span>
       <span style={{
         position: "absolute", top: 5, right: 5,
         width: 6, height: 6, borderRadius: "50%",
@@ -252,7 +252,7 @@ function ReelButton({ active, onNavigate }) {
         <circle cx="17.7" cy="6.3"  r="1"  fill={active ? "#f5a623" : "currentColor"} opacity="0.6" />
         <circle cx="6.3"  cy="17.7" r="1"  fill={active ? "#f5a623" : "currentColor"} opacity="0.6" />
       </svg>
-      <span className="tooltip">World Reel 🌍</span>
+      <span className="tooltip">NS Shorts🌍</span>
       {/* "NEW" badge */}
       <span style={{
         position: "absolute", top: 3, right: 3,
@@ -740,7 +740,7 @@ export default function Sidebar({
       <SideBtn onClick={onSearch}                                      icon={<SearchIcon />}          label="Search (⌘F)" />
       <SideBtn active={page === "home"}      onClick={() => onNavigate("home")}      icon={<HomeIcon />}           label="Home" />
       {/* ── World Reel ── */}
-      <ReelButton active={page === "reel"} onNavigate={onNavigate} />
+      <ReelButton active={page === "Shorts"} onNavigate={onNavigate} />
       {/* ── NS AI ── */}
       <NSAIButton onNavigate={onNavigate} />
 
