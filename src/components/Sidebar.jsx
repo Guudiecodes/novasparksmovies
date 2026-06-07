@@ -239,10 +239,8 @@ function ReelButton({ active, onNavigate }) {
           filter: hovered || active ? "drop-shadow(0 0 5px rgba(255,180,0,0.7))" : "none",
           transition: "filter 0.3s",
         }}>
-        {/* Film reel icon */}
         <circle cx="12" cy="12" r="9" stroke={active ? "#f5a623" : "currentColor"} strokeWidth="1.6" fill="none" />
         <circle cx="12" cy="12" r="3" stroke={active ? "#f5a623" : "currentColor"} strokeWidth="1.6" fill="none" />
-        {/* Sprocket holes */}
         <circle cx="12" cy="4"  r="1.2" fill={active ? "#f5a623" : "currentColor"} opacity="0.8" />
         <circle cx="12" cy="20" r="1.2" fill={active ? "#f5a623" : "currentColor"} opacity="0.8" />
         <circle cx="4"  cy="12" r="1.2" fill={active ? "#f5a623" : "currentColor"} opacity="0.8" />
@@ -253,7 +251,6 @@ function ReelButton({ active, onNavigate }) {
         <circle cx="6.3"  cy="17.7" r="1"  fill={active ? "#f5a623" : "currentColor"} opacity="0.6" />
       </svg>
       <span className="tooltip">NS Shorts🌍</span>
-      {/* "NEW" badge */}
       <span style={{
         position: "absolute", top: 3, right: 3,
         background: "linear-gradient(135deg, #f5a623, #e74c3c)",
@@ -429,7 +426,6 @@ export default function Sidebar({
         </svg>
       ),
     },
-    // ── World Reel tab — mobile ───────────────────────────────────────────
     {
       id:    "reel",
       label: "Reel",
@@ -677,7 +673,6 @@ export default function Sidebar({
                       lineHeight: "16px", textAlign: "center", padding: "0 4px",
                     }}>{badge}</span>
                   )}
-                  {/* NEW badge on Reel */}
                   {isReel && !isActive && (
                     <span style={{
                       position: "absolute", top: 6, right: 2,
@@ -746,11 +741,19 @@ export default function Sidebar({
 
       <SideBtn active={page === "history"}   onClick={() => onNavigate("history")}   icon={<HistoryIcon />}        label="Library & History" />
       <SideBtn active={page === "downloads"} onClick={() => onNavigate("downloads")} icon={<DownloadsQueueIcon />} label="Downloads" />
-      {/* <SideBtn active={page === "nsai"} onClick={() => onNavigate("nsai")} icon={<SparkleIcon />} label="NS AI" /> */}
-      {canGoBack && <SideBtn onClick={onBack}                          icon={<BackIcon />}           label="Back (Ctrl+Z)" />}
+      {canGoBack && <SideBtn onClick={onBack} icon={<BackIcon />} label="Back (Ctrl+Z)" />}
 
-      
-     
+      {/* ── Menu button — flyout opens to the right of sidebar ── */}
+      <SideMenuBtn
+        page={page}
+        onNavigate={onNavigate}
+        onShowShortcuts={onShowShortcuts}
+        setShowDonate={setShowDonate}
+        showDownload={showDownload}
+        setShowDownload={setShowDownload}
+        isWeb={isWeb}
+      />
+
       <div className="sidebar-sep" />
 
       {/* ── Saved thumbnails ── */}
@@ -802,16 +805,7 @@ export default function Sidebar({
       )}
     </div>
 
-    <FloatingMenu
-      page={page}
-      onNavigate={onNavigate}
-      onShowShortcuts={onShowShortcuts}
-      showDonate={showDonate}
-      setShowDonate={setShowDonate}
-      showDownload={showDownload}
-      setShowDownload={setShowDownload}
-      isWeb={isWeb}
-    />
+    {/* FloatingMenu removed — menu is now a SideMenuBtn inside the sidebar */}
 
     {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
     {showDownload && isWeb && (
@@ -823,36 +817,47 @@ export default function Sidebar({
   );
 }
 
-// ── FloatingMenu ──────────────────────────────────────────────────────────────
-function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDonate, showDownload, setShowDownload, isWeb }) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef(null);
+// ── Sidebar Menu Button — flyout panel opens to the right ────────────────────
+function SideMenuBtn({ page, onNavigate, onShowShortcuts, setShowDonate, showDownload, setShowDownload, isWeb }) {
+  const [open, setOpen]           = useState(false);
+  const containerRef              = useRef(null);
+  const [flyoutTop, setFlyoutTop] = useState(200);
 
+  // Close on outside click
   useEffect(() => {
     if (!open) return;
-    const h = (e) => {
-      if (!menuRef.current?.contains(e.target)) setOpen(false);
+    const handler = (e) => {
+      if (!containerRef.current?.contains(e.target)) setOpen(false);
     };
-    setTimeout(() => document.addEventListener("mousedown", h), 0);
-    return () => document.removeEventListener("mousedown", h);
+    setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const items = [
+  const handleToggle = () => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      // Clamp so flyout never goes off screen bottom
+      setFlyoutTop(Math.min(rect.top, window.innerHeight - 300));
+    }
+    setOpen((v) => !v);
+  };
+
+  const menuItems = [
     {
       label: "Settings",
+      active: page === "settings",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
         </svg>
       ),
-      active: page === "settings",
       action: () => { onNavigate("settings"); setOpen(false); },
     },
     {
       label: "Help & Shortcuts",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10"/>
           <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
           <circle cx="12" cy="17" r=".5" fill="currentColor"/>
@@ -861,82 +866,81 @@ function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDo
       action: () => { onShowShortcuts(); setOpen(false); },
     },
     {
-      label: "Support NovaSpark ❤️",
+      label: "Support NovaSpark",
+      accent: "#e8547a",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 21C12 21 3 14.5 3 8.5C3 5.46 5.46 3 8.5 3C10.24 3 11.91 3.81 13 5.08C14.09 3.81 15.76 3 17.5 3C20.54 3 23 5.46 23 8.5C23 14.5 12 21 12 21Z"/>
         </svg>
       ),
-      accent: "#e8547a",
       action: () => { setShowDonate(true); setOpen(false); },
     },
     ...(isWeb ? [{
       label: "Download Desktop App",
+      accent: "var(--amber, #f5a623)",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v11m0 0l-4-4m4 4l4-4"/>
           <path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2"/>
         </svg>
       ),
-      accent: "var(--amber)",
       action: () => { setShowDownload((v) => !v); setOpen(false); },
     }] : []),
     ...(window.electron?.quitApp ? [{
       label: "Quit NovaSpark",
+      accent: "#e53e3e",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
           <polyline points="16 17 21 12 16 7"/>
           <line x1="21" y1="12" x2="9" y2="12"/>
         </svg>
       ),
-      accent: "#e53e3e",
       action: () => window.electron.quitApp(),
     }] : []),
   ];
 
   return (
-    <div ref={menuRef} style={{ position: "fixed", top: 14, right: 16, zIndex: 200, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+    <div ref={containerRef} style={{ position: "relative" }}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        className={`sidebar-btn${open ? " active" : ""}`}
+        onClick={handleToggle}
         title="Menu"
-        style={{
-          display: "flex", alignItems: "center", gap: 6,
-          padding: "7px 13px", borderRadius: 20,
-          border: open ? "1px solid rgba(0,180,166,0.5)" : "1px solid rgba(255,255,255,0.10)",
-          background: open ? "rgba(0,180,166,0.12)" : "rgba(10,20,24,0.55)",
-          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-          color: open ? "var(--red)" : "var(--text2)",
-          cursor: "pointer", transition: "all 0.18s ease",
-          fontFamily: "var(--font-body)", fontSize: 12, fontWeight: 600, letterSpacing: 0.3,
-        }}
-        onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; e.currentTarget.style.color = "var(--text)"; } }}
-        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)"; e.currentTarget.style.color = "var(--text2)"; } }}
+        style={{ position: "relative" }}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="5"  cy="12" r="2"/>
-          <circle cx="12" cy="12" r="2"/>
-          <circle cx="19" cy="12" r="2"/>
+        {/* Three-dot horizontal icon */}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5"  cy="12" r="2.3"/>
+          <circle cx="12" cy="12" r="2.3"/>
+          <circle cx="19" cy="12" r="2.3"/>
         </svg>
-        <span>Menu</span>
+        <span className="tooltip">Menu</span>
       </button>
 
       {open && (
         <div style={{
-          background: "rgba(10,18,22,0.96)",
+          position: "fixed",
+          left: "calc(var(--sidebar, 54px) + 10px)",
+          top: flyoutTop,
+          zIndex: 9999,
+          background: "rgba(10,18,22,0.97)",
           border: "1px solid rgba(255,255,255,0.10)",
-          borderRadius: 12, padding: "6px", minWidth: 210,
-          boxShadow: "0 16px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(0,180,166,0.08)",
-          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-          animation: "menuDrop 0.15s cubic-bezier(0.34,1.56,0.64,1)",
+          borderRadius: 12,
+          padding: 6,
+          minWidth: 218,
+          boxShadow: "0 16px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(0,180,166,0.06)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          animation: "sideMenuIn 0.16s cubic-bezier(0.34,1.56,0.64,1)",
         }}>
           <style>{`
-            @keyframes menuDrop {
-              from { opacity:0; transform:translateY(-6px) scale(0.97); }
-              to   { opacity:1; transform:translateY(0) scale(1); }
+            @keyframes sideMenuIn {
+              from { opacity: 0; transform: translateX(-10px) scale(0.96); }
+              to   { opacity: 1; transform: translateX(0)     scale(1);    }
             }
           `}</style>
-          {items.map(({ label, icon, accent, active, action }) => (
+
+          {menuItems.map(({ label, icon, accent, active, action }) => (
             <button
               key={label}
               onClick={action}
@@ -944,19 +948,34 @@ function FloatingMenu({ page, onNavigate, onShowShortcuts, showDonate, setShowDo
                 display: "flex", alignItems: "center", gap: 10,
                 width: "100%",
                 background: active ? "var(--red-dim)" : "none",
-                border: "none", borderRadius: 8, padding: "10px 12px",
+                border: "none", borderRadius: 8,
+                padding: "10px 12px",
                 color: accent ?? (active ? "var(--red)" : "var(--text2)"),
                 cursor: "pointer", fontSize: 13,
                 fontWeight: active ? 600 : 500,
                 fontFamily: "var(--font-body)", textAlign: "left",
                 transition: "background 0.13s, color 0.13s",
               }}
-              onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = accent ?? "var(--text)"; } }}
-              onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = accent ?? "var(--text2)"; } }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                  e.currentTarget.style.color = accent ?? "var(--text)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = "none";
+                  e.currentTarget.style.color = accent ?? "var(--text2)";
+                }
+              }}
             >
-              <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: 0.8 }}>{icon}</span>
+              <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: 0.8 }}>
+                {icon}
+              </span>
               {label}
-              {active && <span style={{ marginLeft: "auto", color: "var(--red)", fontSize: 11 }}>✓</span>}
+              {active && (
+                <span style={{ marginLeft: "auto", color: "var(--red)", fontSize: 11 }}>✓</span>
+              )}
             </button>
           ))}
         </div>

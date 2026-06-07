@@ -12,6 +12,7 @@ import {
   isRestrictedBrowser,
   getDefaultSource,
   probeUrl,
+  invalidateSourceCache,
 } from "../utils/api";
 import { storage } from "../utils/storage";
 import {
@@ -30,6 +31,22 @@ import { extractHLSForChrome, invalidateHLSCache } from "../utils/hlsExtractor";
 import { setApiErrorHandlers } from "../utils/api";
 setApiErrorHandlers(() => {}, () => {});
 
+// ── How many ms to wait per tier before declaring a source dead ───────────────
+// Each source gets TWO internal attempts inside probeUrl already.
+// These timeouts govern the WatchPage-level "beast engine" polling window.
+// Generous on purpose: a 3G connection or cold CDN edge needs 20-30s.
+const BEAST_TIMEOUT = {
+  tier1: 18000,   // 18 s — flagship servers, should respond fast
+  tier2: 25000,   // 25 s — mid-tier, sometimes slow to cold-start
+  tier3: 32000,   // 32 s — fallback, can be slow
+};
+// After the beast timeout expires we try the source ONE more time before
+// actually abandoning it, giving a flaky server a last chance.
+const BEAST_SECOND_CHANCE_MS = 6000;
+
+// How many full source-cycles to attempt before showing the failure overlay
+const MAX_FULL_CYCLES = 2;
+
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],
@@ -40,6 +57,7 @@ const _EMBED_CSS = `
 video{opacity:1!important;visibility:visible!important;display:block!important;}
 `;
 
+// Stealth JS: strip any text that could reveal source names/URLs
 const _EMBED_JS = `(function(){
   if(window.__ns)return;window.__ns=true;
   var BAD=[
@@ -158,7 +176,8 @@ function parsePlayerMessage(data) {
   } catch { return null; }
 }
 
-function ServerToast({ status }) {
+// ── Stealth loading overlay — never shows source names or URLs ────────────────
+function StealthLoader({ status, attempt }) {
   const [show, setShow]   = useState(false);
   const [fade, setFade]   = useState(false);
   const timerRef          = useRef(null);
@@ -172,7 +191,7 @@ function ServerToast({ status }) {
       timerRef.current = setTimeout(() => {
         setFade(true);
         timerRef.current = setTimeout(() => setShow(false), 500);
-      }, 2000);
+      }, 1800);
     } else if (status === "failed") {
       setFade(true);
       timerRef.current = setTimeout(() => setShow(false), 400);
@@ -181,73 +200,116 @@ function ServerToast({ status }) {
   }, [status]);
 
   if (!show) return null;
+
   const isLoading = status === "testing" || status === "retrying";
+  // Neutral messages that reveal nothing about underlying infrastructure
+  const messages = [
+    "Connecting…",
+    "Preparing stream…",
+    "Loading content…",
+    "Almost ready…",
+    "Establishing connection…",
+  ];
+  const msg = status === "retrying"
+    ? messages[Math.min((attempt || 1) - 1, messages.length - 1)]
+    : "Connecting…";
+
   return (
     <div style={{
-      position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)",
-      zIndex:9999, background:"rgba(8,8,8,0.97)",
-      border:"1px solid rgba(255,255,255,0.08)",
-      borderRadius:12, padding:"11px 22px",
-      display:"flex", alignItems:"center", gap:10,
-      color:"#fff", fontSize:13, fontWeight:500,
-      backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)",
-      boxShadow:"0 6px 32px rgba(0,0,0,0.7)",
-      opacity: fade ? 0 : 1, transition:"opacity 0.45s ease",
-      pointerEvents:"none",
+      position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+      zIndex: 9999,
+      background: "rgba(8,8,8,0.96)",
+      border: "1px solid rgba(255,255,255,0.07)",
+      borderRadius: 12, padding: "11px 22px",
+      display: "flex", alignItems: "center", gap: 10,
+      color: "#fff", fontSize: 13, fontWeight: 500,
+      backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+      boxShadow: "0 6px 32px rgba(0,0,0,0.7)",
+      opacity: fade ? 0 : 1, transition: "opacity 0.45s ease",
+      pointerEvents: "none",
     }}>
       {isLoading ? (
         <>
           <div style={{
-            width:14, height:14, borderRadius:"50%",
-            border:"2px solid rgba(255,255,255,0.15)",
-            borderTopColor:"#fff",
-            animation:"spin 0.7s linear infinite", flexShrink:0,
+            width: 14, height: 14, borderRadius: "50%",
+            border: "2px solid rgba(255,255,255,0.15)",
+            borderTopColor: "#fff",
+            animation: "spin 0.7s linear infinite", flexShrink: 0,
           }}/>
-          <span>{status === "retrying" ? "Switching stream…" : "Starting playback…"}</span>
+          <span>{msg}</span>
         </>
       ) : (
         <>
-          <span style={{color:"#4caf50", fontSize:17, lineHeight:1}}>✓</span>
-          <span>Stream ready</span>
+          <span style={{ color: "#4caf50", fontSize: 17, lineHeight: 1 }}>✓</span>
+          <span>Ready</span>
         </>
       )}
     </div>
   );
 }
 
+// ── Black placeholder while source is loading — prevents white flash ──────────
+function BlackScreen({ visible }) {
+  return (
+    <div style={{
+      position: "absolute", inset: 0, zIndex: 4,
+      background: "#000",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      opacity: visible ? 1 : 0,
+      transition: "opacity 0.4s ease",
+      pointerEvents: visible ? "auto" : "none",
+    }}>
+      {visible && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: "50%",
+            border: "3px solid rgba(255,255,255,0.08)",
+            borderTopColor: "rgba(255,255,255,0.5)",
+            animation: "spin 0.9s linear infinite",
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Failure overlay — neutral, no source names ────────────────────────────────
 function AllFailedOverlay({ onRetry, onBack }) {
   return (
     <div style={{
-      position:"absolute", inset:0, zIndex:10,
-      background:"rgba(0,0,0,0.93)",
-      display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center",
-      gap:18, padding:"32px 24px", textAlign:"center",
+      position: "absolute", inset: 0, zIndex: 10,
+      background: "rgba(0,0,0,0.96)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      gap: 18, padding: "32px 24px", textAlign: "center",
     }}>
       <div style={{
-        width:56, height:56, borderRadius:"50%",
-        background:"rgba(255,255,255,0.06)",
-        border:"1.5px solid rgba(255,255,255,0.12)",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        fontSize:24, marginBottom:4,
-      }}>📡</div>
-      <div style={{maxWidth:320}}>
-        <div style={{fontSize:17, fontWeight:700, color:"#fff", lineHeight:1.4, marginBottom:8}}>
+        width: 56, height: 56, borderRadius: "50%",
+        background: "rgba(255,255,255,0.04)",
+        border: "1.5px solid rgba(255,255,255,0.10)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        marginBottom: 4,
+      }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8">
+          <path d="M1 1l22 22M17 17H5a2 2 0 0 1-2-2V7m4-2h10a2 2 0 0 1 2 2v8"/>
+        </svg>
+      </div>
+      <div style={{ maxWidth: 300 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", lineHeight: 1.4, marginBottom: 8 }}>
           Having trouble loading
         </div>
-        <div style={{fontSize:13, color:"rgba(255,255,255,0.55)", lineHeight:1.6}}>
-          We couldn't start the stream right now.
-          This sometimes happens due to high demand.
-          Try again and we'll find a working stream for you.
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
+          We couldn't establish a connection right now.
+          This can happen with slow networks or high demand.
+          Tap retry and we'll find a working stream.
         </div>
       </div>
-      <div style={{display:"flex", gap:10, marginTop:4, flexWrap:"wrap", justifyContent:"center"}}>
+      <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap", justifyContent: "center" }}>
         <button onClick={onRetry} style={{
-          background:"var(--red,#00b4a6)", border:"none",
-          borderRadius:8, color:"#fff", fontSize:14,
-          fontWeight:700, padding:"11px 28px", cursor:"pointer",
-          display:"flex", alignItems:"center", gap:8,
-          boxShadow:"0 4px 18px rgba(0,180,166,0.35)",
+          background: "var(--red, #e50914)", border: "none",
+          borderRadius: 8, color: "#fff", fontSize: 14,
+          fontWeight: 700, padding: "11px 28px", cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 8,
         }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
             <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
@@ -255,10 +317,10 @@ function AllFailedOverlay({ onRetry, onBack }) {
           Try Again
         </button>
         <button onClick={onBack} style={{
-          background:"rgba(255,255,255,0.07)",
-          border:"1px solid rgba(255,255,255,0.12)",
-          borderRadius:8, color:"rgba(255,255,255,0.8)",
-          fontSize:14, fontWeight:600, padding:"11px 22px", cursor:"pointer",
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.10)",
+          borderRadius: 8, color: "rgba(255,255,255,0.7)",
+          fontSize: 14, fontWeight: 600, padding: "11px 22px", cursor: "pointer",
         }}>Go Back</button>
       </div>
     </div>
@@ -269,20 +331,20 @@ function PlayerOverlayBtns({ showSkip, showNext, nextEpNum, onSkip, onNext }) {
   if (!showSkip && !showNext) return null;
   return (
     <div style={{
-      position:"absolute", bottom:64, left:0, right:0, zIndex:20,
-      display:"flex", alignItems:"flex-end", justifyContent:"space-between",
-      padding:"0 20px", pointerEvents:"none",
+      position: "absolute", bottom: 64, left: 0, right: 0, zIndex: 20,
+      display: "flex", alignItems: "flex-end", justifyContent: "space-between",
+      padding: "0 20px", pointerEvents: "none",
     }}>
-      <div style={{pointerEvents:"auto"}}>
+      <div style={{ pointerEvents: "auto" }}>
         {showSkip && (
           <button onClick={onSkip} style={{
-            background:"rgba(0,0,0,0.82)", backdropFilter:"blur(10px)",
-            border:"2px solid rgba(255,255,255,0.4)", borderRadius:6,
-            color:"#fff", fontSize:14, fontWeight:700, padding:"10px 22px",
-            cursor:"pointer", letterSpacing:0.4,
-            boxShadow:"0 4px 20px rgba(0,0,0,0.6)",
-            animation:"skipPop 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-            display:"flex", alignItems:"center", gap:8,
+            background: "rgba(0,0,0,0.82)", backdropFilter: "blur(10px)",
+            border: "2px solid rgba(255,255,255,0.4)", borderRadius: 6,
+            color: "#fff", fontSize: 14, fontWeight: 700, padding: "10px 22px",
+            cursor: "pointer", letterSpacing: 0.4,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
+            animation: "skipPop 0.3s cubic-bezier(0.34,1.56,0.64,1)",
+            display: "flex", alignItems: "center", gap: 8,
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
@@ -291,18 +353,17 @@ function PlayerOverlayBtns({ showSkip, showNext, nextEpNum, onSkip, onNext }) {
           </button>
         )}
       </div>
-      <div style={{pointerEvents:"auto"}}>
+      <div style={{ pointerEvents: "auto" }}>
         {showNext && (
           <button onClick={onNext} style={{
-            background:"var(--red,#00b4a6)", borderRadius:7,
-            border:"none", color:"#fff", fontSize:14, fontWeight:700,
-            padding:"11px 22px", cursor:"pointer",
-            display:"flex", alignItems:"center", gap:8,
-            boxShadow:"0 4px 24px rgba(0,180,166,0.5)",
-            animation:"skipPop 0.3s cubic-bezier(0.34,1.56,0.64,1)",
+            background: "var(--red, #e50914)", borderRadius: 7,
+            border: "none", color: "#fff", fontSize: 14, fontWeight: 700,
+            padding: "11px 22px", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 8,
+            animation: "skipPop 0.3s cubic-bezier(0.34,1.56,0.64,1)",
           }}>
             Next Episode
-            {nextEpNum && <span style={{opacity:0.85}}>E{nextEpNum}</span>}
+            {nextEpNum && <span style={{ opacity: 0.85 }}>E{nextEpNum}</span>}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
             </svg>
@@ -318,48 +379,48 @@ function EpisodeThumb({ ep, isActive, onPlay }) {
     <div
       onClick={onPlay}
       style={{
-        flexShrink:0, width:210, borderRadius:10, overflow:"hidden", cursor:"pointer",
-        border:isActive ? "2px solid var(--red,#00b4a6)" : "2px solid transparent",
-        background:"rgba(255,255,255,0.03)",
-        transition:"border-color 0.15s,transform 0.15s",
+        flexShrink: 0, width: 210, borderRadius: 10, overflow: "hidden", cursor: "pointer",
+        border: isActive ? "2px solid var(--red, #e50914)" : "2px solid transparent",
+        background: "rgba(255,255,255,0.03)",
+        transition: "border-color 0.15s,transform 0.15s",
       }}
-      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor="rgba(255,255,255,0.2)"; }}
-      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor="transparent"; }}
+      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)"; }}
+      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = "transparent"; }}
     >
-      <div style={{width:"100%", aspectRatio:"16/9", position:"relative", background:"rgba(255,255,255,0.06)"}}>
+      <div style={{ width: "100%", aspectRatio: "16/9", position: "relative", background: "rgba(255,255,255,0.06)" }}>
         {ep.still_path
-          ? <img src={imgUrl(ep.still_path,"w300")} alt={ep.name}
-              style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-          : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",
-              justifyContent:"center",color:"rgba(255,255,255,0.18)",fontSize:22}}>▶</div>
+          ? <img src={imgUrl(ep.still_path, "w300")} alt={ep.name}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+          : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center",
+              justifyContent: "center", color: "rgba(255,255,255,0.18)", fontSize: 22 }}>▶</div>
         }
         <div style={{
-          position:"absolute", top:7, left:8,
-          background:isActive ? "var(--red,#00b4a6)" : "rgba(0,0,0,0.78)",
-          borderRadius:5, padding:"2px 8px", fontSize:11,
-          fontWeight:700, color:"#fff", letterSpacing:0.5,
+          position: "absolute", top: 7, left: 8,
+          background: isActive ? "var(--red, #e50914)" : "rgba(0,0,0,0.78)",
+          borderRadius: 5, padding: "2px 8px", fontSize: 11,
+          fontWeight: 700, color: "#fff", letterSpacing: 0.5,
         }}>E{ep.episode_number}</div>
         {isActive && (
-          <div style={{position:"absolute",inset:0,background:"rgba(0,180,166,0.18)",
-            display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <div style={{width:34,height:34,borderRadius:"50%",background:"var(--red,#00b4a6)",
-              display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:13,boxShadow:"0 2px 16px rgba(0,180,166,0.7)"}}>▶</div>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(229,9,20,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--red, #e50914)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, boxShadow: "0 2px 16px rgba(229,9,20,0.6)" }}>▶</div>
           </div>
         )}
         {ep.runtime > 0 && (
-          <div style={{position:"absolute",bottom:7,right:8,background:"rgba(0,0,0,0.75)",
-            borderRadius:4,padding:"2px 6px",fontSize:10,color:"rgba(255,255,255,0.8)",fontWeight:600}}>
+          <div style={{ position: "absolute", bottom: 7, right: 8, background: "rgba(0,0,0,0.75)",
+            borderRadius: 4, padding: "2px 6px", fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>
             {ep.runtime}m
           </div>
         )}
       </div>
-      <div style={{padding:"9px 12px 11px"}}>
+      <div style={{ padding: "9px 12px 11px" }}>
         <div style={{
-          fontSize:12, fontWeight:700, lineHeight:1.35,
-          color:isActive ? "var(--red,#00b4a6)" : "rgba(255,255,255,0.88)",
-          overflow:"hidden", display:"-webkit-box",
-          WebkitLineClamp:2, WebkitBoxOrient:"vertical",
+          fontSize: 12, fontWeight: 700, lineHeight: 1.35,
+          color: isActive ? "var(--red, #e50914)" : "rgba(255,255,255,0.88)",
+          overflow: "hidden", display: "-webkit-box",
+          WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
         }}>{ep.name || `Episode ${ep.episode_number}`}</div>
       </div>
     </div>
@@ -375,8 +436,6 @@ export default function WatchPage({
   const isElectron = !!window?.electron;
   const restricted = isRestrictedBrowser();
 
-  // ── Browser capability detection ─────────────────────────────────────────
-  // isChromePure: true ONLY for plain Chrome (not Brave, not Opera, not Electron)
   const isChromePure = !isElectron &&
     typeof navigator !== "undefined" &&
     /Chrome/.test(navigator.userAgent) &&
@@ -384,10 +443,7 @@ export default function WatchPage({
     !navigator.brave &&
     !window.opr;
 
-  // useHLSPath: only for pure Chrome — SW intercepts hidden iframe, captures .m3u8
-  const useHLSPath = isChromePure;
-
-  // isRestrictedForServers: Chrome-only restriction (browserSafe filter)
+  const useHLSPath         = isChromePure;
   const isRestrictedForServers = isChromePure && restricted;
 
   const type  = item?.media_type === "tv" || !!item?.first_air_date ? "tv" : "movie";
@@ -411,11 +467,17 @@ export default function WatchPage({
     return getDefaultSource();
   });
 
+  // ── Retry state ──────────────────────────────────────────────────────────
   const [autoSourceStatus,  setAutoSourceStatus]  = useState("testing");
+  const [retryAttempt,      setRetryAttempt]       = useState(0);  // for toast messaging
+  const [cycleCount,        setCycleCount]         = useState(0);  // full rotation counter
   const [showSourceMenu,    setShowSourceMenu]     = useState(false);
   const [webviewLoading,    setWebviewLoading]     = useState(true);
   const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
   const receivedRealSignalRef = useRef(false);
+
+  // Per-source fail count — if a source fails twice in a row, skip it
+  const sourceFailCountRef = useRef({});
 
   const [related,        setRelated]        = useState([]);
   const [relatedPage,    setRelatedPage]    = useState(1);
@@ -438,7 +500,7 @@ export default function WatchPage({
   const [showSeasonMenu, setShowSeasonMenu] = useState(false);
   const [seasonMenuPos,  setSeasonMenuPos]  = useState(null);
 
-  // ── HLS direct-stream state ───────────────────────────────────────────────
+  // ── HLS state ─────────────────────────────────────────────────────────────
   const [hlsStream,  setHlsStream]  = useState(null);
   const [hlsLoading, setHlsLoading] = useState(false);
   const [hlsFailed,  setHlsFailed]  = useState(false);
@@ -451,6 +513,9 @@ export default function WatchPage({
   const pollRef       = useRef(null);
   const retryQueueRef = useRef([]);
   const retryIdxRef   = useRef(0);
+  // Second-chance timer: if a source times out we wait BEAST_SECOND_CHANCE_MS
+  // then check once more before truly giving up
+  const secondChanceRef = useRef(null);
 
   const webBeastReadyRef       = useRef(null);
   const webBeastFailRef        = useRef(null);
@@ -460,34 +525,69 @@ export default function WatchPage({
   useEffect(() => {
     retryQueueRef.current = buildRetryQueue(type, playerSource);
     retryIdxRef.current   = 1;
+    sourceFailCountRef.current = {};
   }, [item?.id, currentSeason, currentEpisode, type]); // eslint-disable-line
 
+  // ── Core retry logic: marks a source as failed, advances to next ──────────
   const tryNextSource = useCallback(() => {
+    clearTimeout(secondChanceRef.current);
+
+    // Track failure count for current source
+    const cur = retryQueueRef.current[retryIdxRef.current - 1] || playerSource;
+    sourceFailCountRef.current[cur] = (sourceFailCountRef.current[cur] || 0) + 1;
+
     const idx = retryIdxRef.current;
     if (idx >= retryQueueRef.current.length) {
-      setAutoSourceStatus("failed");
-      setWebviewLoading(false);
+      // Full cycle exhausted — check if we should cycle again or show failure
+      setCycleCount((prev) => {
+        const next = prev + 1;
+        if (next < MAX_FULL_CYCLES) {
+          // Reset and try the whole queue again quietly
+          retryQueueRef.current = buildRetryQueue(type, getDefaultSource());
+          retryIdxRef.current   = 0;
+          const firstId = retryQueueRef.current[0] || getDefaultSource();
+          retryIdxRef.current = 1;
+          setRetryAttempt((a) => a + 1);
+          setAutoSourceStatus("retrying");
+          setWebviewLoading(true);
+          setPlayerSource(firstId);
+          storage.set("playerSource", firstId);
+        } else {
+          setAutoSourceStatus("failed");
+          setWebviewLoading(false);
+          // Invalidate source cache so next manual retry is fresh
+          invalidateSourceCache(type, item?.id, currentSeason, currentEpisode);
+        }
+        return next;
+      });
       return;
     }
+
     const nextId = retryQueueRef.current[idx];
     retryIdxRef.current += 1;
+    setRetryAttempt((a) => a + 1);
     setAutoSourceStatus("retrying");
     setWebviewLoading(true);
     setPlayerSource(nextId);
     storage.set("playerSource", nextId);
-  }, []);
+  }, [playerSource, type, item?.id, currentSeason, currentEpisode]);
 
   const retryFromScratch = useCallback(() => {
+    clearTimeout(secondChanceRef.current);
+    sourceFailCountRef.current = {};
     const defaultSrc = getDefaultSource();
     retryQueueRef.current = buildRetryQueue(type, defaultSrc);
     retryIdxRef.current   = 1;
+    setCycleCount(0);
+    setRetryAttempt(0);
     setAutoSourceStatus("testing");
     setWebviewLoading(true);
     setHlsStream(null);
     setHlsFailed(false);
+    invalidateSourceCache(type, item?.id, currentSeason, currentEpisode);
     setPlayerSource(defaultSrc);
     storage.set("playerSource", defaultSrc);
-  }, [type]);
+  }, [type, item?.id, currentSeason, currentEpisode]);
 
   useEffect(() => {
     if (!item?.id || !apiKey) return;
@@ -550,7 +650,7 @@ export default function WatchPage({
     if (!item?.id) return;
     if (preFoundSource) {
       if (isRestrictedForServers && NEEDS_INTERCEPT.includes(preFoundSource)) {
-        // unsafe for Chrome — fall through to auto-find
+        // unsafe for Chrome — fall through
       } else {
         setPlayerSource(preFoundSource);
         setAutoSourceStatus("found");
@@ -565,9 +665,10 @@ export default function WatchPage({
         .then((id) => {
           if (cancelled) return;
           if (id && id !== playerSource) { setPlayerSource(id); storage.set("playerSource", id); }
-          if (!id) setAutoSourceStatus("failed");
+          // Even if probe says it failed we still attempt — HEAD can be blocked
+          if (!id) setAutoSourceStatus("testing"); // keep trying
         })
-        .catch(() => { if (!cancelled) setAutoSourceStatus("failed"); });
+        .catch(() => { if (!cancelled) setAutoSourceStatus("testing"); });
     } else {
       setAutoSourceStatus("found");
     }
@@ -598,7 +699,7 @@ export default function WatchPage({
     receivedRealSignalRef.current = false;
   }, [embedUrl]);
 
-  // ── HLS EXTRACTION — Pure Chrome only ────────────────────────────────────
+  // ── HLS extraction (Chrome only) ─────────────────────────────────────────
   useEffect(() => {
     if (!useHLSPath || !item?.id) {
       setHlsStream(null);
@@ -631,7 +732,6 @@ export default function WatchPage({
     return () => { cancelled = true; };
   }, [item?.id, type, currentSeason, currentEpisode, useHLSPath]); // eslint-disable-line
 
-  // Reset HLS on content change
   useEffect(() => {
     setHlsStream(null);
     setHlsFailed(false);
@@ -696,13 +796,13 @@ export default function WatchPage({
     return () => { if (pollId) clearInterval(pollId); };
   }, [isElectron, webviewLoading, pipOpen, embedUrl]);
 
-  // ── Browser: fallback playing signal after 3s ─────────────────────────────
+  // ── Browser: fallback playing signal after 3.5s ───────────────────────────
   useEffect(() => {
     if (isElectron) return;
     if (webviewLoading) { setIsActuallyPlaying(false); return; }
     const timer = setTimeout(() => {
       if (!receivedRealSignalRef.current) setIsActuallyPlaying(true);
-    }, 3000);
+    }, 3500);
     return () => clearTimeout(timer);
   }, [isElectron, webviewLoading, embedUrl]);
 
@@ -728,9 +828,9 @@ export default function WatchPage({
     if (!iframe) return;
     const tryAutoplay = () => {
       try {
-        iframe.contentWindow?.postMessage({ event:"play", action:"play" }, "*");
-        iframe.contentWindow?.postMessage({ type:"play" }, "*");
-        iframe.contentWindow?.postMessage(JSON.stringify({ method:"play" }), "*");
+        iframe.contentWindow?.postMessage({ event: "play", action: "play" }, "*");
+        iframe.contentWindow?.postMessage({ type: "play" }, "*");
+        iframe.contentWindow?.postMessage(JSON.stringify({ method: "play" }), "*");
       } catch {}
     };
     tryAutoplay();
@@ -739,24 +839,32 @@ export default function WatchPage({
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [isElectron, webviewLoading, embedUrl]);
 
-  // ── Electron Beast Engine ─────────────────────────────────────────────────
-  // FIX 1: Generous timeouts — movies take 15-25s to initialise on embed servers
-  // tier1=15s, tier2=22s, tier3=30s
-  // FIX 2: did-fail-load only triggers onFail for MAIN FRAME real errors
-  // Sub-frame failures (ads, trackers, redirects) are ignored
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ELECTRON BEAST ENGINE — hardened with second-chance window
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Flow:
+  //  1. Dom-ready → start polling every 200ms for video element
+  //  2. Tier-based hard timeout fires → enter SECOND CHANCE window
+  //  3. Second chance: wait BEAST_SECOND_CHANCE_MS then check one final time
+  //  4. If still no video → tryNextSource()
+  //  5. Real video found at any point → markReady()
+  //
+  // did-fail-load fires ONLY on main-frame real errors (not sub-frame ads).
+  // ERR_ABORTED (-3) is ignored (redirects inside embed, not real failures).
+  // ═══════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!isElectron) return;
     const wv = webviewRef.current;
     if (!wv) return;
     let active = true;
     clearInterval(pollRef.current);
+    clearTimeout(secondChanceRef.current);
 
     const currentSrc  = PLAYER_SOURCES.find((s) => s.id === playerSource);
     const tier        = currentSrc?.tier ?? 2;
-
-    // FIXED: Generous timeouts — movies need time to resolve on embed servers
-    const HARD_TIMEOUT_MS     = tier === 1 ? 15000 : tier === 2 ? 22000 : 30000;
-    const ABSOLUTE_CEILING_MS = HARD_TIMEOUT_MS + 5000;
+    const HARD_TIMEOUT_MS     = BEAST_TIMEOUT[`tier${tier}`] ?? BEAST_TIMEOUT.tier2;
+    const ABSOLUTE_CEILING_MS = HARD_TIMEOUT_MS + BEAST_SECOND_CHANCE_MS + 3000;
 
     const markReady = () => {
       if (!active) return;
@@ -764,6 +872,7 @@ export default function WatchPage({
       clearInterval(pollRef.current);
       clearTimeout(hardTimeoutId);   // eslint-disable-line
       clearTimeout(absoluteCeilingId); // eslint-disable-line
+      clearTimeout(secondChanceRef.current);
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
       setWebviewLoading(false);
     };
@@ -774,15 +883,42 @@ export default function WatchPage({
       clearInterval(pollRef.current);
       clearTimeout(hardTimeoutId);   // eslint-disable-line
       clearTimeout(absoluteCeilingId); // eslint-disable-line
+      clearTimeout(secondChanceRef.current);
       tryNextSource();
+    };
+
+    // Second-chance: instead of immediately failing on hard timeout,
+    // wait a bit and do one final video poll before giving up
+    const enterSecondChance = () => {
+      if (!active) return;
+      clearInterval(pollRef.current);
+      // Brief final check window
+      secondChanceRef.current = setTimeout(async () => {
+        if (!active) return;
+        const wv2 = webviewRef.current;
+        if (!wv2) { onFail(); return; }
+        try {
+          const wcId = wv2.getWebContentsId?.();
+          if (wcId && window.electron?.queryVideoProgress) {
+            const prog = await window.electron.queryVideoProgress(wcId);
+            if (prog && prog.duration > 0) { markReady(); return; }
+          }
+          const r = await wv2.executeJavaScript(
+            `(()=>{const v=document.querySelector('video');if(!v)return{ready:false};return{ready:v.readyState>=2&&v.duration>0&&!isNaN(v.duration)};})()`
+          );
+          if (r?.ready) markReady();
+          else onFail();
+        } catch { onFail(); }
+      }, BEAST_SECOND_CHANCE_MS);
     };
 
     const absoluteCeilingId = setTimeout(() => {
       if (!active) return;
       active = false;
       clearInterval(pollRef.current);
-      clearTimeout(hardTimeoutId); // eslint-disable-line
-      setWebviewLoading(false);
+      clearTimeout(secondChanceRef.current);
+      // Hard ceiling: give up completely, no more second chances
+      tryNextSource();
     }, ABSOLUTE_CEILING_MS);
 
     const runPoll = async () => {
@@ -806,9 +942,10 @@ export default function WatchPage({
           })()`
         );
         if (r.ready) { markReady(); return; }
-        if (r.err)   { onFail();   return; }
+        // Only hard-fail on definitive video.error — not just networkState
+        if (r.err && r.ready === false) { enterSecondChance(); return; }
       } catch {
-        markReady();
+        // executeJavaScript threw — webview still initialising, keep polling
       }
     };
 
@@ -818,16 +955,15 @@ export default function WatchPage({
       runPoll();
     };
 
-    // Poll every 200ms — fast detection
     pollRef.current = setInterval(runPoll, 200);
-    const hardTimeoutId = setTimeout(onFail, HARD_TIMEOUT_MS);
+    const hardTimeoutId = setTimeout(enterSecondChance, HARD_TIMEOUT_MS);
 
-    // FIXED: Only fail on main-frame load errors
-    // Ignore sub-frame failures (ads/trackers/redirects inside the embed page)
     const onLoadFail = (e) => {
-      if (!e.isMainFrame) return;     // ignore sub-frame failures
-      if (e.errorCode === -3) return; // ERR_ABORTED — redirects, not real failures
-      onFail();
+      if (!e.isMainFrame) return;
+      if (e.errorCode === -3) return; // ERR_ABORTED — redirect, not real error
+      // For main-frame failures also give a second chance — could be a transient TCP reset
+      clearTimeout(hardTimeoutId); // eslint-disable-line
+      enterSecondChance();
     };
 
     wv.addEventListener("dom-ready", onDomReady);
@@ -839,13 +975,16 @@ export default function WatchPage({
       clearInterval(pollRef.current);
       clearTimeout(hardTimeoutId);
       clearTimeout(absoluteCeilingId);
+      clearTimeout(secondChanceRef.current);
       try { wv.removeEventListener("dom-ready", onDomReady); } catch {}
       try { wv.removeEventListener("did-finish-load", runPoll); } catch {}
       try { wv.removeEventListener("did-fail-load", onLoadFail); } catch {}
     };
   }, [embedUrl, isElectron, tryNextSource, playerSource, type]);
 
-  // ── Browser Beast Engine ──────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BROWSER BEAST ENGINE — hardened with second-chance window
+  // ═══════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (isElectron) return;
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
@@ -854,19 +993,23 @@ export default function WatchPage({
     let active          = true;
     let iframeHasLoaded = false;
 
-    const PROBE_TIMEOUT     = 600;
-    const LOAD_REVEAL_DELAY = 600;
-    const HARD_TIMEOUT_MS   = 5000;
+    // More generous timeouts vs original — slow connections need breathing room
+    const PROBE_TIMEOUT     = 800;   // ms before we stop waiting for HEAD probe
+    const LOAD_REVEAL_DELAY = 700;   // ms after iframe load before we show it
+    const HARD_TIMEOUT_MS   = 7000;  // ms before first fail decision
+    const SECOND_CHANCE_MS  = 5000;  // ms of extra grace after HARD_TIMEOUT
 
     let probeAbortCtrl = new AbortController();
     let probeTimerId   = null;
     let hardTimerId    = null;
     let revealTimerId  = null;
+    let secondTimerId  = null;
 
     const clearAll = () => {
       clearTimeout(probeTimerId);
       clearTimeout(hardTimerId);
       clearTimeout(revealTimerId);
+      clearTimeout(secondTimerId);
       try { probeAbortCtrl.abort(); } catch {}
     };
 
@@ -885,6 +1028,17 @@ export default function WatchPage({
       tryNextSource();
     };
 
+    const enterSecondChance = () => {
+      if (!active) return;
+      // Give the iframe one last window before declaring failure
+      secondTimerId = setTimeout(() => {
+        if (!active) return;
+        // If iframe has loaded by now, call it a success
+        if (iframeHasLoaded) onReady();
+        else onFail();
+      }, SECOND_CHANCE_MS);
+    };
+
     webBeastReadyRef.current = onReady;
     webBeastFailRef.current  = onFail;
 
@@ -892,10 +1046,16 @@ export default function WatchPage({
       if (!active) return;
       iframeHasLoaded = true;
       clearTimeout(hardTimerId);
-      revealTimerId = setTimeout(() => { if (!active) return; onReady(); }, LOAD_REVEAL_DELAY);
+      clearTimeout(secondTimerId);
+      revealTimerId = setTimeout(() => { if (active) onReady(); }, LOAD_REVEAL_DELAY);
     };
 
-    iframeErrorCallbackRef.current = () => { if (!active) return; onFail(); };
+    iframeErrorCallbackRef.current = () => {
+      if (!active) return;
+      // Don't fail immediately on iframe error — try second chance first
+      clearTimeout(hardTimerId);
+      enterSecondChance();
+    };
 
     probeTimerId = setTimeout(() => probeAbortCtrl.abort(), PROBE_TIMEOUT);
 
@@ -904,14 +1064,15 @@ export default function WatchPage({
       .catch((err) => {
         clearTimeout(probeTimerId);
         if (!active) return;
-        if (err.name === "AbortError") return;
-        onFail();
+        if (err.name === "AbortError") return; // timeout on probe is ok, keep going
+        // Network error on probe → enter second chance rather than fail immediately
+        enterSecondChance();
       });
 
     hardTimerId = setTimeout(() => {
       if (!active) return;
-      if (!iframeHasLoaded) onFail();
-      else onReady();
+      if (iframeHasLoaded) onReady();
+      else enterSecondChance();
     }, HARD_TIMEOUT_MS);
 
     return () => {
@@ -972,10 +1133,13 @@ export default function WatchPage({
   }, [isElectron]);
 
   const switchSource = useCallback((id) => {
+    clearTimeout(secondChanceRef.current);
     setShowSourceMenu(false);
     if (id === playerSource) return;
     retryQueueRef.current = buildRetryQueue(type, id);
     retryIdxRef.current   = 1;
+    setCycleCount(0);
+    setRetryAttempt(0);
     setAutoSourceStatus("testing");
     setWebviewLoading(true);
     setHlsStream(null);
@@ -1025,16 +1189,16 @@ export default function WatchPage({
   const year    = (d.release_date || d.first_air_date || "").slice(0, 4);
   const planId  = isPremium?.planId || (isPremium ? "premium" : "free");
 
-  // ── Source visibility ─────────────────────────────────────────────────────
   const visibleSources = useMemo(() => PLAYER_SOURCES.filter((src) => {
     if (src.async) return false;
     if (isRestrictedForServers && !src.browserSafe) return false;
     return true;
   }), [isRestrictedForServers]);
 
+  // Show server number rather than internal ID
   const currentLabel = visibleSources.find((s) => s.id === playerSource)?.label
     ?? PLAYER_SOURCES.find((s) => s.id === playerSource)?.label
-    ?? "Stream";
+    ?? "Server";
 
   const currentDownload = useMemo(() => {
     if (!downloads?.length) return null;
@@ -1054,7 +1218,7 @@ export default function WatchPage({
   const mediaName = useMemo(() => {
     const base = `${title}${year ? " (" + year + ")" : ""}`;
     return type === "tv"
-      ? `${base} S${String(currentSeason).padStart(2,"0")} E${String(currentEpisode).padStart(2,"0")}`
+      ? `${base} S${String(currentSeason).padStart(2, "0")} E${String(currentEpisode).padStart(2, "0")}`
       : base;
   }, [title, year, type, currentSeason, currentEpisode]);
 
@@ -1070,10 +1234,9 @@ export default function WatchPage({
 
   if (!item) return null;
 
-  // FIX 3: Don't show failed overlay while HLS is loading or stream is active
+  // Never show failed overlay while HLS is loading or stream is active
   const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading;
 
-  // ── IframeShield logic ────────────────────────────────────────────────────
   const iframeShieldActive = isChromePure && !isElectron && !webviewLoading && hlsFailed && !hlsLoading;
 
   return (
@@ -1097,7 +1260,7 @@ export default function WatchPage({
           cursor:pointer; transition:background 0.15s; font-family:inherit;
         }
         .season-dropdown-menu button:hover { background:rgba(255,255,255,0.08); }
-        .season-dropdown-menu button.active { color:var(--red,#00b4a6); font-weight:700; }
+        .season-dropdown-menu button.active { color:var(--red,#e50914); font-weight:700; }
         .load-more-btn:hover { background: rgba(255,255,255,0.08) !important; }
         .watch-rel-card:hover .watch-rel-overlay { opacity:1 !important; }
         .topbar-pip-btn {
@@ -1107,53 +1270,85 @@ export default function WatchPage({
           padding:7px 14px; cursor:pointer; transition:background 0.15s; font-family:inherit;
         }
         .topbar-pip-btn:hover { background:rgba(255,255,255,0.13); }
-        .topbar-pip-btn.active { color:var(--red,#00b4a6); border-color:rgba(0,180,166,0.35); }
+        .topbar-pip-btn.active { color:var(--red,#e50914); border-color:rgba(229,9,20,0.35); }
       `}</style>
 
-      <ServerToast status={autoSourceStatus} />
+      {/* Stealth loader — neutral text, no source names */}
+      <StealthLoader status={autoSourceStatus} attempt={retryAttempt} />
 
       <div className="watch-topbar">
-        <button className="btn btn-ghost" onClick={onBack} style={{gap:6}}><BackIcon /> Back</button>
-        <div className="watch-topbar-title" style={{flex:1,minWidth:0}}>
+        <button className="btn btn-ghost" onClick={onBack} style={{ gap: 6 }}><BackIcon /> Back</button>
+        <div className="watch-topbar-title" style={{ flex: 1, minWidth: 0 }}>
           {title}
           {type === "tv" && (
             <span className="watch-topbar-ep">&nbsp;·&nbsp;S{currentSeason} E{currentEpisode}</span>
           )}
         </div>
-        {isElectron && (
+
+        {/* Server + Data moved to topbar as requested */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Source selector in topbar */}
           <button
-            className={`topbar-pip-btn${pipOpen ? " active" : ""}`}
-            onClick={() => {
-              if (pipOpen) { window.electron?.closePipWindow?.(); return; }
-              if (!canPopOut(planId)) { setGateModal("pip"); return; }
-              window.electron?.openPipWindow?.(embedUrl, title);
+            ref={sourceRef}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 600,
+              padding: "7px 14px", cursor: "pointer", transition: "background 0.15s",
+              fontFamily: "inherit",
             }}
-            title={pipOpen ? "Close pop-out" : "Pop out player"}
+            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+            onClick={() => {
+              if (!canSwitchSource(planId)) { setGateModal("source"); return; }
+              const rect = sourceRef.current?.getBoundingClientRect();
+              if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
+              setShowSourceMenu((v) => !v);
+            }}
           >
-            <PopOutIcon />
-            <span style={{fontSize:12}}>{pipOpen ? "Close" : "Pop out"}</span>
+            <SourceIcon />
+            <span>{hlsStream && !hlsFailed && useHLSPath ? "Direct" : currentLabel}</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity: 0.5 }}>
+              <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+            </svg>
           </button>
-        )}
+
+          {/* Data meter in topbar */}
+          <DataMeterWidget
+            isPlaying={!webviewLoading && !pipOpen}
+            isActuallyPlaying={isActuallyPlaying && !webviewLoading && !pipOpen}
+            runtimeMinutes={runtimeMinutes}
+            genreIds={(d.genres || []).map((g) => g.id)}
+            type={type}
+          />
+
+          {isElectron && (
+            <button
+              className={`topbar-pip-btn${pipOpen ? " active" : ""}`}
+              onClick={() => {
+                if (pipOpen) { window.electron?.closePipWindow?.(); return; }
+                if (!canPopOut(planId)) { setGateModal("pip"); return; }
+                window.electron?.openPipWindow?.(embedUrl, title);
+              }}
+              title={pipOpen ? "Close pop-out" : "Pop out player"}
+            >
+              <PopOutIcon />
+              <span style={{ fontSize: 12 }}>{pipOpen ? "Close" : "Pop out"}</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="watch-player-wrap" style={{background:"#000", position:"relative"}}>
+      <div className="watch-player-wrap" style={{ background: "#000", position: "relative" }}>
 
-        {webviewLoading && (
-          <div style={{
-            position:"absolute", inset:0, zIndex:5, background:"#000",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            pointerEvents:"none",
-          }}>
-            <div className="spinner" />
-          </div>
-        )}
+        {/* BLACK screen shown while loading — never white */}
+        <BlackScreen visible={webviewLoading && !showFailedOverlay} />
 
         {showFailedOverlay && (
           <AllFailedOverlay onRetry={retryFromScratch} onBack={onBack} />
         )}
 
         {isElectron ? (
-          /* ── ELECTRON: webview with full ad-blocking via webRequest ──────── */
           <webview
             key={`wv-${playerSource}-${item.id}-s${currentSeason}e${currentEpisode}`}
             ref={webviewRef}
@@ -1165,15 +1360,14 @@ export default function WatchPage({
             webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
             useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
             style={{
-              position:"absolute", inset:0, width:"100%", height:"100%",
-              border:"none", background:"#000",
+              position: "absolute", inset: 0, width: "100%", height: "100%",
+              border: "none", background: "#000",
               opacity: webviewLoading ? 0 : 1,
-              transition:"opacity 0.3s ease",
+              transition: "opacity 0.35s ease",
               zIndex: 1,
             }}
           />
         ) : useHLSPath && hlsStream && !hlsFailed ? (
-          /* ── CHROME HLS: direct .m3u8 via SW intercept ── */
           <HLSPlayer
             key={`hls-${item.id}-s${currentSeason}e${currentEpisode}-${hlsStream.url}`}
             streamUrl={hlsStream.url}
@@ -1195,7 +1389,6 @@ export default function WatchPage({
             style={{ zIndex: 1 }}
           />
         ) : (
-          /* ── IFRAME: Brave / Firefox / Opera / Samsung + Chrome HLS-failed ── */
           <>
             <iframe
               key={`if-${playerSource}-${item.id}-s${currentSeason}e${currentEpisode}`}
@@ -1207,33 +1400,19 @@ export default function WatchPage({
               onLoad={() => { iframeLoadCallbackRef.current?.(); }}
               onError={() => { iframeErrorCallbackRef.current?.(); }}
               style={{
-                position:"absolute", inset:0, width:"100%", height:"100%",
-                border:"none", background:"#000",
+                position: "absolute", inset: 0, width: "100%", height: "100%",
+                border: "none", background: "#000",
                 opacity: webviewLoading ? 0 : 1,
-                transition:"opacity 0.4s ease",
+                transition: "opacity 0.4s ease",
                 pointerEvents: webviewLoading ? "none" : "auto",
               }}
             />
             {iframeShieldActive && (
               <>
-                <div style={{
-                  position:"absolute", top:0, left:0, right:0, height:"22%",
-                  zIndex:2, cursor:"default", background:"transparent",
-                  pointerEvents:"all",
-                }} />
-                <div style={{
-                  position:"absolute", bottom:0, left:0, right:0, height:"6%",
-                  zIndex:2, cursor:"default", background:"transparent",
-                  pointerEvents:"all",
-                }} />
-                <div style={{
-                  position:"absolute", top:"22%", left:0, width:"4%", bottom:"6%",
-                  zIndex:2, background:"transparent", pointerEvents:"all",
-                }} />
-                <div style={{
-                  position:"absolute", top:"22%", right:0, width:"4%", bottom:"6%",
-                  zIndex:2, background:"transparent", pointerEvents:"all",
-                }} />
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "22%", zIndex: 2, cursor: "default", background: "transparent", pointerEvents: "all" }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "6%", zIndex: 2, cursor: "default", background: "transparent", pointerEvents: "all" }} />
+                <div style={{ position: "absolute", top: "22%", left: 0, width: "4%", bottom: "6%", zIndex: 2, background: "transparent", pointerEvents: "all" }} />
+                <div style={{ position: "absolute", top: "22%", right: 0, width: "4%", bottom: "6%", zIndex: 2, background: "transparent", pointerEvents: "all" }} />
               </>
             )}
           </>
@@ -1241,13 +1420,13 @@ export default function WatchPage({
 
         {pipOpen && (
           <div style={{
-            position:"absolute", inset:0, zIndex:20,
-            display:"flex", flexDirection:"column",
-            alignItems:"center", justifyContent:"center",
-            background:"rgba(0,0,0,0.92)", gap:16,
+            position: "absolute", inset: 0, zIndex: 20,
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.92)", gap: 16,
           }}>
             <PopOutIcon size={36} />
-            <span style={{fontSize:15, color:"var(--text1)", fontWeight:600}}>
+            <span style={{ fontSize: 15, color: "var(--text1)", fontWeight: 600 }}>
               Playing in pop-out window
             </span>
             <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()}>
@@ -1266,34 +1445,11 @@ export default function WatchPage({
           />
         )}
 
-        <div className="watch-source-bar" style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          <button
-            ref={sourceRef}
-            className="player-overlay-btn"
-            style={{position:"static"}}
-            onClick={() => {
-              if (!canSwitchSource(planId)) { setGateModal("source"); return; }
-              const rect = sourceRef.current?.getBoundingClientRect();
-              if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
-              setShowSourceMenu((v) => !v);
-            }}
-          >
-            <SourceIcon /> {hlsStream && !hlsFailed && useHLSPath ? "Direct Stream" : currentLabel}
-          </button>
-
-          <DataMeterWidget
-            isPlaying={!webviewLoading && !pipOpen}
-            isActuallyPlaying={isActuallyPlaying && !webviewLoading && !pipOpen}
-            runtimeMinutes={runtimeMinutes}
-            genreIds={(d.genres || []).map((g) => g.id)}
-            type={type}
-          />
-        </div>
-
+        {/* Source dropdown — no URLs, just server labels */}
         {showSourceMenu && menuPos && (
           <div
             className="source-dropdown source-dropdown--fixed watch-source-dropdown"
-            style={{top:menuPos.top, left:menuPos.left}}
+            style={{ top: menuPos.top, left: menuPos.left }}
             onClick={(e) => e.stopPropagation()}
           >
             {visibleSources.map((src) => (
@@ -1311,14 +1467,14 @@ export default function WatchPage({
       </div>
 
       {type === "tv" && episodeList.length > 0 && (
-        <div style={{paddingTop:28, paddingBottom:4}}>
+        <div style={{ paddingTop: 28, paddingBottom: 4 }}>
           <div style={{
-            display:"flex", alignItems:"center", justifyContent:"space-between",
-            paddingLeft:20, paddingRight:20, marginBottom:16,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            paddingLeft: 20, paddingRight: 20, marginBottom: 16,
           }}>
-            <div className="section-title" style={{margin:0,padding:0}}>EPISODES</div>
+            <div className="section-title" style={{ margin: 0, padding: 0 }}>EPISODES</div>
             {seasons.length > 1 && (
-              <div style={{position:"relative"}}>
+              <div style={{ position: "relative" }}>
                 <button
                   ref={seasonBtnRef}
                   onClick={() => {
@@ -1327,22 +1483,22 @@ export default function WatchPage({
                     setShowSeasonMenu((v) => !v);
                   }}
                   style={{
-                    background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)",
-                    borderRadius:8, color:"#fff", fontSize:13, fontWeight:600,
-                    padding:"8px 16px", cursor:"pointer",
-                    display:"flex", alignItems:"center", gap:6,
-                    fontFamily:"inherit", transition:"background 0.15s",
+                    background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)",
+                    borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 600,
+                    padding: "8px 16px", cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 6,
+                    fontFamily: "inherit", transition: "background 0.15s",
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background="rgba(255,255,255,0.12)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background="rgba(255,255,255,0.07)"}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
                 >
                   Season {currentSeason}
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{opacity:0.7}}>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity: 0.7 }}>
                     <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
                   </svg>
                 </button>
                 {showSeasonMenu && seasonMenuPos && (
-                  <div className="season-dropdown-menu" style={{top:seasonMenuPos.top,left:seasonMenuPos.left}}>
+                  <div className="season-dropdown-menu" style={{ top: seasonMenuPos.top, left: seasonMenuPos.left }}>
                     {seasons.map((s) => (
                       <button
                         key={s.season_number}
@@ -1361,10 +1517,10 @@ export default function WatchPage({
             ref={carouselRef}
             className="ep-carousel"
             style={{
-              display:"flex", gap:12, overflowX:"auto", overflowY:"hidden",
-              paddingLeft:20, paddingRight:40, paddingBottom:8,
-              maskImage:"linear-gradient(to right, black 85%, transparent 100%)",
-              WebkitMaskImage:"linear-gradient(to right, black 85%, transparent 100%)",
+              display: "flex", gap: 12, overflowX: "auto", overflowY: "hidden",
+              paddingLeft: 20, paddingRight: 40, paddingBottom: 8,
+              maskImage: "linear-gradient(to right, black 85%, transparent 100%)",
+              WebkitMaskImage: "linear-gradient(to right, black 85%, transparent 100%)",
             }}
           >
             {episodeList.map((ep) => (
@@ -1375,13 +1531,13 @@ export default function WatchPage({
                 onPlay={() => goToEpisode(currentSeason, ep.episode_number)}
               />
             ))}
-            <div style={{flexShrink:0, width:20}} />
+            <div style={{ flexShrink: 0, width: 20 }} />
           </div>
         </div>
       )}
 
       <div className="watch-meta">
-        <div className="watch-meta-actions" style={{justifyContent:"flex-start"}}>
+        <div className="watch-meta-actions" style={{ justifyContent: "flex-start" }}>
           {trailerKey && (
             <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}>
               <TrailerIcon /> Trailer
@@ -1415,7 +1571,7 @@ export default function WatchPage({
       </div>
 
       {related.length > 0 && (
-        <div className="section" style={{paddingTop:8}}>
+        <div className="section" style={{ paddingTop: 8 }}>
           <div className="section-title">More Like This</div>
           <div className="cards-grid">
             {related.map((rel) => (
@@ -1423,13 +1579,13 @@ export default function WatchPage({
                 key={`${rel.media_type}_${rel.id}`}
                 className="card watch-rel-card"
                 onClick={() => onSelect?.({ ...rel, media_type: rel.media_type })}
-                style={{cursor:"pointer"}}
+                style={{ cursor: "pointer" }}
               >
                 <div className="card-poster">
                   {rel.poster_path
-                    ? <img src={imgUrl(rel.poster_path)} alt={rel.title||rel.name} loading="lazy"/>
+                    ? <img src={imgUrl(rel.poster_path)} alt={rel.title || rel.name} loading="lazy"/>
                     : <div className="no-poster"><PlayIcon /></div>}
-                  <div className="card-overlay watch-rel-overlay" style={{opacity:0,transition:"opacity 0.2s"}}>
+                  <div className="card-overlay watch-rel-overlay" style={{ opacity: 0, transition: "opacity 0.2s" }}>
                     <div className="card-play"><PlayIcon /></div>
                   </div>
                   {rel.vote_average > 0 && (
@@ -1437,24 +1593,24 @@ export default function WatchPage({
                   )}
                 </div>
                 <div className="card-info">
-                  <div className="card-title">{rel.title||rel.name}</div>
-                  <div className="card-year">{(rel.release_date||rel.first_air_date||"").slice(0,4)}</div>
+                  <div className="card-title">{rel.title || rel.name}</div>
+                  <div className="card-year">{(rel.release_date || rel.first_air_date || "").slice(0, 4)}</div>
                 </div>
               </div>
             ))}
           </div>
           {relatedPage < relatedTotal && (
-            <div style={{display:"flex",justifyContent:"center",marginTop:24}}>
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
               <button
                 className="load-more-btn"
                 onClick={() => fetchRelated(relatedPage + 1)}
                 disabled={relatedLoading}
                 style={{
-                  background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)",
-                  borderRadius:8, color:"var(--text,#fff)", fontSize:14, fontWeight:600,
-                  padding:"12px 36px",
-                  cursor:relatedLoading ? "not-allowed" : "pointer",
-                  opacity:relatedLoading ? 0.6 : 1, transition:"background 0.2s",
+                  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 8, color: "var(--text,#fff)", fontSize: 14, fontWeight: 600,
+                  padding: "12px 36px",
+                  cursor: relatedLoading ? "not-allowed" : "pointer",
+                  opacity: relatedLoading ? 0.6 : 1, transition: "background 0.2s",
                 }}
               >{relatedLoading ? "Loading…" : "Load More"}</button>
             </div>

@@ -16,29 +16,6 @@ export const setApiErrorHandlers = (onAuth, onUnreachable) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // BROWSER ENVIRONMENT DETECTION
 // ═════════════════════════════════════════════════════════════════════════════
-//
-// GOAL: detect plain Chrome / Chromium (no native ad-blocking) so we can
-// route those users through Chrome-safe servers only.
-//
-// SAFE browsers (isRestrictedBrowser → false):
-//   Electron      window.electron exists — webRequest blocking built-in
-//   Brave         navigator.brave.isBrave() or brand "Brave"
-//   Firefox       "Firefox/" in UA — full MV2 uBlock support
-//   Edge          "Edg/" in UA — Tracking Prevention built-in
-//   Opera         "OPR/" in UA — built-in ad blocker
-//   Samsung       "SamsungBrowser/" in UA
-//   DuckDuckGo    "DuckDuckGo/" in UA — Privacy Pro always on
-//   Safari        "Safari/" without "Chrome/" — ITP prevents injection
-//
-// RESTRICTED browsers (isRestrictedBrowser → true):
-//   Plain Chrome / Chromium — no native shields, redirects fire freely
-//   Vivaldi / Arc desktop — undetectable but have their own blocking;
-//     they land here but real-world impact is low.
-//
-// USAGE:
-//   Call initBrowserEnv() once at app start (resolves async Brave check).
-//   Then isRestrictedBrowser() is synchronous and instant everywhere.
-// ═════════════════════════════════════════════════════════════════════════════
 
 let _braveCheckCache          = null;
 let _isRestrictedBrowserCache = null;
@@ -66,11 +43,6 @@ async function _checkIsBrave() {
   return false;
 }
 
-/**
- * Call once at app startup (main.jsx / App.jsx).
- * Resolves the async Brave check so all later calls to
- * isRestrictedBrowser() are synchronous.
- */
 export async function initBrowserEnv() {
   if (_isRestrictedBrowserCache !== null) return;
 
@@ -105,7 +77,6 @@ export async function initBrowserEnv() {
   const brave = await _checkIsBrave();
   if (brave) { _isRestrictedBrowserCache = false; return; }
 
-  // Check userAgentData brands for confirmed vanilla Chrome
   try {
     const brands = navigator?.userAgentData?.brands || [];
     if (brands.some((b) => b.brand === "Google Chrome")) {
@@ -113,11 +84,9 @@ export async function initBrowserEnv() {
     }
   } catch {}
 
-  // Chrome/ in UA without safe-browser signals → restrict
   if (/Chrome\//i.test(ua) && !/Chromium\//i.test(ua)) {
     _isRestrictedBrowserCache = true; return;
   }
-  // Pure Chromium builds → restrict
   if (/Chromium\//i.test(ua)) {
     _isRestrictedBrowserCache = true; return;
   }
@@ -125,18 +94,9 @@ export async function initBrowserEnv() {
   _isRestrictedBrowserCache = false;
 }
 
-/**
- * Returns true only for plain Chrome / Chromium (no native ad-blocking).
- * Always returns false for Electron, Brave, Firefox, Opera, Edge,
- * DuckDuckGo, Samsung Internet, and Safari.
- *
- * Requires initBrowserEnv() to have been called at startup.
- * Falls back to a fast synchronous UA check before that resolves.
- */
 export function isRestrictedBrowser() {
   if (_isRestrictedBrowserCache !== null) return _isRestrictedBrowserCache;
 
-  // Fast sync fallback
   if (typeof window !== "undefined" && window?.electron) return false;
   if (typeof navigator === "undefined") return false;
 
@@ -214,32 +174,16 @@ export const tmdbFetch = async (path, apiKey) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // PLAYER SOURCES
 // ═════════════════════════════════════════════════════════════════════════════
-//
-// PRIORITY FIELDS
-// ───────────────
-// moviePriority / tvPriority   Electron + protected browsers (fastest first)
-// browserPriority              Plain Chrome only (safest/cleanest first)
-//
-// browserSafe
-// ───────────
-// true  → works cleanly in Chrome iframes. No ad injection, no sub-frame
-//         loads to unreliable third-party domains.
-// false → injects ads/redirects in Chrome iframes, OR sub-frames to unstable
-//         third-party domains (e.g. vidsrc.to → vsembed.ru). Safe only in
-//         Electron (webRequest blocking) or ad-blocking browsers.
-//
-// browserPriority: 99 → excluded from Chrome retry queue entirely.
-// ═════════════════════════════════════════════════════════════════════════════
 
 export const PLAYER_SOURCES = [
 
-  // ── TIER 1: Fastest & most reliable (Electron priority) ──────────────────
+  // ── TIER 1: Fastest & most reliable ──────────────────────────────────────
   {
     id: "vidlink",
     label: "Server 1",
     tag: null, note: "Fast",
     tier: 1, moviePriority: 1, tvPriority: 1,
-    browserPriority: 99,   // injects redirect popups in Chrome
+    browserPriority: 99,
     browserSafe: false,
     supportsProgress: true,
     movieUrl: (id) => `https://vidlink.pro/movie/${id}?autoplay=true`,
@@ -250,64 +194,20 @@ export const PLAYER_SOURCES = [
     label: "Server 2",
     tag: null, note: "Fast",
     tier: 1, moviePriority: 2, tvPriority: 2,
-    browserPriority: 99,   // sends redirect/ad payloads to Chrome user agents
+    browserPriority: 99,
     browserSafe: false,
     supportsProgress: true, progressViaFrames: true,
     movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
     tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
-  // {
-  //   id: "vidsrc_fyi",
-  //   label: "Server 3",
-  //   tag: null, note: "Fast",
-  //   tier: 1, moviePriority: 3, tvPriority: 3,
-  //   browserPriority: 99,   
-  //   browserSafe: false,
-  //   supportsProgress: true, progressViaFrames: true,
-  //   movieUrl: (id) => `https://vidsrc.fyi/embed/movie/${id}`,
-  //   tvUrl:    (id, s, e) => `https://vidsrc.fyi/embed/tv/${id}/${s}/${e}`,
-  // },
 
   // ── TIER 2: Fast & reliable ───────────────────────────────────────────────
-  // {
-  //   id: "embedsu",
-  //   label: "Server 4",
-  //   tag: null, note: null,
-  //   tier: 2, moviePriority: 4, tvPriority: 4,
-  //   browserPriority: 99,   // embed.su DNS unreliable — removed from Chrome priority
-  //   browserSafe: true,
-  //   supportsProgress: true, progressViaFrames: true,
-  //   movieUrl: (id) => `https://embed.su/embed/movie/${id}`,
-  //   tvUrl:    (id, s, e) => `https://embed.su/embed/tv/${id}/${s}/${e}`,
-  // },
-  // {
-  //   id: "moviesapi",
-  //   label: "Server 5",
-  //   tag: null, note: null,
-  //   tier: 2, moviePriority: 5, tvPriority: 6,
-  //   browserPriority: 2,    // #2 Chrome: clean iframe, good coverage
-  //   browserSafe: true,
-  //   supportsProgress: true,
-  //   movieUrl: (id) => `https://moviesapi.club/movie/${id}`,
-  //   tvUrl:    (id, s, e) => `https://moviesapi.club/tv/${id}-${s}-${e}`,
-  // },
-  // {
-  //   id: "vidsrc_net",
-  //   label: "Server 6",
-  //   tag: null, note: null,
-  //   tier: 2, moviePriority: 6, tvPriority: 5,
-  //   browserPriority: 99,   // injects popunder ads in Chrome iframes
-  //   browserSafe: false,
-  //   supportsProgress: true, progressViaFrames: true,
-  //   movieUrl: (id) => `https://vidsrc.net/embed/movie?tmdb=${id}`,
-  //   tvUrl:    (id, s, e) => `https://vidsrc.net/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
-  // },
   {
     id: "autoembed",
-    label: "Server 7",
+    label: "Server 3",
     tag: null, note: null,
     tier: 2, moviePriority: 7, tvPriority: 7,
-    browserPriority: 99,   // triggers redirect chains in Chrome
+    browserPriority: 99,
     browserSafe: false,
     supportsProgress: true, progressViaFrames: true,
     movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
@@ -317,11 +217,9 @@ export const PLAYER_SOURCES = [
   // ── TIER 3: Reliable fallbacks ────────────────────────────────────────────
   {
     id: "vidsrcto",
-    label: "Server 8",
+    label: "Server 4",
     tag: null, note: null,
     tier: 3, moviePriority: 8, tvPriority: 8,
-    // Sub-frames to vsembed.ru → shows raw browser errors in Chrome iframes.
-    // Works perfectly in Electron (webRequest intercepts the sub-frame).
     browserPriority: 99,
     browserSafe: false,
     supportsProgress: true, progressViaFrames: true,
@@ -330,32 +228,21 @@ export const PLAYER_SOURCES = [
   },
   {
     id: "vidfast",
-    label: "Server 9",
+    label: "Server 5",
     tag: null, note: null,
     tier: 3, moviePriority: 9, tvPriority: 9,
-    browserPriority: 3,    // #3 Chrome: clean, decent coverage
+    browserPriority: 3,
     browserSafe: true,
     supportsProgress: true,
     movieUrl: (id) => `https://vidfast.pro/movie/${id}?autoPlay=true`,
     tvUrl:    (id, s, e) => `https://vidfast.pro/tv/${id}/${s}/${e}?autoPlay=true`,
   },
-  // {
-  //   id: "smashy",
-  //   label: "Server 10",
-  //   tag: null, note: null,
-  //   tier: 3, moviePriority: 10, tvPriority: 10,
-  //   browserPriority: 4,    // #4 Chrome: no redirect in Chrome iframes
-  //   browserSafe: true,
-  //   supportsProgress: true,
-  //   movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
-  //   tvUrl:    (id, s, e) => `https://player.smashy.stream/tv/${id}?s=${s}&e=${e}`,
-  // },
   {
     id: "videasy",
-    label: "Server 11",
+    label: "Server 6",
     tag: null, note: null,
     tier: 3, moviePriority: 11, tvPriority: 11,
-    browserPriority: 5,    // #5 Chrome: clean iframe behaviour
+    browserPriority: 5,
     browserSafe: true,
     supportsProgress: true,
     movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
@@ -390,19 +277,12 @@ export const sourceSupportsProgress  = (id) => PLAYER_SOURCES.find((s) => s.id =
 export const sourceProgressViaFrames = (id) => PLAYER_SOURCES.find((s) => s.id === id)?.progressViaFrames ?? false;
 export const sourceIsAsync           = (id) => PLAYER_SOURCES.find((s) => s.id === id)?.async             ?? false;
 
-// Sources that inject redirects/ads in Chrome iframes — never load in Chrome
 export const NEEDS_INTERCEPT = ["vidsrc_cc", "autoembed", "vidlink", "vidsrc_fyi", "vidsrc_net"];
 
-// Default sources per environment
 export const ANIME_DEFAULT_SOURCE       = "allmanga";
-export const NON_ANIME_DEFAULT_SOURCE   = "vidlink";     // Electron / Brave / Firefox
-export const BROWSER_RESTRICTED_DEFAULT = "moviesapi";     // Chrome — stable, no sub-frame issues
+export const NON_ANIME_DEFAULT_SOURCE   = "vidlink";
+export const BROWSER_RESTRICTED_DEFAULT = "moviesapi";
 
-/**
- * Returns the correct default source for the current environment.
- * Chrome → embedsu (Chrome-safe, no sub-frame errors)
- * Others → vidlink (fastest tier 1)
- */
 export function getDefaultSource() {
   return isRestrictedBrowser() ? BROWSER_RESTRICTED_DEFAULT : NON_ANIME_DEFAULT_SOURCE;
 }
@@ -410,11 +290,6 @@ export function getDefaultSource() {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // RETRY QUEUE
-// ═════════════════════════════════════════════════════════════════════════════
-//
-// Builds a sorted list of source IDs to try in order on failure.
-// Chrome: only browserSafe sources, sorted by browserPriority.
-// Others: all sources, sorted by moviePriority / tvPriority.
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function buildRetryQueue(type, preferredId) {
@@ -440,16 +315,23 @@ export function buildRetryQueue(type, preferredId) {
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// PRE-FLIGHT URL PROBE
+// PRE-FLIGHT URL PROBE  —  now with double-retry + jitter
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// Instantly detects completely unreachable servers (refused / DNS fail)
-// before loading them into an iframe — prevents raw browser error pages.
+// Strategy: probe each source up to PROBE_RETRIES times before declaring it
+// dead.  A slow CDN edge or transient TCP reset should not cause a false
+// "refused" on the first attempt.  Jitter between retries avoids
+// thundering-herd on the same edge server.
 //
 // Returns: "ok" | "refused" | "timeout"
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function probeUrl(url, timeoutMs = 2000) {
+const PROBE_RETRIES      = 2;    // total attempts per source (1 initial + 1 retry)
+const PROBE_RETRY_DELAY  = 800;  // ms between attempts
+const PROBE_TIMEOUT_FAST = 2500; // ms — first attempt
+const PROBE_TIMEOUT_SLOW = 4000; // ms — retry attempt (more generous)
+
+async function _singleProbe(url, timeoutMs) {
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -463,13 +345,29 @@ export async function probeUrl(url, timeoutMs = 2000) {
   }
 }
 
+export async function probeUrl(url, _legacyTimeout) {
+  // First attempt — fast timeout
+  const first = await _singleProbe(url, PROBE_TIMEOUT_FAST);
+  if (first === "ok") return "ok";
+
+  // Brief pause then retry with a more generous timeout
+  await new Promise((r) => setTimeout(r, PROBE_RETRY_DELAY));
+  const second = await _singleProbe(url, PROBE_TIMEOUT_SLOW);
+  return second;
+}
+
 
 // ═════════════════════════════════════════════════════════════════════════════
-// WORKING SOURCE FINDER
+// WORKING SOURCE FINDER  —  hardened with per-source double-probe
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// Race-probes all eligible sources in parallel with staggered delays.
-// Returns the first reachable source ID, caches the result per content item.
+// Each source is probed twice (via probeUrl above) before being discarded.
+// The preferred source gets zero stagger delay so it wins on good connections.
+// A second tier of sources starts 200 ms later; third tier at 500 ms.
+// This means:
+//   - Fast connection  → preferred source wins immediately
+//   - Slow connection  → retry buys enough time for the preferred to respond
+//   - Dead source      → two full probe rounds exhaust before next source wins
 // ═════════════════════════════════════════════════════════════════════════════
 
 const _sourceCache     = new Map();
@@ -488,18 +386,21 @@ export async function findWorkingSource(type, id, season = null, episode = null,
   });
 
   const racePromises = sources.map((src) => {
+    // Stagger: preferred = 0 ms, tier 1 = 0 ms, tier 2 = 200 ms, tier 3 = 500 ms
     let delay = 0;
     if (src.id !== preferredId) {
       if (restricted) {
-        delay = ((src.browserPriority ?? 5) - 1) * 100;
+        delay = ((src.browserPriority ?? 5) - 1) * 120;
       } else {
-        delay = src.tier === 1 ? 0 : src.tier === 2 ? 150 : 400;
+        delay = src.tier === 1 ? 0 : src.tier === 2 ? 200 : 500;
       }
     }
+
     return new Promise((resolve, reject) => {
       setTimeout(async () => {
         const url    = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, episode);
-        const result = await probeUrl(url, 2500);
+        // probeUrl already does double-retry internally
+        const result = await probeUrl(url);
         if (result === "ok") resolve(src.id);
         else reject();
       }, delay);
@@ -512,10 +413,18 @@ export async function findWorkingSource(type, id, season = null, episode = null,
     _sourceCache.set(cacheKey, { sourceId: winner, expiresAt: Date.now() + SOURCE_CACHE_TTL });
     return winner;
   } catch {
+    // All sources failed probe — still return preferred/default so WatchPage
+    // can attempt anyway (iframe sometimes loads even when HEAD is blocked)
     const fallback = preferredId ?? defaultSource;
     _sourceCache.set(cacheKey, { sourceId: fallback, expiresAt: Date.now() + 2 * 60 * 1000 });
     return fallback;
   }
+}
+
+// Invalidate source cache for a specific content item (called after a confirmed failure)
+export function invalidateSourceCache(type, id, season = null, episode = null) {
+  const cacheKey = `${type}|${id}|${season ?? ""}|${episode ?? ""}`;
+  _sourceCache.delete(cacheKey);
 }
 
 

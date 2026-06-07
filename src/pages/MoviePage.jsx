@@ -23,9 +23,6 @@ import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } 
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate       from "../components/PremiumGate";
 
-const TRAILER_TRIM_START = 8;
-const TRAILER_TRIM_END   = 8;
-
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],
@@ -45,6 +42,102 @@ const _EMBED_JS = `(function(){
   setTimeout(function(){obs.disconnect();},12000);
 })()`;
 
+// ── Disclaimer Modal ──────────────────────────────────────────────────────────
+function DisclaimerModal({ onAccept, onClose, title }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(0,0,0,0.90)", backdropFilter: "blur(12px)",
+      WebkitBackdropFilter: "blur(12px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "20px",
+    }}>
+      <div style={{
+        background: "#0c1620",
+        border: "1px solid rgba(255,255,255,0.09)",
+        borderRadius: 20, padding: "32px 28px", maxWidth: 460, width: "100%",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.95), 0 0 0 1px rgba(255,255,255,0.04)",
+        animation: "disclaimerIn 0.35s cubic-bezier(0.34,1.56,0.64,1)",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 22 }}>
+          <div style={{
+            width: 50, height: 50, borderRadius: "50%", flexShrink: 0,
+            background: "rgba(229,9,20,0.1)",
+            border: "1.5px solid rgba(229,9,20,0.28)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 24,
+          }}>⚠️</div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", lineHeight: 1.2, letterSpacing: -0.3 }}>
+              Before You Watch
+            </div>
+            <div style={{
+              fontSize: 12, color: "rgba(255,255,255,0.38)", marginTop: 4,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300,
+            }}>
+              {title}
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          padding: "18px 0", marginBottom: 22,
+        }}>
+          <p style={{
+            fontSize: 13.5, color: "rgba(255,255,255,0.6)", lineHeight: 1.8, margin: "0 0 16px",
+          }}>
+            <strong style={{ color: "rgba(255,255,255,0.85)", fontWeight: 700 }}>NovaSparks</strong> does
+            not host, store, or distribute any media content. All streams are sourced from independent
+            third-party providers over the public internet.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 9 }}>
+            {[
+              "Stream quality and availability may vary by region or network",
+              "You must be of legal viewing age in your jurisdiction",
+              "For personal, non-commercial use only",
+              "We are not responsible for third-party content or ads",
+            ].map((point, i) => (
+              <li key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", lineHeight: 1.55 }}>
+                {point}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{
+            flex: 1, background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.09)",
+            borderRadius: 11, color: "rgba(255,255,255,0.55)",
+            fontSize: 14, fontWeight: 600, padding: "12px 0",
+            cursor: "pointer", fontFamily: "inherit",
+            transition: "background 0.15s",
+          }}>Cancel</button>
+          <button onClick={onAccept} style={{
+            flex: 2, background: "var(--red, #e50914)", border: "none",
+            borderRadius: 11, color: "#fff",
+            fontSize: 14, fontWeight: 700, padding: "12px 0",
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            boxShadow: "0 4px 20px rgba(229,9,20,0.4)",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            I Understand — Watch Now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Server toast ──────────────────────────────────────────────────────────────
 function ServerToast({ status, sourceLabel }) {
   const [show, setShow] = useState(false);
   const [fade, setFade] = useState(false);
@@ -54,245 +147,191 @@ function ServerToast({ status, sourceLabel }) {
     if (status === "testing" || status === "retrying") { setShow(true); setFade(false); }
     else if (status === "found") {
       setFade(false);
-      timerRef.current = setTimeout(() => { setFade(true); timerRef.current = setTimeout(() => setShow(false), 500); }, 2500);
+      timerRef.current = setTimeout(() => {
+        setFade(true);
+        timerRef.current = setTimeout(() => setShow(false), 500);
+      }, 2500);
     } else if (status === "failed") {
       setFade(false);
-      timerRef.current = setTimeout(() => { setFade(true); timerRef.current = setTimeout(() => setShow(false), 500); }, 4000);
+      timerRef.current = setTimeout(() => {
+        setFade(true);
+        timerRef.current = setTimeout(() => setShow(false), 500);
+      }, 4000);
     }
     return () => clearTimeout(timerRef.current);
   }, [status, sourceLabel]);
   if (!show) return null;
   return (
     <div style={{
-      position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999,
-      background:"transparent",border:"1px solid #fff",
-      borderRadius:12,padding:"11px 22px",display:"flex",alignItems:"center",gap:10,
-      color:"#fff",fontSize:13,fontWeight:500,backdropFilter:"blur(12px)",
-      boxShadow:"none",opacity:fade?0:1,
-      transition:"opacity 0.45s ease",pointerEvents:"none",
+      position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", zIndex: 9999,
+      background: "transparent", border: "1px solid #fff",
+      borderRadius: 12, padding: "11px 22px", display: "flex", alignItems: "center", gap: 10,
+      color: "#fff", fontSize: 13, fontWeight: 500, backdropFilter: "blur(12px)",
+      boxShadow: "none", opacity: fade ? 0 : 1,
+      transition: "opacity 0.45s ease", pointerEvents: "none",
     }}>
       {(status === "testing" || status === "retrying") ? (<>
-        <div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.15)",borderTopColor:"#fff",animation:"spin 0.7s linear infinite",flexShrink:0}}/>
-        <span>{status === "retrying" ? "Trying another server…" : "Please wait, finding best server…"}</span>
+        <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+        <span>{status === "retrying" ? "Trying another server…" : "Finding best server…"}</span>
       </>) : status === "found" ? (<>
-        <span style={{color:"#4caf50",fontSize:17,lineHeight:1}}>✓</span>
+        <span style={{ color: "#4caf50", fontSize: 17, lineHeight: 1 }}>✓</span>
         <span>Playing on <strong>{sourceLabel}</strong></span>
       </>) : (<>
-        <span style={{color:"#ff5252",fontSize:17,lineHeight:1}}>⚠</span>
+        <span style={{ color: "#ff5252", fontSize: 17, lineHeight: 1 }}>⚠</span>
         <span>Could not load — try another server</span>
       </>)}
     </div>
   );
 }
 
-// ── Hero trailer — full bleed, trimmed, all platform branding fully hidden ───
-// Strategy: aggressive iframe oversizing crops the edges where UI chrome lives,
-// then SOLID (not gradient) corner blocks kill any in-video watermarks that
-// survive the crop (Prime Video, Netflix, Disney+, HBO, Apple TV+ logos).
-// Injected into the webview — kills ALL YouTube UI via CSS + MutationObserver
-const _TRAILER_INJECT_JS = `(function(){
-  if(window.__nsTrailerInjected) return;
-  window.__nsTrailerInjected = true;
-
-  var s = document.createElement('style');
-  s.textContent = [
-    '#movie_player > *:not(.html5-video-container)',
-    '#movie_player .html5-video-container > *:not(video)',
-    '.ytp-chrome-top','.ytp-chrome-bottom','.ytp-chrome-controls',
-    '.ytp-gradient-top','.ytp-gradient-bottom',
-    '.ytp-pause-overlay','.ytp-play-button','.ytp-large-play-button',
-    '.ytp-cued-thumbnail-overlay','.ytp-watermark','.ytp-youtube-button',
-    '.ytp-error','.ytp-error-content','.ytp-error-icon',
-    '.ytp-spinner','.ytp-spinner-container',
-    '.ytp-title','.ytp-title-text','.ytp-title-channel',
-    '.ytp-share-button','.ytp-watch-later-button','.ytp-copylink-button',
-    '.ytp-cards-teaser','.ytp-endscreen-element',
-    '.ytp-contextmenu','.ytp-tooltip',
-    '.ytp-progress-bar-container','.ytp-scrubber-container',
-    '.ytp-time-display','.ytp-volume-panel',
-    '.annotation','.iv-branding','.iv-drawer',
-    'a[href*="youtube.com"]','a[href*="youtu.be"]'
-  ].join(',') + '{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;}';
-  s.textContent += 'video{object-fit:cover!important;pointer-events:none!important;}';
-  s.textContent += 'body,html{background:#000!important;overflow:hidden!important;}';
-  document.head.appendChild(s);
-
-  function forcePlay() {
-    var v = document.querySelector('video');
-    if(v && v.paused) { v.muted=true; v.play().catch(function(){}); }
-  }
-  forcePlay();
-  [300,800,1500,3000,5000].forEach(function(t){ setTimeout(forcePlay,t); });
-
-  var HIDE = [
-    '.ytp-pause-overlay','.ytp-large-play-button','.ytp-play-button',
-    '.ytp-chrome-top','.ytp-chrome-bottom','.ytp-chrome-controls',
-    '.ytp-gradient-top','.ytp-gradient-bottom',
-    '.ytp-watermark','.ytp-youtube-button','.ytp-error',
-    '.ytp-spinner','.ytp-title','.ytp-endscreen-element',
-    '.ytp-cards-teaser','.ytp-cued-thumbnail-overlay'
-  ];
-  function sweep() {
-    HIDE.forEach(function(sel){
-      document.querySelectorAll(sel).forEach(function(el){
-        el.style.cssText='display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;';
-      });
-    });
-    forcePlay();
-  }
-  var obs = new MutationObserver(sweep);
-  obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true});
-  setTimeout(function(){ obs.disconnect(); },60000);
-})();`;
-
-// Poll the webview every second to check currentTime vs trimEnd
-function _useWebviewTrimPoll(webviewRef, durationRef, endedRef, trimEnd, onEnded) {
-  const pollRef = useRef(null);
-  useEffect(() => {
-    const tick = async () => {
-      const wv = webviewRef.current;
-      if (!wv) return;
-      try {
-        const r = await wv.executeJavaScript(
-          `(()=>{ const v=document.querySelector('video'); return v ? {ct:v.currentTime,dur:v.duration||0} : null; })()`
-        );
-        if (!r) return;
-        if (r.dur > 0) durationRef.current = r.dur;
-        if (durationRef.current > 0) {
-          const stopAt = durationRef.current - trimEnd;
-          if (!endedRef.current && r.ct >= stopAt && stopAt > 0) {
-            endedRef.current = true;
-            onEnded?.();
-          }
-        }
-      } catch {}
-    };
-    pollRef.current = setInterval(tick, 1000);
-    return () => clearInterval(pollRef.current);
-  }, [webviewRef, durationRef, endedRef, trimEnd, onEnded]);
-}
-
-function HeroTrailer({ trailerKey, trimStart, trimEnd, muted, onEnded, onReady }) {
-  const isElectron  = !!window?.electron;
-  const webviewRef  = useRef(null);
-  const iframeRef   = useRef(null);
-  const durationRef = useRef(0);
-  const readyRef    = useRef(false);
-  const endedRef    = useRef(false);
-
-  const src = useMemo(() => {
-    const params = new URLSearchParams({
-      autoplay:       "1",
-      mute:           muted ? "1" : "0",
-      controls:       "0",
-      disablekb:      "1",
-      loop:           "0",
-      rel:            "0",
-      showinfo:       "0",
-      iv_load_policy: "3",
-      modestbranding: "1",
-      playsinline:    "1",
-      enablejsapi:    "1",
-      start:          String(trimStart),
-      playlist:       trailerKey,
-    });
-    return `https://www.youtube.com/embed/${trailerKey}?${params.toString()}`;
-  }, [trailerKey, trimStart, muted]);
-
-  // Webview trim polling (Electron only)
-  _useWebviewTrimPoll(webviewRef, durationRef, endedRef, trimEnd, onEnded);
-
-  // iframe postMessage trim polling (web only)
-  const iframePollRef = useRef(null);
-  useEffect(() => {
-    if (isElectron) return;
-    const handler = (e) => {
-      try {
-        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (!data || data.event !== "infoDelivery" || !data.info) return;
-        const { currentTime, duration } = data.info;
-        if (duration > 0) durationRef.current = duration;
-        if (durationRef.current > 0) {
-          const stopAt = durationRef.current - trimEnd;
-          if (!endedRef.current && currentTime >= stopAt && stopAt > 0) {
-            endedRef.current = true; onEnded?.();
-          }
-        }
-      } catch {}
-    };
-    window.addEventListener("message", handler);
-    iframePollRef.current = setInterval(() => {
-      try {
-        iframeRef.current?.contentWindow?.postMessage('{"event":"listening"}', "*");
-        iframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "getVideoData", args: [] }), "*"
-        );
-      } catch {}
-    }, 1000);
-    return () => { window.removeEventListener("message", handler); clearInterval(iframePollRef.current); };
-  }, [isElectron, trimEnd, onEnded]);
-
-  // Shared bottom gradient
-  const gradient = (
-    <div style={{
-      position: "absolute", bottom: 0, left: 0, right: 0, height: "60%",
-      background: "linear-gradient(to top, var(--bg,#050c0f) 0%, rgba(5,12,15,0.88) 28%, rgba(5,12,15,0.42) 58%, transparent 100%)",
-      pointerEvents: "none", zIndex: 3,
-    }} />
-  );
-
-  const playerStyle = {
-    position: "absolute", top: "50%", left: "50%",
-    width: "100%", height: "100%",
-    transform: "translate(-50%, -50%) scale(1.55)",
-    transformOrigin: "center center",
-    border: "none", pointerEvents: "none",
-  };
-
-  // ── Electron: webview injects CSS to nuke all YouTube UI ─────────────────
-  if (isElectron) {
-    return (
-      <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-        <webview
-          ref={webviewRef}
-          src={src}
-          partition="persist:preview"
-          allowpopups="false"
-          plugins="true"
-          webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
-          useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-          style={playerStyle}
-          onDomReady={async () => {
-            const wv = webviewRef.current;
-            if (!wv) return;
-            try { await wv.executeJavaScript(_TRAILER_INJECT_JS); } catch {}
-            if (!readyRef.current) { readyRef.current = true; onReady?.(); }
-          }}
-        />
-        {gradient}
-      </div>
-    );
-  }
-
-  // ── Web: iframe with scale crop (no Electron security restrictions) ───────
+// ── Cast Section ──────────────────────────────────────────────────────────────
+function CastSection({ cast }) {
+  if (!cast?.length) return null;
   return (
-    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-      <iframe
-        ref={iframeRef}
-        src={src}
-        allow="autoplay; fullscreen"
-        allowFullScreen
-        onLoad={() => { if (!readyRef.current) { readyRef.current = true; onReady?.(); } }}
-        style={playerStyle}
-        title="Preview"
-      />
-      {gradient}
+    <div className="section">
+      <div className="section-title">CAST</div>
+      <div style={{
+        display: "flex", gap: 16, overflowX: "auto", paddingBottom: 10,
+        scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
+        maskImage: "linear-gradient(to right, black 88%, transparent 100%)",
+        WebkitMaskImage: "linear-gradient(to right, black 88%, transparent 100%)",
+      }}>
+        {cast.slice(0, 24).map((person) => (
+          <div key={person.cast_id || person.id} style={{
+            flexShrink: 0, width: 96, textAlign: "center",
+          }}>
+            <div style={{
+              width: 70, height: 70, borderRadius: "50%", overflow: "hidden",
+              background: "rgba(255,255,255,0.06)",
+              border: "2px solid rgba(255,255,255,0.08)",
+              margin: "0 auto 9px",
+              transition: "border-color 0.2s",
+            }}>
+              {person.profile_path ? (
+                <img
+                  src={imgUrl(person.profile_path, "w185")}
+                  alt={person.name}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                <div style={{
+                  width: "100%", height: "100%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "rgba(255,255,255,0.18)", fontSize: 24,
+                }}>👤</div>
+              )}
+            </div>
+            <div style={{
+              fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.88)",
+              lineHeight: 1.35, overflow: "hidden",
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+            }}>{person.name}</div>
+            <div style={{
+              fontSize: 10.5, color: "rgba(255,255,255,0.38)", marginTop: 3,
+              lineHeight: 1.3, overflow: "hidden",
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+              fontStyle: "italic",
+            }}>{person.character}</div>
+          </div>
+        ))}
+        <div style={{ flexShrink: 0, width: 20 }} />
+      </div>
     </div>
   );
 }
 
+// ── Reviews Section ───────────────────────────────────────────────────────────
+function ReviewsSection({ reviews }) {
+  const [expanded, setExpanded] = useState({});
+  if (!reviews?.length) return null;
+  const LIMIT = 280;
+  return (
+    <div className="section">
+      <div className="section-title">AUDIENCE REVIEWS</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {reviews.slice(0, 5).map((review) => {
+          const isExp = !!expanded[review.id];
+          const content = review.content || "";
+          const short = content.length > LIMIT ? content.slice(0, LIMIT).trimEnd() + "…" : content;
+          const rating = review.author_details?.rating;
+          const date = review.created_at
+            ? new Date(review.created_at).toLocaleDateString("en-US", {
+                year: "numeric", month: "short", day: "numeric",
+              })
+            : "";
+          return (
+            <div key={review.id} style={{
+              background: "rgba(255,255,255,0.025)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 14, padding: "16px 18px",
+            }}>
+              {/* Reviewer header */}
+              <div style={{
+                display: "flex", alignItems: "center",
+                justifyContent: "space-between", marginBottom: 12, gap: 10,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+                    background: "rgba(229,9,20,0.1)",
+                    border: "1.5px solid rgba(229,9,20,0.2)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 14, fontWeight: 800, color: "var(--red, #e50914)",
+                  }}>
+                    {(review.author || "?")[0].toUpperCase()}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>{review.author}</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>
+                      {date}
+                    </div>
+                  </div>
+                </div>
+                {rating != null && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
+                    background: "rgba(255,213,0,0.07)",
+                    border: "1px solid rgba(255,213,0,0.18)",
+                    borderRadius: 7, padding: "4px 9px",
+                  }}>
+                    <span style={{ color: "#ffd500", fontSize: 11, lineHeight: 1 }}>★</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: "#ffd500" }}>
+                      {rating}<span style={{ fontSize: 10, opacity: 0.6 }}>/10</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+              {/* Review text */}
+              <p style={{
+                fontSize: 13, color: "rgba(255,255,255,0.58)",
+                lineHeight: 1.75, margin: 0,
+              }}>
+                {isExp ? content : short}
+              </p>
+              {content.length > LIMIT && (
+                <button
+                  onClick={() => setExpanded((e) => ({ ...e, [review.id]: !isExp }))}
+                  style={{
+                    background: "none", border: "none",
+                    color: "var(--red, #e50914)", fontSize: 12, fontWeight: 700,
+                    cursor: "pointer", padding: "8px 0 0", display: "block",
+                    fontFamily: "inherit",
+                  }}>
+                  {isExp ? "Show less ↑" : "Read more ↓"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
-
+// ─────────────────────────────────────────────────────────────────────────────
 export default function MoviePage({
   item, apiKey, onSave, isSaved, onHistory, progress, saveProgress,
   onBack, onSettings, onDownloadStarted, watched, onMarkWatched, onMarkUnwatched,
@@ -323,10 +362,10 @@ export default function MoviePage({
   const [pipOpen,           setPipOpen]           = useState(false);
   const [downloaderFolder,  setDownloaderFolder]  = useState(() => storage.get("downloaderFolder") || "");
 
-  const [previewActive,  setPreviewActive]  = useState(false);
-  const [previewMuted,   setPreviewMuted]   = useState(true);
-  const [previewReady,   setPreviewReady]   = useState(false);
-  const previewTimerRef  = useRef(null);
+  // Disclaimer + new data
+  const [showDisclaimer,    setShowDisclaimer]    = useState(false);
+  const [cast,              setCast]              = useState([]);
+  const [reviews,           setReviews]           = useState([]);
 
   const sourceRef           = useRef(null);
   const playerWrapRef       = useRef(null);
@@ -364,7 +403,7 @@ export default function MoviePage({
   const mediaName = `${title}${year ? " (" + year + ")" : ""}`;
   const planId    = isPremium?.planId || (isPremium ? "premium" : "free");
 
-  const { watchedSecs, totalSecs, displayPct, progressLabel } = useMemo(() => {
+  const { displayPct, progressLabel } = useMemo(() => {
     const ws = storage.get("dlTime_" + progressKey) || 0;
     const ts = d?.runtime ? d.runtime * 60 : 0;
     const dp = ws > 0 && ts > 0 ? Math.floor((ws / ts) * 100) : 0;
@@ -374,7 +413,7 @@ export default function MoviePage({
       return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}` : `${m}:${String(sec).padStart(2,"0")}`;
     };
     const label = ws > 0 && ts > 0 ? `${fmt(ws)} / ${fmt(ts)}` : ws > 0 ? fmt(ws) : display > 0 ? `${display}%` : null;
-    return { watchedSecs: ws, totalSecs: ts, displayPct: display, progressLabel: label };
+    return { displayPct: display, progressLabel: label };
   }, [progressKey, pct, d?.runtime]);
 
   const [watchedThreshold]  = useState(() => storage.get("watchedThreshold") ?? 20);
@@ -400,27 +439,31 @@ export default function MoviePage({
     setPlayerSource(nextId); storage.set("playerSource", nextId);
   }, []);
 
+  // Fetch movie details
   useEffect(() => {
     let mounted = true;
-    setPreviewActive(false); setPreviewReady(false); clearTimeout(previewTimerRef.current);
     tmdbFetch(`/movie/${item.id}`, apiKey)
       .then((d) => { if (mounted) setDetails(d); })
       .catch(() => { if (mounted) setDetails(item); });
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
+  // Fetch cast and reviews in parallel
   useEffect(() => {
-    clearTimeout(previewTimerRef.current);
-    if (trailerKey && !playing && !restricted) {
-      previewTimerRef.current = setTimeout(() => { setPreviewActive(true); }, 1500);
-    }
-    return () => clearTimeout(previewTimerRef.current);
-  }, [trailerKey, item.id, playing, restricted]);
+    if (!item?.id) return;
+    let mounted = true;
+    Promise.all([
+      tmdbFetch(`/movie/${item.id}/credits`, apiKey).catch(() => ({ cast: [] })),
+      tmdbFetch(`/movie/${item.id}/reviews`, apiKey).catch(() => ({ results: [] })),
+    ]).then(([credits, reviewsData]) => {
+      if (!mounted) return;
+      setCast(credits.cast || []);
+      setReviews(reviewsData.results || []);
+    });
+    return () => { mounted = false; };
+  }, [item.id, apiKey]);
 
-  const stopPreview = useCallback(() => {
-    setPreviewActive(false); setPreviewReady(false); clearTimeout(previewTimerRef.current);
-  }, []);
-
+  // Find working source
   useEffect(() => {
     if (!item?.id) return;
     let cancelled = false;
@@ -641,8 +684,8 @@ export default function MoviePage({
     return () => { clearTimeout(timer); clearInterval(interval); };
   }, [playing, progressKey, watchedThreshold, playerSource, progressViaFrames]);
 
-  const handlePlay = useCallback(() => {
-    stopPreview();
+  // ── Actual play logic (runs after disclaimer is accepted) ─────────────────
+  const handlePlayActual = useCallback(() => {
     if (onWatch) {
       onHistory({ ...d, media_type: "movie" });
       onWatch({ item: d, season: null, episode: null, sourceId: foundSource });
@@ -652,12 +695,34 @@ export default function MoviePage({
     onHistory({ ...d, media_type: "movie" });
     const pw = preWarmRef.current;
     if (pw) { try { pw.src = "about:blank"; } catch {} }
-  }, [d, onHistory, onWatch, foundSource, stopPreview]);
+  }, [d, onHistory, onWatch, foundSource]);
+
+  // ── Play button — shows disclaimer first if not accepted this session ─────
+  const handlePlay = useCallback(() => {
+    if (!sessionStorage.getItem("ns_disclaimer_ok")) {
+      setShowDisclaimer(true);
+      return;
+    }
+    handlePlayActual();
+  }, [handlePlayActual]);
+
+  const handleDisclaimerAccept = useCallback(() => {
+    sessionStorage.setItem("ns_disclaimer_ok", "1");
+    setShowDisclaimer(false);
+    handlePlayActual();
+  }, [handlePlayActual]);
 
   useEffect(() => {
     if (!playing || !NEEDS_INTERCEPT.includes(playerSource)) return;
-    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => { setPlayerFullscreen(true); document.documentElement.setAttribute("data-player-fullscreen","1"); });
-    const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => { setPlayerFullscreen(false); document.documentElement.removeAttribute("data-player-fullscreen"); if (document.fullscreenElement) document.exitFullscreen?.(); });
+    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => {
+      setPlayerFullscreen(true);
+      document.documentElement.setAttribute("data-player-fullscreen", "1");
+    });
+    const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => {
+      setPlayerFullscreen(false);
+      document.documentElement.removeAttribute("data-player-fullscreen");
+      if (document.fullscreenElement) document.exitFullscreen?.();
+    });
     return () => {
       if (enterH) window.electron?.offWebviewEnterFullscreen?.(enterH);
       if (leaveH) window.electron?.offWebviewLeaveFullscreen?.(leaveH);
@@ -667,8 +732,13 @@ export default function MoviePage({
 
   useEffect(() => {
     if (!playing) return;
-    const openH  = window.electron?.onPipOpened?.(async () => { setPipOpen(true); pipWebContentsIdRef.current = (await window.electron.getPipWebContentsId?.()) ?? null; });
-    const closeH = window.electron?.onPipClosed?.(() => { pipUrlRef.current = null; pipWebContentsIdRef.current = null; setPipOpen(false); });
+    const openH  = window.electron?.onPipOpened?.(async () => {
+      setPipOpen(true);
+      pipWebContentsIdRef.current = (await window.electron.getPipWebContentsId?.()) ?? null;
+    });
+    const closeH = window.electron?.onPipClosed?.(() => {
+      pipUrlRef.current = null; pipWebContentsIdRef.current = null; setPipOpen(false);
+    });
     return () => {
       if (openH)  window.electron?.offPipOpened?.(openH);
       if (closeH) window.electron?.offPipClosed?.(closeH);
@@ -685,7 +755,7 @@ export default function MoviePage({
 
   const isUnreleased = useMemo(() => {
     if (!d.release_date) return false;
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     return new Date(d.release_date) > today;
   }, [d.release_date]);
 
@@ -703,79 +773,106 @@ export default function MoviePage({
   return (
     <div className="fade-in">
       <style>{`
-        @keyframes spin      { to { transform: rotate(360deg); } }
-        @keyframes previewIn { from { opacity:0; } to { opacity:1; } }
-        @keyframes badgePop  {
-          from { opacity:0; transform:translateY(6px) scale(0.92); }
-          to   { opacity:1; transform:translateY(0)   scale(1); }
+        @keyframes spin        { to { transform: rotate(360deg); } }
+        @keyframes disclaimerIn {
+          from { opacity:0; transform: scale(0.93) translateY(16px); }
+          to   { opacity:1; transform: scale(1) translateY(0); }
         }
-        .preview-ctrl-btn:hover { background: rgba(255,255,255,0.18) !important; }
+
+        /* ── Responsive ──────────────────────────────────────────── */
+        @media (max-width: 860px) {
+          .detail-content {
+            flex-direction: column !important;
+            gap: 20px !important;
+            padding: 24px 18px !important;
+            align-items: center !important;
+          }
+          .detail-poster {
+            width: 150px !important;
+            flex-shrink: 0 !important;
+          }
+          .detail-info {
+            width: 100% !important;
+          }
+          .detail-title {
+            font-size: 22px !important;
+            line-height: 1.25 !important;
+          }
+          .detail-overview {
+            font-size: 13px !important;
+          }
+          .detail-actions {
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+          }
+          .detail-actions .btn {
+            flex: 1 1 auto !important;
+            min-width: 110px !important;
+            justify-content: center !important;
+          }
+          .detail-meta { flex-wrap: wrap !important; gap: 6px !important; }
+          .genres { flex-wrap: wrap !important; }
+          .player-wrap { border-radius: 0 !important; }
+        }
+        @media (max-width: 540px) {
+          .detail-poster { width: 120px !important; }
+          .detail-title  { font-size: 19px !important; }
+          .detail-hero   { min-height: unset !important; }
+          .detail-actions .btn {
+            font-size: 13px !important;
+            padding: 9px 12px !important;
+            min-width: 90px !important;
+          }
+          .section { padding-left: 14px !important; padding-right: 14px !important; }
+          .cards-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+        }
+        /* Cast row hide scrollbar */
+        .cast-scroll::-webkit-scrollbar { display: none; }
       `}</style>
 
       {playing && <ServerToast status={autoSourceStatus} sourceLabel={PLAYER_SOURCES.find((s) => s.id === playerSource)?.label} />}
+
+      {/* ── Disclaimer Modal ─────────────────────────────────────────── */}
+      {showDisclaimer && (
+        <DisclaimerModal
+          title={title}
+          onAccept={handleDisclaimerAccept}
+          onClose={() => setShowDisclaimer(false)}
+        />
+      )}
 
       {preWarmUrl && (
         <webview ref={preWarmRef} src={preWarmUrl} partition="persist:player"
           allowpopups="false" plugins="true"
           webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
           useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-          style={{ position:"fixed",top:"-9999px",left:"-9999px",width:"1px",height:"1px",opacity:0,pointerEvents:"none",zIndex:-1 }}
+          style={{ position: "fixed", top: "-9999px", left: "-9999px", width: "1px", height: "1px", opacity: 0, pointerEvents: "none", zIndex: -1 }}
         />
       )}
 
-      {/* ── HERO ──────────────────────────────────────────────────────── */}
+      {/* ── HERO ─────────────────────────────────────────────────────── */}
       <div className="detail-hero" style={{ position: "relative", overflow: "hidden" }}>
-
-        <div className="detail-bg"
-          style={{
-            backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
-            filter: previewActive && previewReady
-              ? "brightness(0.15) saturate(0.6)"
-              : "brightness(0.45) contrast(1.05) saturate(0.9)",
-            transition: "filter 1s ease",
-          }}
-        />
+        <div className="detail-bg" style={{
+          backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
+          filter: "brightness(0.45) contrast(1.05) saturate(0.9)",
+        }} />
         <div className="detail-gradient" />
-
-        {previewActive && trailerKey && (
-          <div style={{
-            position: "absolute", inset: 0, zIndex: 3,
-            opacity: previewReady ? 1 : 0,
-            transition: "opacity 1s ease",
-            animation: previewReady ? "previewIn 1s ease" : "none",
-          }}>
-            <HeroTrailer
-              trailerKey={trailerKey}
-              trimStart={TRAILER_TRIM_START}
-              trimEnd={TRAILER_TRIM_END}
-              muted={previewMuted}
-              onReady={() => setPreviewReady(true)}
-              onEnded={stopPreview}
-            />
-          </div>
-        )}
 
         <div className="detail-content" style={{ position: "relative", zIndex: 5 }}>
           <div className="detail-poster" style={{ position: "relative" }}>
             {d.poster_path
               ? <img src={imgUrl(d.poster_path)} alt={title} loading="lazy" />
-              : <div style={{ width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text3)" }}><FilmIcon /></div>
+              : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text3)" }}><FilmIcon /></div>
             }
             {isWatched && <div className="detail-watched-badge"><WatchedIcon size={36} /></div>}
           </div>
 
           <div className="detail-info">
-            <div className="detail-type" style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+            <div className="detail-type" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               Movie
               {isWatched && <span className="watched-label"><WatchedIcon size={14} /> Watched</span>}
-              {previewActive && previewReady && (
-                <span style={{
-                  fontSize: 10, fontWeight: 700, letterSpacing: 0.8,
-                  background: "rgba(0,180,166,0.15)", border: "1px solid rgba(0,180,166,0.35)",
-                  color: "var(--red, #00b4a6)", borderRadius: 4, padding: "2px 7px",
-                  animation: "badgePop 0.3s ease",
-                }}>▶ NOW PREVIEWING</span>
-              )}
             </div>
 
             <div className="detail-title">{title}</div>
@@ -785,10 +882,10 @@ export default function MoviePage({
             </div>
 
             <div className="detail-meta">
-              {displayScore  && <span className="detail-rating"><StarIcon /> {displayScore}</span>}
-              {year          && <span>{year}</span>}
-              {d.runtime     && <span>{d.runtime} min</span>}
-              {d.original_language && <span>{d.original_language?.toUpperCase()}</span>}
+              {displayScore         && <span className="detail-rating"><StarIcon /> {displayScore}</span>}
+              {year                 && <span>{year}</span>}
+              {d.runtime            && <span>{d.runtime} min</span>}
+              {d.original_language  && <span>{d.original_language?.toUpperCase()}</span>}
             </div>
 
             {rating.cert && (
@@ -844,56 +941,30 @@ export default function MoviePage({
               )}
               <button className="btn btn-ghost" onClick={onBack}><BackIcon /> Back</button>
             </div>
-
-            {previewActive && previewReady && (
-              <div style={{ display:"flex",gap:8,marginTop:12,animation:"badgePop 0.35s ease 0.1s both" }}>
-                <button className="preview-ctrl-btn" onClick={() => setPreviewMuted((v) => !v)}
-                  style={{ background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",border:"1px solid rgba(255,255,255,0.18)",borderRadius:7,padding:"6px 14px",cursor:"pointer",color:"#fff",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6,transition:"background 0.2s" }}>
-                  {previewMuted ? (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                      <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
-                      <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
-                      <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
-                    </svg>
-                  ) : (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                      <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/>
-                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
-                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
-                    </svg>
-                  )}
-                  {previewMuted ? "Unmute" : "Mute"}
-                </button>
-                <button className="preview-ctrl-btn" onClick={stopPreview}
-                  style={{ background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,padding:"6px 14px",cursor:"pointer",color:"rgba(255,255,255,0.6)",fontSize:12,transition:"background 0.2s" }}>
-                  ✕ Stop Preview
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
-      {/* ── Inline player ─────────────────────────────────────────────── */}
+      {/* ── Inline player ────────────────────────────────────────────── */}
       {playing && !restricted && !isUnreleased && !onWatch && (
         <div className="section">
           <div className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`} ref={playerWrapRef}>
             {webviewLoading && !resolveError && (
-              <div style={{ position:"absolute",inset:0,zIndex:10,display:"flex",alignItems:"center",justifyContent:"center",background:"#000",borderRadius:"inherit" }}>
+              <div style={{ position: "absolute", inset: 0, zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", background: "#000", borderRadius: "inherit" }}>
                 <div className="spinner" />
               </div>
             )}
             {sourceIsAsync(playerSource) && resolveError && !resolvingUrl && (
-              <div style={{ position:"absolute",inset:0,zIndex:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)",gap:10,borderRadius:"inherit" }}>
-                <span style={{ fontSize:28 }}>⚠️</span>
-                <span style={{ fontSize:14,color:"var(--text2)" }}>Movie not found</span>
-                <span style={{ fontSize:12,color:"var(--text3)" }}>{resolveError}</span>
+              <div style={{ position: "absolute", inset: 0, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)", gap: 10, borderRadius: "inherit" }}>
+                <span style={{ fontSize: 28 }}>⚠️</span>
+                <span style={{ fontSize: 14, color: "var(--text2)" }}>Movie not found</span>
+                <span style={{ fontSize: 12, color: "var(--text3)" }}>{resolveError}</span>
               </div>
             )}
             {pipOpen && (
-              <div style={{ position:"absolute",inset:0,zIndex:20,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.92)",gap:16,borderRadius:"inherit" }}>
+              <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.92)", gap: 16, borderRadius: "inherit" }}>
                 <PopOutIcon size={36} />
-                <span style={{ fontSize:15,color:"var(--text)",fontWeight:600 }}>Playing in pop-out window</span>
+                <span style={{ fontSize: 15, color: "var(--text)", fontWeight: 600 }}>Playing in pop-out window</span>
                 <button className="player-overlay-btn" onClick={() => window.electron?.closePipWindow?.()}>Close pop-out &amp; return</button>
               </div>
             )}
@@ -903,18 +974,18 @@ export default function MoviePage({
                 partition="persist:player" allowpopups="true" plugins="true"
                 webpreferences="contextIsolation=true,nodeIntegration=false,webSecurity=false,allowRunningInsecureContent=true"
                 useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-                style={{ position:"absolute",inset:0,width:"100%",height:"100%",border:"none",
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none",
                   opacity: webviewLoading || (sourceIsAsync(playerSource) && !resolvedPlayerUrl) ? 0 : 1,
-                  transition:"opacity 0.3s ease" }}
+                  transition: "opacity 0.3s ease" }}
               />
             ) : (
               <iframe key={`if-movie-${playerSource}-${item.id}`} ref={webviewRef}
                 src={pipOpen ? "about:blank" : sourceIsAsync(playerSource) ? resolvedPlayerUrl || "about:blank" : getSourceUrl(playerSource, "movie", item.id, null, null)}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                 allowFullScreen
-                style={{ position:"absolute",inset:0,width:"100%",height:"100%",border:"none",background:"#000",
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", background: "#000",
                   opacity: webviewLoading || (sourceIsAsync(playerSource) && !resolvedPlayerUrl) ? 0 : 1,
-                  transition:"opacity 0.3s ease" }}
+                  transition: "opacity 0.3s ease" }}
               />
             )}
             <div className="player-overlay-group">
@@ -925,7 +996,7 @@ export default function MoviePage({
                   if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
                   setShowSourceMenu((v) => !v);
                 }}>
-                <SourceIcon />{PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "Source"}
+                <SourceIcon size={14} />{PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "Source"}
               </button>
               {playerSource === "allmanga" && (
                 <button className="player-overlay-btn" onClick={() => {
@@ -980,16 +1051,22 @@ export default function MoviePage({
             )}
           </div>
 
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",background:"var(--surface)",borderRadius:12,border:"1px solid var(--border)",marginTop:16,gap:16 }}>
-            <div style={{ display:"flex",alignItems:"center",gap:12,flex:1 }}>
-              <div style={{ width:40,height:40,borderRadius:10,background:movieDownload?"rgba(76,175,80,0.1)":"var(--red-dim)",display:"flex",alignItems:"center",justifyContent:"center",color:movieDownload?"#4caf50":"var(--red)",fontSize:20 }}>
+          {/* Download bar */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "16px 20px", background: "var(--surface)",
+            borderRadius: 12, border: "1px solid var(--border)", marginTop: 16, gap: 16,
+            flexWrap: "wrap",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 200 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: movieDownload ? "rgba(76,175,80,0.1)" : "var(--red-dim)", display: "flex", alignItems: "center", justifyContent: "center", color: movieDownload ? "#4caf50" : "var(--red)", fontSize: 20 }}>
                 {movieDownload ? "✓" : "⬇️"}
               </div>
               <div>
-                <div style={{ fontSize:14,fontWeight:600,color:"var(--text)" }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
                   {movieDownload ? (movieDownload.status === "downloading" ? "Downloading…" : "Downloaded") : "Download this movie"}
                 </div>
-                <div style={{ fontSize:12,color:"var(--text3)",marginTop:2 }}>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
                   {movieDownload ? (movieDownload.status === "downloading" ? "In progress — click to view" : "Available offline") : "Watch offline anytime"}
                 </div>
               </div>
@@ -1023,7 +1100,13 @@ export default function MoviePage({
         </div>
       )}
 
-      {/* ── Collection ────────────────────────────────────────────────── */}
+      {/* ── Cast ─────────────────────────────────────────────────────── */}
+      <CastSection cast={cast} />
+
+      {/* ── Reviews ──────────────────────────────────────────────────── */}
+      <ReviewsSection reviews={reviews} />
+
+      {/* ── Collection ───────────────────────────────────────────────── */}
       {collection && onSelect && (
         <div className="section">
           <div className="section-title">{collection.name}</div>
@@ -1040,7 +1123,7 @@ export default function MoviePage({
         </div>
       )}
 
-      {/* ── Modals ────────────────────────────────────────────────────── */}
+      {/* ── Modals ───────────────────────────────────────────────────── */}
       {showTrailer && trailerKey && (
         <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />
       )}
