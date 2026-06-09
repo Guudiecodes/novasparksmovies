@@ -46,7 +46,7 @@ const _EMBED_JS = `(function(){
 // ── Disclaimer ticker ─────────────────────────────────────────────────────────
 function DisclaimerTicker() {
   const msg =
-    "⚠️  NovaSparks does not host or store any media content. All streams are sourced from independent third-party providers over the public internet. Stream quality and availability may vary by region. For personal, non-commercial use only. You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.";
+    "⚠  NovaSparks does not host or store any media content. Stream quality and availability may vary by region. You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  ⚠";
   return (
     <div style={{
       background: "rgba(229,9,20,0.06)",

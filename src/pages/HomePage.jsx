@@ -988,10 +988,10 @@ export default function HomePage({
 
           <div className="ns-footer-disclaimer-col">
             <p className="ns-footer-disclaimer">
-              NovaSpark does not host or store any media content. All streams are sourced from independent third-party providers over the public internet. Stream quality and availability may vary by region.
+              NovaSpark does not host or store any media content. Stream quality and availability may vary by region.
             </p>
             <p className="ns-footer-disclaimer">
-              For personal, non-commercial use only. You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.
+               You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.
             </p>
           </div>
 
