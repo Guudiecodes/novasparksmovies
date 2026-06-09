@@ -37,16 +37,16 @@ const _EMBED_JS = `(function(){
   function run(){try{document.querySelectorAll('body *').forEach(function(el){
     if(!el.childElementCount){var t=(el.textContent||'').trim().toUpperCase();
     if(BAD.some(function(k){return t===k||t.startsWith(k);})){
-      var p=el;for(var i=0;i<4;i++){var par=p.parentElement;if(par&&par!==document.body)p=par;else break;}
+      var p=el;for(var i=0;i<<4;i++){var par=p.parentElement;if(par&&par!==document.body)p=par;else break;}
       p.style.cssText='display:none!important;opacity:0!important;pointer-events:none!important;';}}});}catch(e){}}
   run();var obs=new MutationObserver(run);obs.observe(document.body,{childList:true,subtree:true});
   setTimeout(function(){obs.disconnect();},12000);
 })()`;
 
-// ── Auto-scrolling disclaimer ticker (always visible at top) ─────────────────
+// ── Disclaimer ticker ─────────────────────────────────────────────────────────
 function DisclaimerTicker() {
   const msg =
-    "⚠  NovaSparks does not host or store any media content. Stream quality and availability may vary by region. You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  ⚠";
+    "⚠️  NovaSparks does not host or store any media content. All streams are sourced from independent third-party providers over the public internet. Stream quality and availability may vary by region. For personal, non-commercial use only. You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.";
   return (
     <div style={{
       background: "rgba(229,9,20,0.06)",
@@ -73,16 +73,10 @@ function ServerToast({ status, sourceLabel }) {
     if (status === "testing" || status === "retrying") { setShow(true); setFade(false); }
     else if (status === "found") {
       setFade(false);
-      timerRef.current = setTimeout(() => {
-        setFade(true);
-        timerRef.current = setTimeout(() => setShow(false), 500);
-      }, 2500);
+      timerRef.current = setTimeout(() => { setFade(true); timerRef.current = setTimeout(() => setShow(false), 500); }, 2500);
     } else if (status === "failed") {
       setFade(false);
-      timerRef.current = setTimeout(() => {
-        setFade(true);
-        timerRef.current = setTimeout(() => setShow(false), 500);
-      }, 4000);
+      timerRef.current = setTimeout(() => { setFade(true); timerRef.current = setTimeout(() => setShow(false), 500); }, 4000);
     }
     return () => clearTimeout(timerRef.current);
   }, [status, sourceLabel]);
@@ -110,109 +104,77 @@ function ServerToast({ status, sourceLabel }) {
   );
 }
 
-// ── Cast Section ──────────────────────────────────────────────────────────────
-function CastSection({ cast }) {
-  if (!cast?.length) return null;
+// ── Cast card (grid style, matching TVPage) ───────────────────────────────────
+const CastCard = memo(function CastCard({ person }) {
   return (
-    <div className="section">
-      <div className="section-title">CAST</div>
-      <div className="ns-cast-scroll">
-        {cast.slice(0, 24).map((person) => (
-          <div key={person.cast_id || person.id} className="ns-cast-card">
-            <div className="ns-cast-avatar">
-              {person.profile_path ? (
-                <img src={imgUrl(person.profile_path, "w185")} alt={person.name}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              ) : (
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center",
-                  justifyContent: "center", color: "rgba(255,255,255,0.18)", fontSize: 22 }}>👤</div>
-              )}
-            </div>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.88)", lineHeight: 1.35,
-              overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-              {person.name}
-            </div>
-            <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.38)", marginTop: 2, lineHeight: 1.3,
-              overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-              fontStyle: "italic" }}>
-              {person.character}
-            </div>
+    <div className="ns-cast-card">
+      <div className="ns-cast-img">
+        {person.profile_path ? (
+          <img src={imgUrl(person.profile_path, "w185")} alt={person.name} loading="lazy" />
+        ) : (
+          <div className="ns-cast-placeholder">
+            <span>{person.name?.[0] ?? "?"}</span>
           </div>
-        ))}
-        <div style={{ flexShrink: 0, width: 20 }} />
+        )}
       </div>
+      <div className="ns-cast-name">{person.name}</div>
+      <div className="ns-cast-role">{person.character || ""}</div>
+    </div>
+  );
+});
+
+// ── Review card ───────────────────────────────────────────────────────────────
+const ReviewCard = memo(function ReviewCard({ review }) {
+  const [expanded, setExpanded] = useState(false);
+  const content = review.content || "";
+  const short = content.length > 320;
+  const display = expanded || !short ? content : content.slice(0, 320) + "…";
+  const initials = (review.author || "?").slice(0, 2).toUpperCase();
+  const rating = review.author_details?.rating;
+  const date = review.created_at
+    ? new Date(review.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+    : "";
+  return (
+    <div className="ns-review-card">
+      <div className="ns-review-header">
+        <div className="ns-review-avatar">{initials}</div>
+        <div className="ns-review-meta">
+          <div className="ns-review-author">{review.author}</div>
+          {date && <div className="ns-review-date">{date}</div>}
+        </div>
+        {rating && (
+          <div className="ns-review-rating">
+            <StarIcon size={11} /> {rating}/10
+          </div>
+        )}
+      </div>
+      <p className="ns-review-body">{display}</p>
+      {short && (
+        <button className="ns-review-toggle" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </div>
+  );
+});
+
+// ── Info row ──────────────────────────────────────────────────────────────────
+function InfoRow({ label, value }) {
+  if (!value) return null;
+  return (
+    <div className="ns-info-row">
+      <span className="ns-info-label">{label}</span>
+      <span className="ns-info-value">{value}</span>
     </div>
   );
 }
 
-// ── Reviews Section ───────────────────────────────────────────────────────────
-function ReviewsSection({ reviews }) {
-  const [expanded, setExpanded] = useState({});
-  if (!reviews?.length) return null;
-  const LIMIT = 280;
+// ── Section heading ───────────────────────────────────────────────────────────
+function SectionHeading({ children }) {
   return (
-    <div className="section">
-      <div className="section-title">AUDIENCE REVIEWS</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {reviews.slice(0, 5).map((review) => {
-          const isExp = !!expanded[review.id];
-          const content = review.content || "";
-          const short = content.length > LIMIT ? content.slice(0, LIMIT).trimEnd() + "…" : content;
-          const rating = review.author_details?.rating;
-          const date = review.created_at
-            ? new Date(review.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
-            : "";
-          return (
-            <div key={review.id} style={{
-              background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)",
-              borderRadius: 14, padding: "16px 18px",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
-                    background: "rgba(229,9,20,0.1)", border: "1.5px solid rgba(229,9,20,0.2)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 14, fontWeight: 800, color: "var(--red, #e50914)",
-                  }}>
-                    {(review.author || "?")[0].toUpperCase()}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)",
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {review.author}
-                    </div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>{date}</div>
-                  </div>
-                </div>
-                {rating != null && (
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
-                    background: "rgba(255,213,0,0.07)", border: "1px solid rgba(255,213,0,0.18)",
-                    borderRadius: 7, padding: "4px 9px",
-                  }}>
-                    <span style={{ color: "#ffd500", fontSize: 11, lineHeight: 1 }}>★</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: "#ffd500" }}>
-                      {rating}<span style={{ fontSize: 10, opacity: 0.6 }}>/10</span>
-                    </span>
-                  </div>
-                )}
-              </div>
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.58)", lineHeight: 1.75, margin: 0 }}>
-                {isExp ? content : short}
-              </p>
-              {content.length > LIMIT && (
-                <button onClick={() => setExpanded((e) => ({ ...e, [review.id]: !isExp }))}
-                  style={{ background: "none", border: "none", color: "var(--red, #e50914)",
-                    fontSize: 12, fontWeight: 700, cursor: "pointer", padding: "8px 0 0",
-                    display: "block", fontFamily: "inherit" }}>
-                  {isExp ? "Show less ↑" : "Read more ↓"}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="ns-section-heading">
+      <span>{children}</span>
+      <div className="ns-section-rule" />
     </div>
   );
 }
@@ -249,6 +211,9 @@ export default function MoviePage({
   const [downloaderFolder,  setDownloaderFolder]  = useState(() => storage.get("downloaderFolder") || "");
   const [cast,              setCast]              = useState([]);
   const [reviews,           setReviews]           = useState([]);
+  const [keywords,          setKeywords]          = useState([]);
+  const [showAllCast,       setShowAllCast]       = useState(false);
+  const [showAllReviews,    setShowAllReviews]    = useState(false);
 
   const sourceRef           = useRef(null);
   const playerWrapRef       = useRef(null);
@@ -322,6 +287,7 @@ export default function MoviePage({
     setPlayerSource(nextId); storage.set("playerSource", nextId);
   }, []);
 
+  // ── Details ───────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     tmdbFetch(`/movie/${item.id}`, apiKey)
@@ -330,17 +296,19 @@ export default function MoviePage({
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // Fetch cast + reviews in parallel
+  // ── Credits + reviews + keywords in parallel ──────────────────────────────
   useEffect(() => {
     if (!item?.id) return;
     let mounted = true;
     Promise.all([
       tmdbFetch(`/movie/${item.id}/credits`, apiKey).catch(() => ({ cast: [] })),
       tmdbFetch(`/movie/${item.id}/reviews`, apiKey).catch(() => ({ results: [] })),
-    ]).then(([credits, reviewsData]) => {
+      tmdbFetch(`/movie/${item.id}/keywords`, apiKey).catch(() => ({ keywords: [] })),
+    ]).then(([credits, reviewsData, kwData]) => {
       if (!mounted) return;
       setCast(credits.cast || []);
       setReviews(reviewsData.results || []);
+      setKeywords(kwData.keywords || []);
     });
     return () => { mounted = false; };
   }, [item.id, apiKey]);
@@ -632,86 +600,179 @@ export default function MoviePage({
     return getSourceUrl(foundSource, "movie", item.id, null, null);
   }, [foundSource, playerSource, restricted, isUnreleased, playing, item.id]);
 
+  const visibleCast    = showAllCast    ? cast    : cast.slice(0, 12);
+  const visibleReviews = showAllReviews ? reviews : reviews.slice(0, 3);
+
+  const directors   = useMemo(() => (d.credits?.crew || []).filter((c) => c.job === "Director"), [d.credits]);
+  const productionCompanies = useMemo(() => d.production_companies || [], [d.production_companies]);
+
   return (
-    <div className="fade-in" style={{ paddingBottom: "max(80px, env(safe-area-inset-bottom, 80px))" }}>
+    <div className="ns-movie-page fade-in" style={{ paddingBottom: "max(80px, env(safe-area-inset-bottom, 80px))" }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Ticker ────────────────────────────────────────── */
-        @keyframes tickerMove {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .ns-ticker-track {
-          display: inline-flex;
-          animation: tickerMove 42s linear infinite;
-          white-space: nowrap;
-        }
+        /* ── Ticker ──────────────────────────────────────────── */
+        @keyframes tickerMove { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .ns-ticker-track { display: inline-flex; animation: tickerMove 42s linear infinite; white-space: nowrap; }
         .ns-ticker-track:hover { animation-play-state: paused; }
-        .ns-ticker-msg {
-          padding-right: 120px;
-          font-size: 11.5px;
-          color: rgba(255,255,255,0.42);
-          letter-spacing: 0.15px;
-        }
+        .ns-ticker-msg { padding-right: 120px; font-size: 11.5px; color: rgba(255,255,255,0.42); letter-spacing: 0.15px; }
 
-        /* ── Cast scroll ────────────────────────────────────── */
-        .ns-cast-scroll {
-          display: flex; gap: 16px; overflow-x: auto; padding-bottom: 10px;
-          scrollbar-width: none; -webkit-overflow-scrolling: touch;
-          mask-image: linear-gradient(to right, black 88%, transparent 100%);
-          -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+        /* ── Hero ────────────────────────────────────────────── */
+        .ns-movie-hero { position: relative; min-height: 420px; display: flex; align-items: flex-end; overflow: hidden; }
+        .ns-movie-hero-bg {
+          position: absolute; inset: 0; background-size: cover; background-position: center top;
+          background-repeat: no-repeat;
         }
-        .ns-cast-scroll::-webkit-scrollbar { display: none; }
-        .ns-cast-card {
-          flex-shrink: 0; width: 92px; text-align: center;
+        .ns-movie-hero-grad {
+          position: absolute; inset: 0;
+          background: linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.55) 40%, rgba(16,16,16,0.96) 80%, var(--bg, #101010) 100%);
         }
-        .ns-cast-avatar {
-          width: 68px; height: 68px; border-radius: 50%; overflow: hidden;
-          background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.08);
-          margin: 0 auto 9px; transition: border-color 0.2s;
+        .ns-movie-hero-content {
+          position: relative; z-index: 2;
+          width: 100%; display: flex; gap: 28px; padding: 32px 28px 36px;
+          align-items: flex-end;
         }
+        .ns-movie-poster {
+          flex-shrink: 0; width: 165px; border-radius: 10px; overflow: hidden;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.6); aspect-ratio: 2/3; background: rgba(255,255,255,0.06);
+        }
+        .ns-movie-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .ns-movie-info { flex: 1; min-width: 0; }
+        .ns-movie-eyebrow {
+          font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--red, #e50914);
+          text-transform: uppercase; margin-bottom: 8px;
+        }
+        .ns-movie-title {
+          font-size: clamp(22px, 4vw, 40px); font-weight: 900; line-height: 1.1;
+          color: #fff; margin: 0 0 10px; letter-spacing: -0.5px;
+        }
+        .ns-movie-genres { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .ns-movie-genre { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); border-radius: 20px; padding: 3px 11px; font-size: 11.5px; color: rgba(255,255,255,0.7); }
+        .ns-movie-meta {
+          display: flex; align-items: center; flex-wrap: wrap; gap: 14px;
+          font-size: 13px; color: rgba(255,255,255,0.55); margin-bottom: 10px;
+        }
+        .ns-movie-score { display: flex; align-items: center; gap: 5px; color: #f5c518; font-weight: 700; font-size: 14px; }
+        .ns-movie-overview {
+          font-size: 14px; line-height: 1.65; color: rgba(255,255,255,0.72);
+          margin: 12px 0 18px; max-width: 680px;
+        }
+        .ns-movie-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+        .ns-movie-body { padding: 0 28px; max-width: 1200px; margin: 0 auto; }
 
-        /* ── Responsive ─────────────────────────────────────── */
+        /* ── Section heading ─────────────────────────────────── */
+        .ns-section-heading {
+          display: flex; align-items: center; gap: 14px;
+          margin: 32px 0 18px; font-size: 12px; font-weight: 800;
+          letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.5);
+        }
+        .ns-section-rule { flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
+
+        /* ── Info grid ───────────────────────────────────────── */
+        .ns-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0; }
+        .ns-info-row {
+          display: flex; flex-direction: column; gap: 3px;
+          padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);
+          border-right: 1px solid rgba(255,255,255,0.05);
+        }
+        .ns-info-label { font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.35); }
+        .ns-info-value { font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,0.82); }
+
+        /* ── Production chips ────────────────────────────────── */
+        .ns-chip-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .ns-chip {
+          background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 8px; padding: 6px 14px; font-size: 12.5px; font-weight: 600;
+          color: rgba(255,255,255,0.7);
+        }
+        .ns-chip img { height: 22px; width: auto; object-fit: contain; filter: brightness(0) invert(1); opacity: 0.7; display: block; }
+
+        /* ── Cast grid ───────────────────────────────────────── */
+        .ns-cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 14px; }
+        .ns-cast-card { display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; }
+        .ns-cast-img {
+          width: 80px; height: 80px; border-radius: 50%; overflow: hidden;
+          background: rgba(255,255,255,0.07); border: 2px solid rgba(255,255,255,0.1); flex-shrink: 0;
+        }
+        .ns-cast-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .ns-cast-placeholder {
+          width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+          font-size: 22px; font-weight: 800; color: rgba(255,255,255,0.25);
+        }
+        .ns-cast-name { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.85); line-height: 1.3; }
+        .ns-cast-role { font-size: 11px; color: rgba(255,255,255,0.38); line-height: 1.3; }
+
+        /* ── Show more ───────────────────────────────────────── */
+        .ns-show-more-btn {
+          display: block; width: 100%; margin-top: 14px; padding: 10px;
+          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 8px; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.55);
+          cursor: pointer; font-family: inherit; text-align: center; transition: background 0.15s, color 0.15s;
+        }
+        .ns-show-more-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
+
+        /* ── Reviews ─────────────────────────────────────────── */
+        .ns-reviews-grid { display: flex; flex-direction: column; gap: 14px; }
+        .ns-review-card {
+          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 12px; padding: 18px 20px;
+        }
+        .ns-review-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .ns-review-avatar {
+          width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+          background: rgba(229,9,20,0.18); border: 1px solid rgba(229,9,20,0.25);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 13px; font-weight: 800; color: rgba(255,255,255,0.7);
+        }
+        .ns-review-meta { flex: 1; min-width: 0; }
+        .ns-review-author { font-size: 13.5px; font-weight: 700; color: rgba(255,255,255,0.85); }
+        .ns-review-date { font-size: 11.5px; color: rgba(255,255,255,0.38); margin-top: 1px; }
+        .ns-review-rating { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: #f5c518; white-space: nowrap; }
+        .ns-review-body { font-size: 13.5px; line-height: 1.65; color: rgba(255,255,255,0.62); margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; }
+        .ns-review-toggle { background: none; border: none; padding: 0; font-size: 12.5px; font-weight: 600; color: var(--red, #e50914); cursor: pointer; font-family: inherit; }
+
+        /* ── Keywords ────────────────────────────────────────── */
+        .ns-keywords { display: flex; flex-wrap: wrap; gap: 7px; }
+        .ns-keyword { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 10px; font-size: 11.5px; color: rgba(255,255,255,0.48); }
+
+        /* ── Responsive ──────────────────────────────────────── */
         @media (max-width: 860px) {
-          .detail-content {
-            flex-direction: column !important;
-            gap: 20px !important;
-            padding: 24px 18px 28px !important;
-            align-items: center !important;
-          }
-          .detail-poster {
-            width: 148px !important;
-            flex-shrink: 0 !important;
-          }
-          .detail-info { width: 100% !important; }
-          .detail-title { font-size: 22px !important; line-height: 1.25 !important; }
-          .detail-overview { font-size: 13px !important; }
-          .detail-actions { flex-wrap: wrap !important; gap: 8px !important; }
-          .detail-actions .btn {
-            flex: 1 1 auto !important; min-width: 110px !important;
-            justify-content: center !important;
-          }
-          .detail-meta { flex-wrap: wrap !important; gap: 6px !important; }
-          .genres { flex-wrap: wrap !important; }
+          .ns-movie-hero-content { flex-direction: column; align-items: center; padding: 22px 18px 28px; gap: 20px; }
+          .ns-movie-poster { width: 140px; }
+          .ns-movie-info { width: 100%; text-align: center; }
+          .ns-movie-genres { justify-content: center; }
+          .ns-movie-meta { justify-content: center; }
+          .ns-movie-overview { margin-left: auto; margin-right: auto; }
+          .ns-movie-actions { justify-content: center; }
           .player-wrap { border-radius: 0 !important; }
+          .ns-movie-body { padding: 0 18px; }
+          .ns-info-grid { grid-template-columns: repeat(2, 1fr); }
+          .ns-cast-grid { grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); gap: 10px; }
         }
         @media (max-width: 540px) {
-          .detail-poster { width: 115px !important; }
-          .detail-title  { font-size: 19px !important; }
-          .detail-hero   { min-height: unset !important; }
-          .detail-actions .btn {
-            font-size: 13px !important; padding: 9px 12px !important;
-            min-width: 88px !important;
-          }
-          .section { padding-left: 14px !important; padding-right: 14px !important; }
+          .ns-movie-hero { min-height: unset; }
+          .ns-movie-poster { width: 115px; }
+          .ns-movie-title { font-size: 20px; }
+          .ns-movie-hero-content { padding: 18px 14px 24px; }
+          .ns-movie-body { padding: 0 14px; }
+          .ns-movie-actions .btn { flex: 1 1 auto; min-width: 88px; font-size: 13px; padding: 9px 10px; justify-content: center; }
+          .ns-info-grid { grid-template-columns: 1fr 1fr; }
+          .ns-cast-grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+          .ns-cast-img { width: 64px !important; height: 64px !important; }
+          .ns-cast-name { font-size: 11px; }
+          .ns-cast-role { font-size: 10px; }
+          .ns-review-card { padding: 14px; }
+          .ns-section-heading { margin: 22px 0 14px; }
           .cards-grid { grid-template-columns: repeat(2, 1fr) !important; }
-          .ns-cast-card { width: 78px !important; }
-          .ns-cast-avatar { width: 58px !important; height: 58px !important; }
+        }
+        @media (max-width: 380px) {
+          .ns-movie-actions { gap: 7px; }
+          .ns-movie-actions .btn { font-size: 12px; padding: 8px 8px; }
+          .ns-cast-grid { grid-template-columns: repeat(4, 1fr); }
         }
       `}</style>
 
-      {/* ── Disclaimer ticker — always visible at top ────────────────── */}
+      {/* ── Disclaimer ticker ────────────────────────────────────────── */}
       <DisclaimerTicker />
 
       {playing && <ServerToast status={autoSourceStatus} sourceLabel={PLAYER_SOURCES.find((s) => s.id === playerSource)?.label} />}
@@ -725,32 +786,34 @@ export default function MoviePage({
         />
       )}
 
-      {/* ── HERO ─────────────────────────────────────────────────────── */}
-      <div className="detail-hero" style={{ position: "relative", overflow: "hidden" }}>
-        <div className="detail-bg" style={{
-          backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
-          filter: "brightness(0.45) contrast(1.05) saturate(0.9)",
-        }} />
-        <div className="detail-gradient" />
-        <div className="detail-content" style={{ position: "relative", zIndex: 5 }}>
-          <div className="detail-poster" style={{ position: "relative" }}>
+      {/* ── Hero ─────────────────────────────────────────────────────── */}
+      <div className="ns-movie-hero">
+        {d.backdrop_path && (
+          <div className="ns-movie-hero-bg" style={{
+            backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
+            filter: "brightness(0.45) contrast(1.05) saturate(0.9)",
+          }} />
+        )}
+        <div className="ns-movie-hero-grad" />
+        <div className="ns-movie-hero-content">
+          <div className="ns-movie-poster" style={{ position: "relative" }}>
             {d.poster_path
               ? <img src={imgUrl(d.poster_path)} alt={title} loading="lazy" />
               : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text3)" }}><FilmIcon /></div>
             }
             {isWatched && <div className="detail-watched-badge"><WatchedIcon size={36} /></div>}
           </div>
-          <div className="detail-info">
-            <div className="detail-type" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div className="ns-movie-info">
+            <div className="ns-movie-eyebrow" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               Movie
               {isWatched && <span className="watched-label"><WatchedIcon size={14} /> Watched</span>}
             </div>
-            <div className="detail-title">{title}</div>
-            <div className="genres">
-              {displayGenres.map((g) => <span key={g.id} className="genre-tag">{g.name}</span>)}
+            <h1 className="ns-movie-title">{title}</h1>
+            <div className="ns-movie-genres">
+              {displayGenres.map((g) => <span key={g.id} className="ns-movie-genre">{g.name}</span>)}
             </div>
-            <div className="detail-meta">
-              {displayScore        && <span className="detail-rating"><StarIcon /> {displayScore}</span>}
+            <div className="ns-movie-meta">
+              {displayScore        && <span className="ns-movie-score"><StarIcon /> {displayScore}</span>}
               {year                && <span>{year}</span>}
               {d.runtime           && <span>{d.runtime} min</span>}
               {d.original_language && <span>{d.original_language?.toUpperCase()}</span>}
@@ -762,7 +825,7 @@ export default function MoviePage({
                 {restricted && <span className="age-rating-pill-label">Inappropriate for your age setting</span>}
               </div>
             )}
-            <p className="detail-overview">{displayOverview}</p>
+            <p className="ns-movie-overview">{displayOverview}</p>
             {!isWatched && displayPct > 0 && (
               <div className="progress-bar-row" style={{ marginBottom: 12 }}>
                 <div className="progress-bar-outer">
@@ -771,7 +834,7 @@ export default function MoviePage({
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>{progressLabel}</span>
               </div>
             )}
-            <div className="detail-actions">
+            <div className="ns-movie-actions">
               {isUnreleased ? (
                 <button className="btn btn-primary btn-restricted" disabled>🔒 Unreleased</button>
               ) : restricted ? (
@@ -965,28 +1028,102 @@ export default function MoviePage({
         </div>
       )}
 
-      {/* ── Cast ─────────────────────────────────────────────────────── */}
-      <CastSection cast={cast} />
+      {/* ── Page body ─────────────────────────────────────────────────── */}
+      <div className="ns-movie-body">
 
-      {/* ── Reviews ──────────────────────────────────────────────────── */}
-      <ReviewsSection reviews={reviews} />
-
-      {/* ── Collection ───────────────────────────────────────────────── */}
-      {collection && onSelect && (
-        <div className="section">
-          <div className="section-title">{collection.name}</div>
-          <div className="scroll-row">
-            {collection.parts.map((part) => {
-              const pk = `movie_${part.id}`;
-              return (
-                <CollectionCard key={part.id} part={part} isCurrent={part.id === item.id}
-                  onSelect={onSelect} progress={progress[pk] || 0}
-                  watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
-              );
-            })}
-          </div>
+        {/* ── Movie info grid ───────────────────────────────────────── */}
+        <SectionHeading>Movie Info</SectionHeading>
+        <div className="ns-info-grid">
+          <InfoRow label="Release Date"   value={d.release_date ? new Date(d.release_date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : null} />
+          <InfoRow label="Runtime"        value={d.runtime ? `${d.runtime} min` : null} />
+          <InfoRow label="Status"         value={d.status} />
+          <InfoRow label="Language"       value={d.original_language?.toUpperCase() || null} />
+          <InfoRow label="Budget"         value={d.budget > 0 ? `$${(d.budget / 1e6).toFixed(1)}M` : null} />
+          <InfoRow label="Revenue"        value={d.revenue > 0 ? `$${(d.revenue / 1e6).toFixed(1)}M` : null} />
+          <InfoRow label="Country"        value={(d.production_countries || []).map((c) => c.name).join(", ") || null} />
+          <InfoRow label="Original Title" value={d.original_title && d.original_title !== title ? d.original_title : null} />
         </div>
-      )}
+
+        {/* ── Production companies ──────────────────────────────────── */}
+        {productionCompanies.length > 0 && (
+          <>
+            <SectionHeading>Production</SectionHeading>
+            <div className="ns-chip-row">
+              {productionCompanies.map((c) => (
+                <div key={c.id} className="ns-chip">
+                  {c.logo_path
+                    ? <img src={imgUrl(c.logo_path, "w92")} alt={c.name} title={c.name} />
+                    : c.name}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Cast ─────────────────────────────────────────────────── */}
+        {cast.length > 0 && (
+          <>
+            <SectionHeading>Cast</SectionHeading>
+            <div className="ns-cast-grid">
+              {visibleCast.map((person) => (
+                <CastCard key={person.cast_id ?? person.id} person={person} />
+              ))}
+            </div>
+            {cast.length > 12 && (
+              <button className="ns-show-more-btn" onClick={() => setShowAllCast((v) => !v)}>
+                {showAllCast ? "Show less" : `Show all ${cast.length} cast members`}
+              </button>
+            )}
+          </>
+        )}
+
+        {/* ── Keywords / Tags ───────────────────────────────────────── */}
+        {keywords.length > 0 && (
+          <>
+            <SectionHeading>Tags</SectionHeading>
+            <div className="ns-keywords">
+              {keywords.slice(0, 24).map((k) => (
+                <span key={k.id} className="ns-keyword">{k.name}</span>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Reviews ──────────────────────────────────────────────── */}
+        {reviews.length > 0 && (
+          <>
+            <SectionHeading>Reviews</SectionHeading>
+            <div className="ns-reviews-grid">
+              {visibleReviews.map((r) => (
+                <ReviewCard key={r.id} review={r} />
+              ))}
+            </div>
+            {reviews.length > 3 && (
+              <button className="ns-show-more-btn" onClick={() => setShowAllReviews((v) => !v)}>
+                {showAllReviews ? "Show fewer reviews" : `Show all ${reviews.length} reviews`}
+              </button>
+            )}
+          </>
+        )}
+
+        {/* ── Collection ───────────────────────────────────────────── */}
+        {collection && onSelect && (
+          <>
+            <SectionHeading>{collection.name}</SectionHeading>
+            <div className="scroll-row" style={{ marginBottom: 8 }}>
+              {collection.parts.map((part) => {
+                const pk = `movie_${part.id}`;
+                return (
+                  <CollectionCard key={part.id} part={part} isCurrent={part.id === item.id}
+                    onSelect={onSelect} progress={progress[pk] || 0}
+                    watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
+                );
+              })}
+            </div>
+          </>
+        )}
+
+      </div>{/* end ns-movie-body */}
 
       {/* ── Modals ───────────────────────────────────────────────────── */}
       {showTrailer && trailerKey && (

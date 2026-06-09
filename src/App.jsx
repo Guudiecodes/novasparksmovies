@@ -52,8 +52,8 @@ export default function App() {
 
   const [apiKeyStatus, setApiKeyStatus] = useState("ok");
 
-  // ── DEFAULT PAGE: reels ───────────────────────────────────────────────────
-  const [page,       setPage]       = useState(() => storage.get("startPage") || "reel");
+  // ── DEFAULT PAGE: Home ───────────────────────────────────────────────────────
+  const [page,       setPage]       = useState(() => storage.get("startPage") || "home");
   const [selected,   setSelected]   = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
@@ -747,7 +747,7 @@ export default function App() {
               />
             )}
 
-            {/* ── World Cinema Reel — default landing page ── */}
+            {/* ── World Cinema Reel ── */}
             {page === "reel" && (
               <ReelPage
                 apiKey={apiKey}
