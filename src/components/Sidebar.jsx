@@ -180,7 +180,7 @@ function DownloadPopup({ onClose }) {
   );
 }
 
-// ── NS AI Button ──────────────────────────────────────────────────────────
+// ── NS AI Button (desktop sidebar) ────────────────────────────────────────
 function NSAIButton({ onNavigate }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -223,7 +223,7 @@ function NSAIButton({ onNavigate }) {
   );
 }
 
-// ── World Reel Button ─────────────────────────────────────────────────────
+// ── World Reel Button (desktop sidebar) ──────────────────────────────────
 function ReelButton({ active, onNavigate }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -324,7 +324,7 @@ function TierBadge({ tier }) {
   );
 }
 
-// ── Hook: detect if we're in mobile layout ────────────────────────────────
+// ── Hook: detect mobile layout ────────────────────────────────────────────
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
   useEffect(() => {
@@ -334,6 +334,42 @@ function useIsMobile() {
     return () => mq.removeEventListener("change", handler);
   }, []);
   return isMobile;
+}
+
+// ── NS AI icon SVG (inline, reusable for mobile) ──────────────────────────
+function NSAIIcon({ active, size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      style={{
+        filter: active ? "drop-shadow(0 0 6px rgba(0,212,255,0.9))" : "none",
+        transition: "filter 0.3s",
+      }}>
+      <defs>
+        <linearGradient id="mob-ai-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#00d4ff" />
+          <stop offset="50%"  stopColor="#7c3aed" />
+          <stop offset="100%" stopColor="#00d4ff" />
+        </linearGradient>
+      </defs>
+      <circle cx="12" cy="12" r="10"
+        stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"}
+        strokeWidth="1.5" fill="none"
+        opacity={active ? 0.8 : 0.5}
+      />
+      <circle cx="12" cy="12" r="3"
+        fill={active ? "url(#mob-ai-grad)" : "var(--text3)"}
+        opacity={active ? 1 : 0.6}
+      />
+      <line x1="12" y1="2"  x2="12" y2="6"  stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="12" y1="18" x2="12" y2="22" stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="2"  y1="12" x2="6"  y2="12" stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="18" y1="12" x2="22" y2="12" stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="4.9"  y1="4.9"  x2="7.8"  y2="7.8"  stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="16.2" y1="16.2" x2="19.1" y2="19.1" stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="19.1" y1="4.9"  x2="16.2" y2="7.8"  stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="7.8"  y1="16.2" x2="4.9"  y2="19.1" stroke={active ? "url(#mob-ai-grad)" : "var(--text3)"} strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 export default function Sidebar({
@@ -362,7 +398,6 @@ export default function Sidebar({
   const dragItem = useRef(null);
   const dragNode = useRef(null);
 
-  // Close context menu on outside click
   useEffect(() => {
     const close = () => setContextMenu(null);
     window.addEventListener("click",       close);
@@ -370,7 +405,6 @@ export default function Sidebar({
     return () => { window.removeEventListener("click", close); window.removeEventListener("contextmenu", close); };
   }, []);
 
-  // Close download popup on outside click
   useEffect(() => {
     if (!showDownload) return;
     const h = (e) => {
@@ -396,11 +430,13 @@ export default function Sidebar({
     : `${tierCfg.label} Plan · Click to manage`;
 
   const isWeb = !window.electron;
+  const ICO   = 22;
 
-  const ICO = 22;
-
-  // ── Mobile nav items ──────────────────────────────────────────────────────
+  // ── Mobile nav items — mirrors desktop order exactly ─────────────────────
+  // Desktop order: Search · Home · Reel · NS AI · Library · Downloads · (back) · Menu
+  // Mobile primary row uses same order, overflow-scrollable
   const mobileNavItems = [
+    // 1. Search
     {
       id:    "search",
       label: "Search",
@@ -414,6 +450,7 @@ export default function Sidebar({
         </svg>
       ),
     },
+    // 2. Home
     {
       id:    "home",
       label: "Home",
@@ -426,9 +463,10 @@ export default function Sidebar({
         </svg>
       ),
     },
+    // 3. Reel
     {
       id:    "reel",
-      label: "Reel",
+      label: "Shorts",
       icon: (active) => (
         <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
           stroke={active ? "#f5a623" : "var(--text3)"}
@@ -441,7 +479,36 @@ export default function Sidebar({
           <circle cx="20" cy="12" r="1.2" fill={active ? "#f5a623" : "var(--text3)"} stroke="none" />
         </svg>
       ),
+      extra: (active) => !active && (
+        <span style={{
+          position: "absolute", top: 5, right: 2,
+          background: "linear-gradient(135deg, #f5a623, #e74c3c)",
+          borderRadius: 3, padding: "1px 3px",
+          fontSize: 6, fontWeight: 900, color: "#fff",
+          lineHeight: 1.4, pointerEvents: "none",
+        }}>NEW</span>
+      ),
     },
+    // 4. NS AI  ← was missing
+    {
+      id:    "nsai",
+      label: "NS AI",
+      onTap: () => onNavigate("nsai"),
+      icon: (active) => <NSAIIcon active={active} size={ICO} />,
+      extra: (active) => (
+        <span style={{
+          position: "absolute", top: 5, right: 2,
+          width: 5, height: 5, borderRadius: "50%",
+          background: active
+            ? "linear-gradient(135deg,#00d4ff,#7c3aed)"
+            : "linear-gradient(135deg,#00d4ff,#7c3aed)",
+          boxShadow: "0 0 5px rgba(0,212,255,0.7)",
+          animation: "ns-ai-pulse 2s ease-in-out infinite",
+          pointerEvents: "none",
+        }} />
+      ),
+    },
+    // 5. Library & History
     {
       id:    "history",
       label: "Library",
@@ -456,6 +523,7 @@ export default function Sidebar({
         </svg>
       ),
     },
+    // 6. Downloads
     {
       id:    "downloads",
       label: "Downloads",
@@ -469,6 +537,7 @@ export default function Sidebar({
         </svg>
       ),
     },
+    // 7. Settings
     {
       id:    "settings",
       label: "Settings",
@@ -481,6 +550,7 @@ export default function Sidebar({
         </svg>
       ),
     },
+    // 8. Help
     {
       id:    "help",
       label: "Help",
@@ -495,6 +565,7 @@ export default function Sidebar({
         </svg>
       ),
     },
+    // 9. Donate
     {
       id:    "donate",
       label: "Donate",
@@ -507,19 +578,21 @@ export default function Sidebar({
         </svg>
       ),
     },
+    // 10. Get App (web only)
     ...(isWeb ? [{
       id:    "get-app",
       label: "Get App",
       onTap: () => setShowDownload((v) => !v),
-      icon: (active) => (
+      icon: (_active) => (
         <svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none"
-          stroke={showDownload ? "var(--amber)" : active ? "var(--red)" : "var(--text3)"}
+          stroke={showDownload ? "var(--amber)" : "var(--text3)"}
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v11m0 0l-4-4m4 4l4-4"/>
           <path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2"/>
         </svg>
       ),
     }] : []),
+    // 11. Quit (electron only)
     ...(window.electron?.quitApp ? [{
       id:    "quit",
       label: "Quit",
@@ -538,7 +611,7 @@ export default function Sidebar({
   if (isMobile) {
     return (
       <>
-        {/* ── Mobile top bar ─────────────────────────────────────────────── */}
+        {/* ── Mobile top bar ────────────────────────────────────────── */}
         <div style={{
           position: "fixed",
           top: 0, left: 0, right: 0,
@@ -603,7 +676,7 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* ── Mobile bottom nav ─────────────────────────────────────────── */}
+        {/* ── Mobile bottom nav ────────────────────────────────────── */}
         <nav style={{
           position: "fixed",
           bottom: 0, left: 0, right: 0,
@@ -616,6 +689,12 @@ export default function Sidebar({
           willChange: "transform",
           transform: "translateZ(0)",
         }}>
+          <style>{`
+            @keyframes ns-ai-pulse {
+              0%,100% { opacity:1; transform:scale(1); }
+              50%      { opacity:0.5; transform:scale(0.7); }
+            }
+          `}</style>
           <div style={{
             display: "flex", alignItems: "stretch",
             overflowX: "auto", overflowY: "visible",
@@ -625,10 +704,16 @@ export default function Sidebar({
             WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 12px, black calc(100% - 12px), transparent 100%)",
           }}>
             <div style={{ width: 8, flexShrink: 0 }} />
-            {mobileNavItems.map(({ id, icon, label, badge, onTap }) => {
-              const isActive = id !== "search" && id !== "help" && id !== "donate" && id !== "get-app" && id !== "quit" && page === id;
-              const handleClick = onTap ?? (() => onNavigate(id));
-              const isReel = id === "reel";
+            {mobileNavItems.map(({ id, icon, label, badge, onTap, extra }) => {
+              // These ids are action-only (no page state match)
+              const isActionOnly = ["search", "help", "donate", "get-app", "quit"].includes(id);
+              const isActive     = !isActionOnly && page === id;
+              const isReel       = id === "reel";
+              const isAI         = id === "nsai";
+              const handleClick  = onTap ?? (() => onNavigate(id));
+
+              const activeColor = isReel ? "#f5a623" : isAI ? "#00d4ff" : "var(--red)";
+
               return (
                 <button
                   key={id}
@@ -643,7 +728,7 @@ export default function Sidebar({
                     position: "relative",
                     fontFamily: "var(--font-body)",
                     borderTop: isActive
-                      ? `2px solid ${isReel ? "#f5a623" : "var(--red)"}`
+                      ? `2px solid ${activeColor}`
                       : "2px solid transparent",
                     transition: "border-color 0.2s",
                   }}
@@ -658,12 +743,13 @@ export default function Sidebar({
                   </span>
                   <span style={{
                     fontSize: 9, fontWeight: 600, letterSpacing: 0.3,
-                    color: isActive ? (isReel ? "#f5a623" : "var(--red)") : "var(--text3)",
+                    color: isActive ? activeColor : "var(--text3)",
                     textTransform: "capitalize", lineHeight: 1,
                     transition: "color 0.2s", whiteSpace: "nowrap",
                   }}>
                     {label}
                   </span>
+                  {/* Badge (downloads count) */}
                   {badge && (
                     <span style={{
                       position: "absolute", top: 8, right: 4,
@@ -673,15 +759,8 @@ export default function Sidebar({
                       lineHeight: "16px", textAlign: "center", padding: "0 4px",
                     }}>{badge}</span>
                   )}
-                  {isReel && !isActive && (
-                    <span style={{
-                      position: "absolute", top: 6, right: 2,
-                      background: "linear-gradient(135deg, #f5a623, #e74c3c)",
-                      borderRadius: 3, padding: "1px 3px",
-                      fontSize: 6, fontWeight: 900, color: "#fff",
-                      lineHeight: 1.4, pointerEvents: "none",
-                    }}>NEW</span>
-                  )}
+                  {/* Extra decoration (NEW badge, pulse dot, etc.) */}
+                  {extra?.(isActive)}
                 </button>
               );
             })}
@@ -732,18 +811,14 @@ export default function Sidebar({
         <TierBadge tier={tier} />
       </div>
 
-      <SideBtn onClick={onSearch}                                      icon={<SearchIcon />}          label="Search (⌘F)" />
+      <SideBtn onClick={onSearch}                                        icon={<SearchIcon />}          label="Search (⌘F)" />
       <SideBtn active={page === "home"}      onClick={() => onNavigate("home")}      icon={<HomeIcon />}           label="Home" />
-      {/* ── World Reel ── */}
       <ReelButton active={page === "Shorts"} onNavigate={onNavigate} />
-      {/* ── NS AI ── */}
       <NSAIButton onNavigate={onNavigate} />
-
       <SideBtn active={page === "history"}   onClick={() => onNavigate("history")}   icon={<HistoryIcon />}        label="Library & History" />
       <SideBtn active={page === "downloads"} onClick={() => onNavigate("downloads")} icon={<DownloadsQueueIcon />} label="Downloads" />
       {canGoBack && <SideBtn onClick={onBack} icon={<BackIcon />} label="Back (Ctrl+Z)" />}
 
-      {/* ── Menu button — flyout opens to the right of sidebar ── */}
       <SideMenuBtn
         page={page}
         onNavigate={onNavigate}
@@ -805,8 +880,6 @@ export default function Sidebar({
       )}
     </div>
 
-    {/* FloatingMenu removed — menu is now a SideMenuBtn inside the sidebar */}
-
     {showDonate && <DonateModal onClose={() => setShowDonate(false)} />}
     {showDownload && isWeb && (
       <div data-download-popup>
@@ -817,13 +890,12 @@ export default function Sidebar({
   );
 }
 
-// ── Sidebar Menu Button — flyout panel opens to the right ────────────────────
+// ── Sidebar Menu Button (desktop flyout) ─────────────────────────────────
 function SideMenuBtn({ page, onNavigate, onShowShortcuts, setShowDonate, showDownload, setShowDownload, isWeb }) {
   const [open, setOpen]           = useState(false);
   const containerRef              = useRef(null);
   const [flyoutTop, setFlyoutTop] = useState(200);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
@@ -836,7 +908,6 @@ function SideMenuBtn({ page, onNavigate, onShowShortcuts, setShowDonate, showDow
   const handleToggle = () => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      // Clamp so flyout never goes off screen bottom
       setFlyoutTop(Math.min(rect.top, window.innerHeight - 300));
     }
     setOpen((v) => !v);
@@ -908,7 +979,6 @@ function SideMenuBtn({ page, onNavigate, onShowShortcuts, setShowDonate, showDow
         title="Menu"
         style={{ position: "relative" }}
       >
-        {/* Three-dot horizontal icon */}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="5"  cy="12" r="2.3"/>
           <circle cx="12" cy="12" r="2.3"/>
