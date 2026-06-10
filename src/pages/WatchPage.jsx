@@ -20,8 +20,8 @@ import { extractHLSForChrome, invalidateHLSCache } from "../utils/hlsExtractor";
 import { setApiErrorHandlers } from "../utils/api";
 setApiErrorHandlers(() => {}, () => {});
 
-const BEAST_TIMEOUT = { tier1: 18000, tier2: 25000, tier3: 32000 };
-const BEAST_SECOND_CHANCE_MS = 6000;
+const BEAST_TIMEOUT = { tier1: 3500, tier2: 5000, tier3: 7000 };
+const BEAST_SECOND_CHANCE_MS = 1500;;
 const MAX_FULL_CYCLES = 2;
 
 const _EMBED_CSS = `
@@ -57,11 +57,25 @@ const _EMBED_JS = `(function(){
 
 const _AUTOPLAY_JS = `(function(){
   if(window.__nsAuto)return;window.__nsAuto=true;
-  function tryPlay(){var v=document.querySelector('video');
-    if(v){v.muted=false;if(v.paused){v.play().catch(function(){v.muted=true;v.play().then(function(){setTimeout(function(){v.muted=false;},800);}).catch(function(){});});}}
-    var selectors=['.jw-icon-display','[aria-label="Play"]','[title="Play"]','.vjs-big-play-button','.plyr__control--overlaid','.play-button','button.play','[class*="play"][class*="btn"]','[class*="PlayBtn"]','[class*="play_btn"]','[data-testid="play-button"]','.ytp-large-play-button'];
-    for(var i=0;i<selectors.length;i++){var btn=document.querySelector(selectors[i]);if(btn&&btn.offsetParent!==null){btn.click();break;}}}
-  tryPlay();var attempts=0;var id=setInterval(function(){attempts++;var v=document.querySelector('video');if(v&&!v.paused){clearInterval(id);return;}tryPlay();if(attempts>=8)clearInterval(id);},800);
+  var SELECTORS=['.jw-icon-display','[aria-label="Play"]','[aria-label="play"]','[title="Play"]','[title="play"]','.vjs-big-play-button','.plyr__control--overlaid','.play-button','button.play','[class*="play"][class*="btn"]','[class*="PlayBtn"]','[class*="play_btn"]','[data-testid="play-button"]','.ytp-large-play-button','.fp-play','[class*="playBtn"]','[class*="play-icon"]','button[class*="Play"]','div[class*="play"]>button','[role="button"][aria-label*="lay"]'];
+  function clickPlay(){for(var i=0;i<SELECTORS.length;i++){var b=document.querySelector(SELECTORS[i]);if(b&&b.offsetWidth>0&&b.offsetHeight>0&&!b.disabled){try{b.click();}catch(e){}return true;}}return false;}
+  function tryPlay(){
+    var v=document.querySelector('video');
+    if(v&&v.paused){
+      v.muted=false;
+      var p=v.play();
+      if(p&&p.catch){p.catch(function(){v.muted=true;v.play().then(function(){v.muted=false;}).catch(function(){clickPlay();});});}
+    } else if(!v){clickPlay();}
+    else if(!v.paused){clearInterval(nsId);return;}
+  }
+  tryPlay();
+  var nsId=setInterval(function(){
+    var v=document.querySelector('video');
+    if(v&&!v.paused&&v.readyState>=2){clearInterval(nsId);return;}
+    tryPlay();
+    nsCount++;if(nsCount>=16)clearInterval(nsId);
+  },400);
+  var nsCount=0;
 })()`;
 
 function parsePlayerMessage(data) {
@@ -253,7 +267,7 @@ export default function WatchPage({
     !/Electron/.test(navigator.userAgent) &&
     !navigator.brave && !window.opr;
 
-  const useHLSPath = isChromePure;
+  const useHLSPath = false; // Direct iframe always — HLS extraction removed from hot path
   const isRestrictedForServers = isChromePure && restricted;
 
   const type  = item?.media_type === "tv" || !!item?.first_air_date ? "tv" : "movie";
@@ -264,14 +278,25 @@ export default function WatchPage({
   useEffect(() => { setCurrentSeason(item?.season ?? 1); setCurrentEpisode(item?.episode ?? 1); }, [item?.id]); // eslint-disable-line
 
   const [playerSource, setPlayerSource] = useState(() => {
-    const raw = storage.get("playerSource");
     const DEAD_SOURCES = ["embedsu"];
+    // If caller already found a working source, start with it immediately
+    if (preFoundSource && !DEAD_SOURCES.includes(preFoundSource)) {
+      if (!isRestrictedForServers || !NEEDS_INTERCEPT.includes(preFoundSource)) {
+        storage.set("playerSource", preFoundSource);
+        return preFoundSource;
+      }
+    }
+    const raw = storage.get("playerSource");
     const saved = DEAD_SOURCES.includes(raw) ? null : raw;
     if (saved) { if (isRestrictedForServers && NEEDS_INTERCEPT.includes(saved)) return BROWSER_RESTRICTED_DEFAULT; return saved; }
     return getDefaultSource();
   });
 
-  const [autoSourceStatus,  setAutoSourceStatus]  = useState("testing");
+  const [autoSourceStatus,  setAutoSourceStatus]  = useState(() => {
+    // Skip spinner if we already have a confirmed source from MoviePage/TVPage
+    if (preFoundSource && (!isRestrictedForServers || !NEEDS_INTERCEPT.includes(preFoundSource))) return "found";
+    return "testing";
+  });
   const [retryAttempt,      setRetryAttempt]       = useState(0);
   const [cycleCount,        setCycleCount]         = useState(0);
   const [showSourceMenu,    setShowSourceMenu]     = useState(false);
@@ -319,7 +344,9 @@ export default function WatchPage({
   const iframeErrorCallbackRef = useRef(null);
 
   useEffect(() => {
-    retryQueueRef.current = buildRetryQueue(type, playerSource);
+    // Start retry queue from the confirmed source (or current preference)
+    const seedSource = preFoundSource || playerSource;
+    retryQueueRef.current = buildRetryQueue(type, seedSource);
     retryIdxRef.current   = 1;
     sourceFailCountRef.current = {};
   }, [item?.id, currentSeason, currentEpisode, type]); // eslint-disable-line
@@ -426,11 +453,12 @@ export default function WatchPage({
   useEffect(() => {
     if (!item?.id) return;
     if (preFoundSource) {
-      if (isRestrictedForServers && NEEDS_INTERCEPT.includes(preFoundSource)) { /* fall through */ }
+      if (isRestrictedForServers && NEEDS_INTERCEPT.includes(preFoundSource)) { /* fall through to probe */ }
       else { setPlayerSource(preFoundSource); setAutoSourceStatus("found"); return; }
     }
     let cancelled = false;
-    setAutoSourceStatus("testing");
+    // Only set "testing" if we don't already have a good source loaded
+    if (autoSourceStatus !== "found") setAutoSourceStatus("testing");
     if (typeof findWorkingSource === "function") {
       const preferSeed = isRestrictedForServers ? BROWSER_RESTRICTED_DEFAULT : playerSource;
       findWorkingSource(type, item.id, currentSeason, currentEpisode, preferSeed)
@@ -526,23 +554,32 @@ export default function WatchPage({
     const onDomReady = async () => {
       try { await wv.insertCSS(_EMBED_CSS); } catch {}
       try { await wv.executeJavaScript(_EMBED_JS); } catch {}
-      setTimeout(async () => { try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} }, 1200);
+      try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {}
+      setTimeout(async () => { try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} }, 600);
     };
     wv.addEventListener("dom-ready", onDomReady);
     return () => { try { wv.removeEventListener("dom-ready", onDomReady); } catch {} };
   }, [embedUrl, isElectron]);
 
   useEffect(() => {
-    if (isElectron || webviewLoading) return;
+    if (isElectron) return;
     const iframe = iframeRef.current; if (!iframe) return;
     const tryAutoplay = () => {
-      try { iframe.contentWindow?.postMessage({ event: "play", action: "play" }, "*"); iframe.contentWindow?.postMessage({ type: "play" }, "*"); } catch {}
+      try {
+        iframe.contentWindow?.postMessage({ event: "play", action: "play" }, "*");
+        iframe.contentWindow?.postMessage({ type: "play" }, "*");
+        iframe.contentWindow?.postMessage({ event: "playing" }, "*");
+        iframe.contentWindow?.postMessage({ command: "play" }, "*");
+        iframe.contentWindow?.postMessage({ name: "play" }, "*");
+      } catch {}
     };
+    // Fire immediately (before load), then again at tight intervals
     tryAutoplay();
-    const t1 = setTimeout(tryAutoplay, 1500);
-    const t2 = setTimeout(tryAutoplay, 3500);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [isElectron, webviewLoading, embedUrl]);
+    const t1 = setTimeout(tryAutoplay, 800);
+    const t2 = setTimeout(tryAutoplay, 2000);
+    const t3 = setTimeout(tryAutoplay, 4000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [isElectron, embedUrl]);
 
   // Electron Beast Engine
   useEffect(() => {
@@ -560,6 +597,11 @@ export default function WatchPage({
       clearInterval(pollRef.current); clearTimeout(hardTimeoutId); clearTimeout(absoluteCeilingId); clearTimeout(secondChanceRef.current); // eslint-disable-line
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
       setWebviewLoading(false);
+      // Final autoplay push after black screen clears — covers late-mute policies
+      setTimeout(async () => {
+        const wvFinal = webviewRef.current; if (!wvFinal || !active === false) return;
+        try { await wvFinal.executeJavaScript(_AUTOPLAY_JS); } catch {}
+      }, 300);
     };
     const onFail = () => {
       if (!active) return; active = false;
@@ -599,18 +641,21 @@ export default function WatchPage({
     const onDomReady = async () => {
       try { await wv.insertCSS(_EMBED_CSS); } catch {}
       try { await wv.executeJavaScript(_EMBED_JS); } catch {}
+      try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {}
       runPoll();
+      setTimeout(async () => { try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} }, 600);
     };
-    pollRef.current = setInterval(runPoll, 200);
+    runPoll(); // immediate check — don't wait 100ms for first interval tick
+    pollRef.current = setInterval(runPoll, 100);
     const hardTimeoutId = setTimeout(enterSecondChance, HARD_TIMEOUT_MS);
     const onLoadFail = (e) => { if (!e.isMainFrame || e.errorCode === -3) return; clearTimeout(hardTimeoutId); enterSecondChance(); }; // eslint-disable-line
     wv.addEventListener("dom-ready", onDomReady);
-    wv.addEventListener("did-finish-load", runPoll);
+    wv.addEventListener("did-finish-load", async () => { runPoll(); try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} });
     wv.addEventListener("did-fail-load", onLoadFail);
     return () => {
       active = false; clearInterval(pollRef.current); clearTimeout(hardTimeoutId); clearTimeout(absoluteCeilingId); clearTimeout(secondChanceRef.current);
       try { wv.removeEventListener("dom-ready", onDomReady); } catch {}
-      try { wv.removeEventListener("did-finish-load", runPoll); } catch {}
+      try { wv.removeEventListener("did-finish-load", () => {}); } catch {}
       try { wv.removeEventListener("did-fail-load", onLoadFail); } catch {}
     };
   }, [embedUrl, isElectron, tryNextSource, playerSource, type]);
@@ -621,11 +666,22 @@ export default function WatchPage({
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
     if (useHLSPath && (hlsLoading || (hlsStream && !hlsFailed))) return;
     let active = true, iframeHasLoaded = false;
-    const PROBE_TIMEOUT = 800, LOAD_REVEAL_DELAY = 700, HARD_TIMEOUT_MS = 7000, SECOND_CHANCE_MS = 5000;
+    const PROBE_TIMEOUT = 600, LOAD_REVEAL_DELAY = 200, HARD_TIMEOUT_MS = 3000, SECOND_CHANCE_MS = 1500;
     let probeAbortCtrl = new AbortController();
     let probeTimerId = null, hardTimerId = null, revealTimerId = null, secondTimerId = null;
     const clearAll = () => { clearTimeout(probeTimerId); clearTimeout(hardTimerId); clearTimeout(revealTimerId); clearTimeout(secondTimerId); try { probeAbortCtrl.abort(); } catch {} };
-    const onReady = () => { if (!active) return; active = false; clearAll(); setAutoSourceStatus((s) => (s === "testing" || s === "retrying") ? "found" : s); setWebviewLoading(false); };
+    const onReady = () => {
+      if (!active) return; active = false; clearAll();
+      setAutoSourceStatus((s) => (s === "testing" || s === "retrying") ? "found" : s);
+      setWebviewLoading(false);
+      // Push autoplay after reveal — iframe is now visible, player can respond
+      setTimeout(() => {
+        try {
+          iframeRef.current?.contentWindow?.postMessage({ event: "play", action: "play" }, "*");
+          iframeRef.current?.contentWindow?.postMessage({ type: "play" }, "*");
+        } catch {}
+      }, 150);
+    };
     const onFail  = () => { if (!active) return; active = false; clearAll(); tryNextSource(); };
     const enterSecondChance = () => { if (!active) return; secondTimerId = setTimeout(() => { if (!active) return; if (iframeHasLoaded) onReady(); else onFail(); }, SECOND_CHANCE_MS); };
     webBeastReadyRef.current = onReady; webBeastFailRef.current = onFail;
@@ -749,7 +805,8 @@ export default function WatchPage({
   if (!item) return null;
 
   const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading;
-  const iframeShieldActive = isChromePure && !isElectron && !webviewLoading && hlsFailed && !hlsLoading;
+  // Shield always active on browser to block ad-redirect zones (top bar, bottom bar, sides)
+  const iframeShieldActive = !isElectron && !webviewLoading && !pipOpen;
 
   return (
     <div className="watch-page fade-in">
@@ -900,12 +957,14 @@ export default function WatchPage({
           />
         ) : (
           <>
+            {/* ── iframe: NO sandbox — embed players need full navigation freedom ── */}
             <iframe
               key={`if-${playerSource}-${item.id}-s${currentSeason}e${currentEpisode}`}
               ref={iframeRef}
               src={(!useHLSPath || (hlsFailed && !hlsLoading)) ? embedUrl : "about:blank"}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-              allowFullScreen referrerPolicy="no-referrer"
+              allowFullScreen
+              referrerPolicy="origin"
               onLoad={() => iframeLoadCallbackRef.current?.()}
               onError={() => iframeErrorCallbackRef.current?.()}
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", background: "#000", opacity: webviewLoading ? 0 : 1, transition: "opacity 0.4s ease", pointerEvents: webviewLoading ? "none" : "auto" }}

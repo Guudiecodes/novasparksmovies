@@ -685,7 +685,7 @@ export default function TVPage({
     if (!firstEp) return;
     if (onWatch) {
       onHistory({ ...d, media_type: "tv", season: selectedSeason, episode: firstEp.episode_number, episodeName: firstEp.name });
-      onWatch({ item: { ...d, media_type: "tv" }, season: selectedSeason, episode: firstEp.episode_number, episodeName: firstEp.name });
+      onWatch({ item: { ...d, media_type: "tv" }, season: selectedSeason, episode: firstEp.episode_number, episodeName: firstEp.name, sourceId: playerSource });
       return;
     }
     setM3u8Url(null); setInterceptedSubs([]); setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
