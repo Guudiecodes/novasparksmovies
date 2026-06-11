@@ -4,36 +4,48 @@ import {
   NON_ANIME_DEFAULT_SOURCE, BROWSER_RESTRICTED_DEFAULT, NEEDS_INTERCEPT,
   findWorkingSource, buildRetryQueue, isRestrictedBrowser, getDefaultSource,
   invalidateSourceCache,
+  fetchAllNonEmbedSources, fetchOnlineSubtitles, M3U8_PROXY,
 } from "../utils/api";
 import { storage } from "../utils/storage";
 import {
   BackIcon, StarIcon, SourceIcon, PlayIcon,
   BookmarkIcon, BookmarkFillIcon, TrailerIcon, PopOutIcon, DownloadIcon,
 } from "../components/Icons";
-import TrailerModal    from "../components/TrailerModal";
-import DownloadModal   from "../components/DownloadModal";
+import TrailerModal        from "../components/TrailerModal";
+import DownloadModal       from "../components/DownloadModal";
 import { canDownload, canPopOut, canSwitchSource } from "../utils/gate";
-import PremiumGate     from "../components/PremiumGate";
-import DataMeterWidget from "../components/DataMeterWidget";
-import HLSPlayer       from "../components/HLSPlayer";
+import PremiumGate         from "../components/PremiumGate";
+import DataMeterWidget     from "../components/DataMeterWidget";
+import HLSPlayer           from "../components/HLSPlayer";
+import NovaSparksPlayer    from "../components/NovaSparksPlayer";
 import { extractHLSForChrome, invalidateHLSCache } from "../utils/hlsExtractor";
 import { setApiErrorHandlers } from "../utils/api";
 setApiErrorHandlers(() => {}, () => {});
 
 const BEAST_TIMEOUT = { tier1: 3500, tier2: 5000, tier3: 7000 };
-const BEAST_SECOND_CHANCE_MS = 1500;;
+const BEAST_SECOND_CHANCE_MS = 1500;
 const MAX_FULL_CYCLES = 2;
 
+// ── Embed CSS — hides loaders AND ad/cookie modal patterns ────────────────────
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],
 .spinner,.preloader,.lds-ring,.lds-spinner,.vjs-loading-spinner,
 .jw-icon-loading,.plyr__loading{display:none!important;opacity:0!important;visibility:hidden!important;}
 video{opacity:1!important;visibility:visible!important;display:block!important;}
+[class*="adblock"i],[class*="adblocker"i],[class*="ad-block"i],[class*="ad-modal"i],
+[class*="cookie-modal"i],[class*="cookie-banner"i],[class*="cookie-consent"i],[class*="consent-modal"i],
+[class*="consent-popup"i],[class*="gdpr"i],[id*="adblock"i],[id*="adblocker"i],
+[id*="cookie-banner"i],[id*="cookie-modal"i],[id*="consent"i],
+[class*="popup"i][class*="ad"i],[class*="ad"i][class*="popup"i],
+[class*="interstitial"i],[class*="overlay-ad"i],[class*="ad-overlay"i]{
+  display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;}
 `;
 
+// ── Embed JS — kills error banners + ad modals/overlays aggressively ──────────
 const _EMBED_JS = `(function(){
   if(window.__ns)return;window.__ns=true;
+
   var BAD=['FETCHING, ONE MOMENT...','FETCHING','ONE MOMENT...','PLEASE WAIT','LOADING...','LOADING','BUFFERING',
     'SOURCE NOT FOUND','VIDEO NOT FOUND','MEDIA NOT FOUND','CONTENT NOT FOUND','FILE NOT FOUND','NOT FOUND','404',
     'NO SOURCE','NO VIDEO','COULD NOT CONNECT','CONNECTION ERROR','FAILED TO LOAD','LOAD ERROR','NETWORK ERROR',
@@ -46,13 +58,66 @@ const _EMBED_JS = `(function(){
     'THIS VIDEO IS NOT AVAILABLE','VIDEO NOT AVAILABLE','NOT AVAILABLE','CANNOT LOAD VIDEO',
     'CANNOT PLAY VIDEO','MEDIA ERROR','REFUSED TO CONNECT','CONNECTION REFUSED','ERR_CONNECTION_REFUSED',
     'VSEMBED','VSEMBED.RU','REFUSED'];
-  function clean(){try{document.querySelectorAll('body *').forEach(function(el){
-    if(!el.childElementCount){var t=(el.textContent||'').trim().toUpperCase();
-    if(t.length>2&&t.length<200&&BAD.some(function(k){return t===k||t.startsWith(k+'.')||t.startsWith(k+':')||t.includes(k);})){
-      var p=el;for(var i=0;i<5;i++){var par=p.parentElement;if(par&&par!==document.body&&par!==document.documentElement)p=par;else break;}
-      p.style.cssText='display:none!important;opacity:0!important;pointer-events:none!important;visibility:hidden!important;';}}});}catch(e){}}
-  clean();var obs=new MutationObserver(clean);obs.observe(document.body,{childList:true,subtree:true,characterData:true});
-  setTimeout(function(){obs.disconnect();},18000);
+
+  var AD_KEYS=['TIRED OF ADS','GET OPEN ADBLOCKER','OPEN ADBLOCKER','ADBLOCKER','ADBLOCK DETECTED',
+    'AD BLOCKER DETECTED','DISABLE YOUR ADBLOCK','DISABLE ADBLOCK','TURN OFF ADBLOCK',
+    'WHITELIST THIS SITE','PLEASE DISABLE','INSTALL ADBLOCKER','REMOVE ADS',
+    'COOKIE CONSENT','ACCEPT COOKIES','ACCEPT ALL COOKIES','MANAGE COOKIES',
+    'WE USE COOKIES','THIS SITE USES COOKIES','ADVERTISEMENT','YOUR AD BLOCKER'];
+
+  var HIDE='display:none!important;opacity:0!important;pointer-events:none!important;visibility:hidden!important;';
+
+  function killAdOverlays(){
+    try{
+      // 1. Kill by class/id name patterns
+      document.querySelectorAll(
+        '[class*="modal"i],[class*="popup"i],[class*="adblock"i],[class*="ad-block"i],'
+        +'[class*="adblocker"i],[class*="ad-overlay"i],[class*="interstitial"i],'
+        +'[id*="adblock"i],[id*="popup"i],[id*="ad-modal"i],[class*="consent"i],'
+        +'[class*="cookie-banner"i],[class*="cookie-modal"i],[class*="gdpr"i]'
+      ).forEach(function(el){
+        if(!el||!el.textContent)return;
+        var t=el.textContent.toUpperCase();
+        if(AD_KEYS.some(function(k){return t.indexOf(k)!==-1;})){
+          el.style.cssText=HIDE;
+        }
+      });
+      // 2. Kill high z-index fixed/absolute overlays containing ad text
+      var all=document.querySelectorAll('body>*,body>*>*,body>*>*>*');
+      for(var i=0;i<all.length;i++){
+        try{
+          var el=all[i];
+          var s=window.getComputedStyle(el);
+          var z=parseInt(s.zIndex)||0;
+          if((s.position==='fixed'||s.position==='absolute')&&z>200){
+            var t2=(el.textContent||'').toUpperCase();
+            if(AD_KEYS.some(function(k){return t2.indexOf(k)!==-1;})){
+              el.style.cssText=HIDE;
+            }
+          }
+        }catch(e2){}
+      }
+      // 3. Kill ad iframes by src pattern
+      document.querySelectorAll('iframe[src*="ads"],iframe[src*="adserv"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[id*="ad-"],iframe[class*="ad-"]').forEach(function(el){
+        el.style.cssText=HIDE;
+      });
+    }catch(e){}
+  }
+
+  function clean(){
+    try{document.querySelectorAll('body *').forEach(function(el){
+      if(!el.childElementCount){var t=(el.textContent||'').trim().toUpperCase();
+      if(t.length>2&&t.length<200&&BAD.some(function(k){return t===k||t.startsWith(k+'.')||t.startsWith(k+':')||t.indexOf(k)!==-1;})){
+        var p=el;for(var i=0;i<5;i++){var par=p.parentElement;if(par&&par!==document.body&&par!==document.documentElement)p=par;else break;}
+        p.style.cssText=HIDE;}}});}catch(e){}
+    killAdOverlays();
+  }
+
+  clean();
+  var obs=new MutationObserver(function(){clean();});
+  obs.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['style','class','id']});
+  // Keep running 2 minutes to catch late-injected ad modals
+  setTimeout(function(){obs.disconnect();},120000);
 })()`;
 
 const _AUTOPLAY_JS = `(function(){
@@ -267,7 +332,7 @@ export default function WatchPage({
     !/Electron/.test(navigator.userAgent) &&
     !navigator.brave && !window.opr;
 
-  const useHLSPath = false; // Direct iframe always — HLS extraction removed from hot path
+  const useHLSPath = false;
   const isRestrictedForServers = isChromePure && restricted;
 
   const type  = item?.media_type === "tv" || !!item?.first_air_date ? "tv" : "movie";
@@ -278,22 +343,21 @@ export default function WatchPage({
   useEffect(() => { setCurrentSeason(item?.season ?? 1); setCurrentEpisode(item?.episode ?? 1); }, [item?.id]); // eslint-disable-line
 
   const [playerSource, setPlayerSource] = useState(() => {
-    const DEAD_SOURCES = ["embedsu"];
-    // If caller already found a working source, start with it immediately
+    // Dead sources — removed bad ad servers + legacy
+    const DEAD_SOURCES = ["embedsu", "cinezo", "smashystream", "vapsrc", "twoembed", "vidbinge", "vidupto"];
     if (preFoundSource && !DEAD_SOURCES.includes(preFoundSource)) {
       if (!isRestrictedForServers || !NEEDS_INTERCEPT.includes(preFoundSource)) {
         storage.set("playerSource", preFoundSource);
         return preFoundSource;
       }
     }
-    const raw = storage.get("playerSource");
+    const raw   = storage.get("playerSource");
     const saved = DEAD_SOURCES.includes(raw) ? null : raw;
     if (saved) { if (isRestrictedForServers && NEEDS_INTERCEPT.includes(saved)) return BROWSER_RESTRICTED_DEFAULT; return saved; }
     return getDefaultSource();
   });
 
   const [autoSourceStatus,  setAutoSourceStatus]  = useState(() => {
-    // Skip spinner if we already have a confirmed source from MoviePage/TVPage
     if (preFoundSource && (!isRestrictedForServers || !NEEDS_INTERCEPT.includes(preFoundSource))) return "found";
     return "testing";
   });
@@ -329,6 +393,40 @@ export default function WatchPage({
   const [hlsLoading,     setHlsLoading]     = useState(false);
   const [hlsFailed,      setHlsFailed]      = useState(false);
 
+  const [isNonEmbedMode,   setIsNonEmbedMode]   = useState(() => storage.get("playerMode") === "nonembed");
+  const [nonEmbedSources,  setNonEmbedSources]  = useState([]);
+  const [nonEmbedStream,   setNonEmbedStream]   = useState(null);
+  const [nonEmbedCaptions, setNonEmbedCaptions] = useState([]);
+  const [nonEmbedFetching, setNonEmbedFetching] = useState(false);
+  const [nonEmbedRetry,    setNonEmbedRetry]    = useState(0);
+  const nonEmbedAbortRef     = useRef(null);
+  const nonEmbedStreamIdxRef = useRef(0);
+
+  const unifiedCaptions = useMemo(() =>
+    nonEmbedCaptions
+      .map((c) => ({
+        url:     c.url  || c.file  || "",
+        lang:    c.language || c.lang || "",
+        display: c.display  || c.label || c.language || "Unknown",
+        format:  c.type || c.format || "srt",
+      }))
+      .filter((c) => c.url),
+  [nonEmbedCaptions]);
+
+  const nsStreamUrl = useMemo(() => {
+    if (isNonEmbedMode && nonEmbedStream) {
+      return nonEmbedStream.format === "hls"
+        ? `${M3U8_PROXY}${encodeURIComponent(nonEmbedStream.url)}`
+        : nonEmbedStream.url;
+    }
+    return m3u8Url;
+  }, [isNonEmbedMode, nonEmbedStream, m3u8Url]);
+
+  const showNSPlayer = isElectron && !pipOpen && (
+    (isNonEmbedMode && !!nonEmbedStream) ||
+    (!isNonEmbedMode && !!m3u8Url)
+  );
+
   const webviewRef    = useRef(null);
   const iframeRef     = useRef(null);
   const sourceRef     = useRef(null);
@@ -344,7 +442,6 @@ export default function WatchPage({
   const iframeErrorCallbackRef = useRef(null);
 
   useEffect(() => {
-    // Start retry queue from the confirmed source (or current preference)
     const seedSource = preFoundSource || playerSource;
     retryQueueRef.current = buildRetryQueue(type, seedSource);
     retryIdxRef.current   = 1;
@@ -387,8 +484,26 @@ export default function WatchPage({
     storage.set("playerSource", nextId);
   }, [playerSource, type, item?.id, currentSeason, currentEpisode]);
 
+  const tryNextNonEmbedSource = useCallback(() => {
+    const next = nonEmbedStreamIdxRef.current + 1;
+    if (next < nonEmbedSources.length) {
+      nonEmbedStreamIdxRef.current = next;
+      setNonEmbedStream(nonEmbedSources[next]);
+    } else {
+      setAutoSourceStatus("failed");
+      setWebviewLoading(false);
+    }
+  }, [nonEmbedSources]);
+
   const retryFromScratch = useCallback(() => {
     clearTimeout(secondChanceRef.current);
+    if (isNonEmbedMode) {
+      setAutoSourceStatus("testing");
+      setWebviewLoading(true);
+      nonEmbedStreamIdxRef.current = 0;
+      setNonEmbedRetry((n) => n + 1);
+      return;
+    }
     sourceFailCountRef.current = {};
     const defaultSrc = getDefaultSource();
     retryQueueRef.current = buildRetryQueue(type, defaultSrc);
@@ -396,10 +511,11 @@ export default function WatchPage({
     setCycleCount(0); setRetryAttempt(0);
     setAutoSourceStatus("testing"); setWebviewLoading(true);
     setHlsStream(null); setHlsFailed(false);
+    setM3u8Url(null); setInterceptedSubs([]);
     invalidateSourceCache(type, item?.id, currentSeason, currentEpisode);
     setPlayerSource(defaultSrc);
     storage.set("playerSource", defaultSrc);
-  }, [type, item?.id, currentSeason, currentEpisode]);
+  }, [isNonEmbedMode, type, item?.id, currentSeason, currentEpisode]);
 
   useEffect(() => {
     if (!item?.id || !apiKey) return;
@@ -452,12 +568,12 @@ export default function WatchPage({
 
   useEffect(() => {
     if (!item?.id) return;
+    if (isNonEmbedMode) return;
     if (preFoundSource) {
-      if (isRestrictedForServers && NEEDS_INTERCEPT.includes(preFoundSource)) { /* fall through to probe */ }
+      if (isRestrictedForServers && NEEDS_INTERCEPT.includes(preFoundSource)) { /* fall through */ }
       else { setPlayerSource(preFoundSource); setAutoSourceStatus("found"); return; }
     }
     let cancelled = false;
-    // Only set "testing" if we don't already have a good source loaded
     if (autoSourceStatus !== "found") setAutoSourceStatus("testing");
     if (typeof findWorkingSource === "function") {
       const preferSeed = isRestrictedForServers ? BROWSER_RESTRICTED_DEFAULT : playerSource;
@@ -469,12 +585,14 @@ export default function WatchPage({
         }).catch(() => { if (!cancelled) setAutoSourceStatus("testing"); });
     } else { setAutoSourceStatus("found"); }
     return () => { cancelled = true; };
-  }, [item?.id, type, currentSeason, currentEpisode, preFoundSource]); // eslint-disable-line
+  }, [item?.id, type, currentSeason, currentEpisode, preFoundSource, isNonEmbedMode]); // eslint-disable-line
 
   useEffect(() => {
     setM3u8Url(null); setInterceptedSubs([]);
     setShowSkipIntro(false); setShowNextEp(false);
     setIsActuallyPlaying(false); receivedRealSignalRef.current = false;
+    setNonEmbedStream(null); setNonEmbedSources([]); setNonEmbedCaptions([]);
+    nonEmbedStreamIdxRef.current = 0;
   }, [playerSource, item?.id, currentSeason, currentEpisode, type]);
 
   const totalEpisodesInSeason = episodeList.length;
@@ -482,15 +600,14 @@ export default function WatchPage({
   const hasNextEp = type === "tv" && (currentEpisode < totalEpisodesInSeason || currentSeason < totalSeasons);
 
   const embedUrl = useMemo(() => {
-    if (!item?.id) return "about:blank";
+    if (!item?.id || isNonEmbedMode) return "about:blank";
     return getSourceUrl(playerSource, type, item.id, currentSeason, currentEpisode);
-  }, [playerSource, type, item?.id, currentSeason, currentEpisode]);
+  }, [playerSource, type, item?.id, currentSeason, currentEpisode, isNonEmbedMode]);
 
   useEffect(() => { setWebviewLoading(true); setIsActuallyPlaying(false); receivedRealSignalRef.current = false; }, [embedUrl]);
 
-  // HLS extraction (Chrome only)
   useEffect(() => {
-    if (!useHLSPath || !item?.id) { setHlsStream(null); setHlsFailed(false); return; }
+    if (!useHLSPath || !item?.id || isNonEmbedMode) { setHlsStream(null); setHlsFailed(false); return; }
     let cancelled = false;
     setHlsStream(null); setHlsFailed(false); setHlsLoading(true); setWebviewLoading(true);
     extractHLSForChrome(item.id, type, currentSeason, currentEpisode)
@@ -500,9 +617,75 @@ export default function WatchPage({
         else { setHlsFailed(true); setHlsLoading(false); }
       }).catch(() => { if (!cancelled) { setHlsFailed(true); setHlsLoading(false); } });
     return () => { cancelled = true; };
-  }, [item?.id, type, currentSeason, currentEpisode, useHLSPath]); // eslint-disable-line
+  }, [item?.id, type, currentSeason, currentEpisode, useHLSPath, isNonEmbedMode]); // eslint-disable-line
 
   useEffect(() => { setHlsStream(null); setHlsFailed(false); }, [item?.id, currentSeason, currentEpisode]);
+
+  useEffect(() => {
+    if (!isNonEmbedMode || !item?.id) return;
+    nonEmbedAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    nonEmbedAbortRef.current = ctrl;
+    nonEmbedStreamIdxRef.current = 0;
+    setNonEmbedSources([]);
+    setNonEmbedCaptions([]);
+    setNonEmbedStream(null);
+    setNonEmbedFetching(true);
+    setAutoSourceStatus("testing");
+    setWebviewLoading(true);
+    let streamSet = false;
+    fetchAllNonEmbedSources(
+      type, item.id,
+      type === "tv" ? currentSeason  : null,
+      type === "tv" ? currentEpisode : null,
+      {
+        onSourceFound: (src) => {
+          setNonEmbedSources((prev) => [...prev, src]);
+          if (!streamSet) {
+            streamSet = true;
+            nonEmbedStreamIdxRef.current = 0;
+            setNonEmbedStream(src);
+            setAutoSourceStatus("found");
+            setWebviewLoading(false);
+          }
+        },
+        signal: ctrl.signal,
+      }
+    ).then(({ sources, captions }) => {
+      if (ctrl.signal.aborted) return;
+      setNonEmbedSources(sources);
+      setNonEmbedCaptions((prev) => {
+        const seen = new Set(prev.map((c) => c.url || c.file));
+        return [...prev, ...captions.filter((c) => !seen.has(c.url || c.file))];
+      });
+      setNonEmbedFetching(false);
+      if (!streamSet) {
+        if (sources.length) {
+          streamSet = true;
+          setNonEmbedStream(sources[0]);
+          setAutoSourceStatus("found");
+          setWebviewLoading(false);
+        } else {
+          setAutoSourceStatus("failed");
+          setWebviewLoading(false);
+        }
+      }
+    }).catch(() => {
+      if (!ctrl.signal.aborted) {
+        setNonEmbedFetching(false);
+        setAutoSourceStatus("failed");
+        setWebviewLoading(false);
+      }
+    });
+    fetchOnlineSubtitles(item.id).then((subs) => {
+      if (ctrl.signal.aborted || !subs.length) return;
+      setNonEmbedCaptions((prev) => {
+        const seen = new Set(prev.map((c) => c.url));
+        return [...prev, ...subs.filter((s) => !seen.has(s.url))];
+      });
+    }).catch(() => {});
+    return () => ctrl.abort();
+  }, [isNonEmbedMode, item?.id, type, currentSeason, currentEpisode, nonEmbedRetry]); // eslint-disable-line
 
   useEffect(() => {
     const handler = (e) => {
@@ -516,9 +699,8 @@ export default function WatchPage({
     return () => window.removeEventListener("message", handler);
   }, [embedUrl]);
 
-  // Electron: poll webview for video state
   useEffect(() => {
-    if (!isElectron) return;
+    if (!isElectron || showNSPlayer || isNonEmbedMode) return;
     if (webviewLoading || pipOpen) { setIsActuallyPlaying(false); return; }
     let lastState = null;
     const poll = async () => {
@@ -538,18 +720,17 @@ export default function WatchPage({
     poll();
     const pollId = setInterval(poll, 2000);
     return () => clearInterval(pollId);
-  }, [isElectron, webviewLoading, pipOpen, embedUrl]);
+  }, [isElectron, webviewLoading, pipOpen, embedUrl, showNSPlayer, isNonEmbedMode]);
 
-  // Browser: fallback playing signal after 3.5s
   useEffect(() => {
-    if (isElectron) return;
+    if (isElectron || isNonEmbedMode) return;
     if (webviewLoading) { setIsActuallyPlaying(false); return; }
     const timer = setTimeout(() => { if (!receivedRealSignalRef.current) setIsActuallyPlaying(true); }, 3500);
     return () => clearTimeout(timer);
-  }, [isElectron, webviewLoading, embedUrl]);
+  }, [isElectron, webviewLoading, embedUrl, isNonEmbedMode]);
 
   useEffect(() => {
-    if (!isElectron) return;
+    if (!isElectron || isNonEmbedMode) return;
     const wv = webviewRef.current; if (!wv) return;
     const onDomReady = async () => {
       try { await wv.insertCSS(_EMBED_CSS); } catch {}
@@ -559,10 +740,10 @@ export default function WatchPage({
     };
     wv.addEventListener("dom-ready", onDomReady);
     return () => { try { wv.removeEventListener("dom-ready", onDomReady); } catch {} };
-  }, [embedUrl, isElectron]);
+  }, [embedUrl, isElectron, isNonEmbedMode]);
 
   useEffect(() => {
-    if (isElectron) return;
+    if (isElectron || isNonEmbedMode) return;
     const iframe = iframeRef.current; if (!iframe) return;
     const tryAutoplay = () => {
       try {
@@ -573,17 +754,15 @@ export default function WatchPage({
         iframe.contentWindow?.postMessage({ name: "play" }, "*");
       } catch {}
     };
-    // Fire immediately (before load), then again at tight intervals
     tryAutoplay();
     const t1 = setTimeout(tryAutoplay, 800);
     const t2 = setTimeout(tryAutoplay, 2000);
     const t3 = setTimeout(tryAutoplay, 4000);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [isElectron, embedUrl]);
+  }, [isElectron, embedUrl, isNonEmbedMode]);
 
-  // Electron Beast Engine
   useEffect(() => {
-    if (!isElectron) return;
+    if (!isElectron || isNonEmbedMode) return;
     const wv = webviewRef.current; if (!wv) return;
     let active = true;
     clearInterval(pollRef.current); clearTimeout(secondChanceRef.current);
@@ -591,13 +770,11 @@ export default function WatchPage({
     const tier = currentSrc?.tier ?? 2;
     const HARD_TIMEOUT_MS = BEAST_TIMEOUT[`tier${tier}`] ?? BEAST_TIMEOUT.tier2;
     const ABSOLUTE_CEILING_MS = HARD_TIMEOUT_MS + BEAST_SECOND_CHANCE_MS + 3000;
-
     const markReady = () => {
       if (!active) return; active = false;
       clearInterval(pollRef.current); clearTimeout(hardTimeoutId); clearTimeout(absoluteCeilingId); clearTimeout(secondChanceRef.current); // eslint-disable-line
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
       setWebviewLoading(false);
-      // Final autoplay push after black screen clears — covers late-mute policies
       setTimeout(async () => {
         const wvFinal = webviewRef.current; if (!wvFinal || !active === false) return;
         try { await wvFinal.executeJavaScript(_AUTOPLAY_JS); } catch {}
@@ -625,11 +802,13 @@ export default function WatchPage({
     const absoluteCeilingId = setTimeout(() => {
       if (!active) return; active = false;
       clearInterval(pollRef.current); clearTimeout(secondChanceRef.current);
+      if (m3u8Url) { setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s); return; }
       tryNextSource();
     }, ABSOLUTE_CEILING_MS);
     const runPoll = async () => {
       if (!active) { clearInterval(pollRef.current); return; }
       const wv = webviewRef.current; if (!wv) return;
+      if (m3u8Url) { markReady(); return; }
       try {
         const wcId = wv.getWebContentsId?.();
         if (wcId && window.electron?.queryVideoProgress) { const prog = await window.electron.queryVideoProgress(wcId); if (prog && prog.duration > 0) { markReady(); return; } }
@@ -645,7 +824,7 @@ export default function WatchPage({
       runPoll();
       setTimeout(async () => { try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} }, 600);
     };
-    runPoll(); // immediate check — don't wait 100ms for first interval tick
+    runPoll();
     pollRef.current = setInterval(runPoll, 100);
     const hardTimeoutId = setTimeout(enterSecondChance, HARD_TIMEOUT_MS);
     const onLoadFail = (e) => { if (!e.isMainFrame || e.errorCode === -3) return; clearTimeout(hardTimeoutId); enterSecondChance(); }; // eslint-disable-line
@@ -658,11 +837,10 @@ export default function WatchPage({
       try { wv.removeEventListener("did-finish-load", () => {}); } catch {}
       try { wv.removeEventListener("did-fail-load", onLoadFail); } catch {}
     };
-  }, [embedUrl, isElectron, tryNextSource, playerSource, type]);
+  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, type, m3u8Url]); // eslint-disable-line
 
-  // Browser Beast Engine
   useEffect(() => {
-    if (isElectron) return;
+    if (isElectron || isNonEmbedMode) return;
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
     if (useHLSPath && (hlsLoading || (hlsStream && !hlsFailed))) return;
     let active = true, iframeHasLoaded = false;
@@ -674,7 +852,6 @@ export default function WatchPage({
       if (!active) return; active = false; clearAll();
       setAutoSourceStatus((s) => (s === "testing" || s === "retrying") ? "found" : s);
       setWebviewLoading(false);
-      // Push autoplay after reveal — iframe is now visible, player can respond
       setTimeout(() => {
         try {
           iframeRef.current?.contentWindow?.postMessage({ event: "play", action: "play" }, "*");
@@ -698,10 +875,10 @@ export default function WatchPage({
       if (webBeastFailRef.current === onFail) webBeastFailRef.current = null;
       iframeLoadCallbackRef.current = null; iframeErrorCallbackRef.current = null;
     };
-  }, [embedUrl, isElectron, tryNextSource, isRestrictedForServers, hlsLoading, hlsStream, hlsFailed, useHLSPath]);
+  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, isRestrictedForServers, hlsLoading, hlsStream, hlsFailed, useHLSPath]);
 
   useEffect(() => {
-    if (!isElectron) return;
+    if (!isElectron || showNSPlayer || isNonEmbedMode) return;
     const poll = async () => {
       const wv = webviewRef.current; if (!wv || webviewLoading || pipOpen) return;
       try {
@@ -713,13 +890,18 @@ export default function WatchPage({
     };
     const pollId = setInterval(poll, 2000);
     return () => clearInterval(pollId);
-  }, [isElectron, webviewLoading, pipOpen, type, hasNextEp]);
+  }, [isElectron, webviewLoading, pipOpen, type, hasNextEp, showNSPlayer, isNonEmbedMode]);
 
   useEffect(() => {
     if (!window.electron) return;
-    const h = window.electron.onM3u8Found((url) => setM3u8Url((p) => p !== url ? url : p));
+    const h = window.electron.onM3u8Found((url) => {
+      if (isNonEmbedMode) return;
+      setM3u8Url((p) => p !== url ? url : p);
+      setAutoSourceStatus("found");
+      setWebviewLoading(false);
+    });
     return () => window.electron.offM3u8Found(h);
-  }, []);
+  }, [isNonEmbedMode]);
 
   useEffect(() => {
     if (!window.electron) return;
@@ -745,6 +927,7 @@ export default function WatchPage({
     retryIdxRef.current = 1; setCycleCount(0); setRetryAttempt(0);
     setAutoSourceStatus("testing"); setWebviewLoading(true);
     setHlsStream(null); setHlsFailed(false);
+    setM3u8Url(null); setInterceptedSubs([]);
     setPlayerSource(id); storage.set("playerSource", id);
   }, [playerSource, type]);
 
@@ -804,9 +987,14 @@ export default function WatchPage({
 
   if (!item) return null;
 
-  const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading;
-  // Shield always active on browser to block ad-redirect zones (top bar, bottom bar, sides)
-  const iframeShieldActive = !isElectron && !webviewLoading && !pipOpen;
+  const browserNonEmbedUrl = nonEmbedStream
+    ? (nonEmbedStream.format === "hls"
+        ? `${M3U8_PROXY}${encodeURIComponent(nonEmbedStream.url)}`
+        : nonEmbedStream.url)
+    : null;
+
+  const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading && !m3u8Url && !nonEmbedStream;
+  const iframeShieldActive = !isElectron && !isNonEmbedMode && !webviewLoading && !pipOpen;
 
   return (
     <div className="watch-page fade-in">
@@ -814,15 +1002,10 @@ export default function WatchPage({
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes skipPop { from { opacity:0; transform:translateY(12px) scale(0.92); } to { opacity:1; transform:translateY(0) scale(1); } }
         @keyframes disclaimerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-
         .ep-carousel::-webkit-scrollbar { display: none; }
         .ep-carousel { scrollbar-width: none; }
-
-        /* ── Server button icon fix ─────────────────────────── */
         .watch-server-btn { white-space: nowrap !important; }
         .watch-server-btn svg { width: 14px !important; height: 14px !important; flex-shrink: 0; display: block; }
-
-        /* ── Season dropdown ─────────────────────────────────── */
         .season-dropdown-menu {
           position:fixed; z-index:9999; background:rgba(12,18,20,0.97);
           border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:6px 0;
@@ -831,17 +1014,18 @@ export default function WatchPage({
         .season-dropdown-menu button { display:block; width:100%; text-align:left; padding:10px 18px; background:none; border:none; color:var(--text,#fff); font-size:14px; cursor:pointer; transition:background 0.15s; font-family:inherit; }
         .season-dropdown-menu button:hover { background:rgba(255,255,255,0.08); }
         .season-dropdown-menu button.active { color:var(--red,#e50914); font-weight:700; }
-
         .load-more-btn:hover { background: rgba(255,255,255,0.08) !important; }
         .watch-rel-card:hover .watch-rel-overlay { opacity:1 !important; }
-
-        /* ── PiP button ──────────────────────────────────────── */
         .topbar-pip-btn { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:#fff; font-size:13px; font-weight:600; padding:7px 14px; cursor:pointer; transition:background 0.15s; font-family:inherit; white-space:nowrap; }
         .topbar-pip-btn:hover { background:rgba(255,255,255,0.13); }
         .topbar-pip-btn.active { color:var(--red,#e50914); border-color:rgba(229,9,20,0.35); }
         .topbar-pip-btn svg { width:14px !important; height:14px !important; }
-
-        /* ── Responsive ──────────────────────────────────────── */
+        .ns-player-badge { display:inline-flex; align-items:center; gap:4px; background:rgba(229,9,20,0.15); border:1px solid rgba(229,9,20,0.3); border-radius:6px; padding:3px 8px; font-size:11px; font-weight:700; color:#e50914; letter-spacing:.5px; }
+        .adfree-btn { display:flex; align-items:center; gap:5px; border-radius:8px; font-size:12px; font-weight:600; padding:7px 12px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; border:1px solid; }
+        .adfree-btn.off { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.12); color:rgba(255,255,255,0.6); }
+        .adfree-btn.off:hover { background:rgba(255,255,255,0.12); color:#fff; }
+        .adfree-btn.on { background:rgba(76,175,80,0.12); border-color:rgba(76,175,80,0.35); color:#4caf50; }
+        .adfree-btn.on:hover { background:rgba(76,175,80,0.2); }
         @media (max-width: 768px) {
           .watch-topbar { padding: 8px 12px !important; gap: 6px !important; }
           .watch-topbar-title { font-size: 12px !important; }
@@ -854,6 +1038,7 @@ export default function WatchPage({
           .section { padding-left: 14px !important; padding-right: 14px !important; }
           .topbar-pip-btn span { display: none !important; }
           .topbar-pip-btn { padding: 7px 10px !important; }
+          .adfree-btn span.adfree-label { display: none !important; }
         }
         @media (max-width: 480px) {
           .watch-topbar-title { font-size: 11px !important; max-width: 100px !important; }
@@ -863,11 +1048,8 @@ export default function WatchPage({
       `}</style>
 
       <StealthLoader status={autoSourceStatus} attempt={retryAttempt} />
-
-      {/* ── Scrolling Disclaimer ─────────────────────────────────── */}
       <DisclaimerBanner />
 
-      {/* ── Top Bar ──────────────────────────────────────────────── */}
       <div className="watch-topbar">
         <button className="btn btn-ghost" onClick={onBack} style={{ gap: 6, flexShrink: 0 }}><BackIcon /> Back</button>
         <div className="watch-topbar-title" style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -876,35 +1058,114 @@ export default function WatchPage({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          {/* ── Server selector — fixed icon size ── */}
-          <button
-            ref={sourceRef}
-            className="watch-server-btn"
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 600,
-              padding: "7px 14px", cursor: "pointer", transition: "background 0.15s",
-              fontFamily: "inherit", lineHeight: 1,
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
-            onClick={() => {
-              if (!canSwitchSource(planId)) { setGateModal("source"); return; }
-              const rect = sourceRef.current?.getBoundingClientRect();
-              if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
-              setShowSourceMenu((v) => !v);
-            }}
-          >
-            {/* Icon constrained to 14×14 */}
-            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, flexShrink: 0 }}>
-              <SourceIcon size={14} />
+          {showNSPlayer && (
+            <span className="ns-player-badge">
+              <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#e50914"/></svg>
+              LIVE
             </span>
-            <span>{hlsStream && !hlsFailed && useHLSPath ? "Direct" : currentLabel}</span>
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity: 0.5, flexShrink: 0 }}>
-              <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-            </svg>
+          )}
+
+          <button
+            className={`adfree-btn ${isNonEmbedMode ? "on" : "off"}`}
+            onClick={() => {
+              const next = !isNonEmbedMode;
+              setIsNonEmbedMode(next);
+              storage.set("playerMode", next ? "nonembed" : "embed");
+              setAutoSourceStatus("testing");
+              setWebviewLoading(true);
+              if (!next) {
+                setNonEmbedStream(null); setNonEmbedSources([]); setNonEmbedCaptions([]);
+                nonEmbedStreamIdxRef.current = 0;
+              } else {
+                setNonEmbedRetry((n) => n + 1);
+              }
+            }}
+            title={isNonEmbedMode ? "Switch to Embed Mode" : "Switch to AD-free Non-Embed Mode"}
+          >
+            {isNonEmbedMode ? (
+              <>
+                <svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#4caf50"/></svg>
+                <span className="adfree-label">AD-free</span>
+                {nonEmbedStream?.quality && (
+                  <span style={{ fontSize: 10, opacity: 0.8, letterSpacing: 0.3 }}>{nonEmbedStream.quality}</span>
+                )}
+              </>
+            ) : (
+              <>
+                <svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+                <span className="adfree-label">AD-free</span>
+              </>
+            )}
           </button>
+
+          {!isNonEmbedMode && (
+            <button
+              ref={sourceRef}
+              className="watch-server-btn"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 600,
+                padding: "7px 14px", cursor: "pointer", transition: "background 0.15s",
+                fontFamily: "inherit", lineHeight: 1,
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+              onClick={() => {
+                if (!canSwitchSource(planId)) { setGateModal("source"); return; }
+                const rect = sourceRef.current?.getBoundingClientRect();
+                if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
+                setShowSourceMenu((v) => !v);
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, flexShrink: 0 }}>
+                <SourceIcon size={14} />
+              </span>
+              <span>{hlsStream && !hlsFailed && useHLSPath ? "Direct" : currentLabel}</span>
+              <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity: 0.5, flexShrink: 0 }}>
+                <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
+
+          {isNonEmbedMode && nonEmbedSources.length > 1 && (
+            <div style={{ position: "relative" }}>
+              <button
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 600,
+                  padding: "7px 12px", cursor: "pointer", fontFamily: "inherit",
+                }}
+                onClick={() => setShowSourceMenu((v) => !v)}
+              >
+                <SourceIcon size={13} />
+                <span>{nonEmbedStream?.source || "Source"}</span>
+                {nonEmbedStream?.quality && <span style={{ opacity: 0.6, fontSize: 11 }}>{nonEmbedStream.quality}</span>}
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity: 0.5 }}>
+                  <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                </svg>
+              </button>
+              {showSourceMenu && (
+                <div className="source-dropdown watch-source-dropdown" style={{ position: "fixed", top: "auto", right: 12, marginTop: 4, zIndex: 9999 }} onClick={(e) => e.stopPropagation()}>
+                  {nonEmbedSources.map((src, i) => (
+                    <button
+                      key={`${src.url}-${i}`}
+                      className={"source-dropdown__item" + (nonEmbedStream?.url === src.url ? " source-dropdown__item--active" : "")}
+                      onClick={() => {
+                        nonEmbedStreamIdxRef.current = i;
+                        setNonEmbedStream(src);
+                        setShowSourceMenu(false);
+                      }}
+                    >
+                      <span>{src.source || `Source ${i + 1}`}</span>
+                      {src.quality && <span className="source-dropdown__tag">{src.quality}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <DataMeterWidget
             isPlaying={!webviewLoading && !pipOpen}
@@ -920,7 +1181,7 @@ export default function WatchPage({
               onClick={() => {
                 if (pipOpen) { window.electron?.closePipWindow?.(); return; }
                 if (!canPopOut(planId)) { setGateModal("pip"); return; }
-                window.electron?.openPipWindow?.(embedUrl, title);
+                window.electron?.openPipWindow?.(isNonEmbedMode ? (nsStreamUrl || embedUrl) : embedUrl, title);
               }}
               title={pipOpen ? "Close pop-out" : "Pop out player"}
             >
@@ -931,19 +1192,74 @@ export default function WatchPage({
         </div>
       </div>
 
-      {/* ── Player ───────────────────────────────────────────────── */}
       <div className="watch-player-wrap" style={{ background: "#000", position: "relative" }}>
-        <BlackScreen visible={webviewLoading && !showFailedOverlay} />
+        <BlackScreen visible={webviewLoading && !showFailedOverlay && !showNSPlayer && !(isNonEmbedMode && !!nonEmbedStream)} />
         {showFailedOverlay && <AllFailedOverlay onRetry={retryFromScratch} onBack={onBack} />}
 
         {isElectron ? (
-          <webview
-            key={`wv-${playerSource}-${item.id}-s${currentSeason}e${currentEpisode}`}
-            ref={webviewRef} src={embedUrl} partition="persist:player"
-            allowpopups="true" plugins="true" nodeintegration="no"
-            webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
-            useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", background: "#000", opacity: webviewLoading ? 0 : 1, transition: "opacity 0.35s ease", zIndex: 1 }}
+          <>
+            {!isNonEmbedMode && (
+              <webview
+                key={`wv-${playerSource}-${item.id}-s${currentSeason}e${currentEpisode}`}
+                ref={webviewRef}
+                src={embedUrl}
+                partition="persist:player"
+                allowpopups="true"
+                plugins="true"
+                nodeintegration="no"
+                webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
+                useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+                style={{
+                  position: "absolute", inset: 0, width: "100%", height: "100%",
+                  border: "none", background: "#000",
+                  opacity: (showNSPlayer || webviewLoading) ? 0 : 1,
+                  pointerEvents: showNSPlayer ? "none" : "auto",
+                  transition: "opacity 0.35s ease",
+                  zIndex: 1,
+                }}
+              />
+            )}
+            {showNSPlayer && (
+              <NovaSparksPlayer
+                key={`nsp-${isNonEmbedMode ? "ne" : "em"}-${item.id}-s${currentSeason}e${currentEpisode}${isNonEmbedMode ? `-${nonEmbedStreamIdxRef.current}` : ""}`}
+                streamUrl={nsStreamUrl}
+                subtitles={
+                  isNonEmbedMode
+                    ? unifiedCaptions.map((c) => ({ url: c.url, lang: c.lang || "" }))
+                    : interceptedSubs
+                }
+                title={`${title}${type === "tv" ? ` · S${currentSeason}E${currentEpisode}` : ""}`}
+                onReady={() => { setWebviewLoading(false); setAutoSourceStatus("found"); setIsActuallyPlaying(true); }}
+                onError={() => {
+                  if (isNonEmbedMode) { tryNextNonEmbedSource(); }
+                  else { setM3u8Url(null); setInterceptedSubs([]); setWebviewLoading(true); tryNextSource(); }
+                }}
+                onPlayStateChange={setIsActuallyPlaying}
+                onTimeUpdate={(ct, dur) => {
+                  if (!dur) return;
+                  setShowSkipIntro(type === "tv" && ct >= 20 && ct <= 300);
+                  setShowNextEp(hasNextEp && (dur - ct <= 90 || ct / dur >= 0.92));
+                }}
+                style={{ position: "absolute", inset: 0, zIndex: 2 }}
+              />
+            )}
+          </>
+        ) : isNonEmbedMode && browserNonEmbedUrl ? (
+          <HLSPlayer
+            key={`hls-ne-${item.id}-s${currentSeason}e${currentEpisode}-${nonEmbedStreamIdxRef.current}`}
+            streamUrl={browserNonEmbedUrl}
+            streamType={nonEmbedStream?.format || "hls"}
+            subtitles={unifiedCaptions}
+            title={`${title}${type === "tv" ? ` · S${currentSeason}E${currentEpisode}` : ""}`}
+            onReady={() => { setWebviewLoading(false); setAutoSourceStatus("found"); setIsActuallyPlaying(true); }}
+            onError={tryNextNonEmbedSource}
+            onPlayStateChange={setIsActuallyPlaying}
+            onTimeUpdate={(ct, dur) => {
+              if (!dur) return;
+              setShowSkipIntro(type === "tv" && ct >= 20 && ct <= 300);
+              setShowNextEp(hasNextEp && (dur - ct <= 90 || ct / dur >= 0.92));
+            }}
+            style={{ position: "absolute", inset: 0, zIndex: 1 }}
           />
         ) : useHLSPath && hlsStream && !hlsFailed ? (
           <HLSPlayer
@@ -957,7 +1273,6 @@ export default function WatchPage({
           />
         ) : (
           <>
-            {/* ── iframe: NO sandbox — embed players need full navigation freedom ── */}
             <iframe
               key={`if-${playerSource}-${item.id}-s${currentSeason}e${currentEpisode}`}
               ref={iframeRef}
@@ -967,7 +1282,13 @@ export default function WatchPage({
               referrerPolicy="origin"
               onLoad={() => iframeLoadCallbackRef.current?.()}
               onError={() => iframeErrorCallbackRef.current?.()}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", background: "#000", opacity: webviewLoading ? 0 : 1, transition: "opacity 0.4s ease", pointerEvents: webviewLoading ? "none" : "auto" }}
+              style={{
+                position: "absolute", inset: 0, width: "100%", height: "100%",
+                border: "none", background: "#000",
+                opacity: webviewLoading ? 0 : 1,
+                transition: "opacity 0.4s ease",
+                pointerEvents: webviewLoading ? "none" : "auto",
+              }}
             />
             {iframeShieldActive && (
               <>
@@ -998,7 +1319,7 @@ export default function WatchPage({
           />
         )}
 
-        {showSourceMenu && menuPos && (
+        {!isNonEmbedMode && showSourceMenu && menuPos && (
           <div className="source-dropdown source-dropdown--fixed watch-source-dropdown" style={{ top: menuPos.top, left: menuPos.left }} onClick={(e) => e.stopPropagation()}>
             {visibleSources.map((src) => (
               <button key={src.id} className={"source-dropdown__item" + (playerSource === src.id ? " source-dropdown__item--active" : "")} onClick={() => switchSource(src.id)}>
@@ -1010,7 +1331,6 @@ export default function WatchPage({
         )}
       </div>
 
-      {/* ── Episodes carousel ────────────────────────────────────── */}
       {type === "tv" && episodeList.length > 0 && (
         <div style={{ paddingTop: 28, paddingBottom: 4 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingLeft: 20, paddingRight: 20, marginBottom: 16 }}>
@@ -1049,7 +1369,6 @@ export default function WatchPage({
         </div>
       )}
 
-      {/* ── Meta actions ─────────────────────────────────────────── */}
       <div className="watch-meta" style={{ paddingBottom: 8 }}>
         <div className="watch-meta-actions" style={{ justifyContent: "flex-start" }}>
           {trailerKey && <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}><TrailerIcon /> Trailer</button>}
@@ -1067,7 +1386,6 @@ export default function WatchPage({
         </div>
       </div>
 
-      {/* ── More Like This ───────────────────────────────────────── */}
       {related.length > 0 && (
         <div className="section" style={{ paddingTop: 8, paddingBottom: 32 }}>
           <div className="section-title">More Like This</div>
@@ -1097,10 +1415,12 @@ export default function WatchPage({
         </div>
       )}
 
-      {/* ── Modals ───────────────────────────────────────────────── */}
       {showTrailer && trailerKey && <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />}
       {showDownload && (
-        <DownloadModal onClose={() => setShowDownload(false)} m3u8Url={m3u8Url} subtitles={interceptedSubs} mediaName={mediaName}
+        <DownloadModal onClose={() => setShowDownload(false)}
+          m3u8Url={isNonEmbedMode ? (nsStreamUrl || m3u8Url) : m3u8Url}
+          subtitles={isNonEmbedMode ? unifiedCaptions.map((c) => ({ url: c.url, lang: c.lang })) : interceptedSubs}
+          mediaName={mediaName}
           downloaderFolder={downloaderFolder} setDownloaderFolder={(folder) => { setDownloaderFolder(folder); storage.set("downloaderFolder", folder); }}
           onOpenSettings={() => {}} onDownloadStarted={onDownloadStarted}
           mediaId={item.id} mediaType={type}

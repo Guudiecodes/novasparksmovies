@@ -45,76 +45,23 @@ async function _checkIsBrave() {
 
 export async function initBrowserEnv() {
   if (_isRestrictedBrowserCache !== null) return;
-
-  if (typeof window !== "undefined" && window?.electron) {
-    _isRestrictedBrowserCache = false;
-    return;
-  }
-  if (typeof navigator === "undefined") {
-    _isRestrictedBrowserCache = false;
-    return;
-  }
-
+  if (typeof window !== "undefined" && window?.electron) { _isRestrictedBrowserCache = false; return; }
+  if (typeof navigator === "undefined") { _isRestrictedBrowserCache = false; return; }
   const ua = navigator.userAgent || "";
-
   if (/Firefox\//i.test(ua))        { _isRestrictedBrowserCache = false; return; }
   if (/OPR\//i.test(ua))            { _isRestrictedBrowserCache = false; return; }
   if (/SamsungBrowser\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
   if (/DuckDuckGo\//i.test(ua))     { _isRestrictedBrowserCache = false; return; }
-  if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) {
-    _isRestrictedBrowserCache = false; return;
-  }
-  if (/Edg\//i.test(ua)) {
-    try {
-      const brands = navigator?.userAgentData?.brands || [];
-      if (brands.some((b) => b.brand === "Microsoft Edge")) {
-        _isRestrictedBrowserCache = false; return;
-      }
-    } catch {}
-    _isRestrictedBrowserCache = false; return;
-  }
-
+  if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
+  if (/Edg\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
   const brave = await _checkIsBrave();
   if (brave) { _isRestrictedBrowserCache = false; return; }
-
-  try {
-    const brands = navigator?.userAgentData?.brands || [];
-    if (brands.some((b) => b.brand === "Google Chrome")) {
-      _isRestrictedBrowserCache = true; return;
-    }
-  } catch {}
-
-  if (/Chrome\//i.test(ua) && !/Chromium\//i.test(ua)) {
-    _isRestrictedBrowserCache = true; return;
-  }
-  if (/Chromium\//i.test(ua)) {
-    _isRestrictedBrowserCache = true; return;
-  }
-
+  if (/Chrome\//i.test(ua) && !/Chromium\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
+  if (/Chromium\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
   _isRestrictedBrowserCache = false;
 }
 
 export function isRestrictedBrowser() {
-  if (_isRestrictedBrowserCache !== null) return _isRestrictedBrowserCache;
-
-  if (typeof window !== "undefined" && window?.electron) return false;
-  if (typeof navigator === "undefined") return false;
-
-  const ua = navigator.userAgent || "";
-  if (/Firefox\//i.test(ua))        return false;
-  if (/OPR\//i.test(ua))            return false;
-  if (/Edg\//i.test(ua))            return false;
-  if (/SamsungBrowser\//i.test(ua)) return false;
-  if (/DuckDuckGo\//i.test(ua))     return false;
-  if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) return false;
-
-  try {
-    const brands = navigator?.userAgentData?.brands || [];
-    if (brands.some((b) => b.brand === "Brave"))          return false;
-    if (brands.some((b) => b.brand === "Microsoft Edge")) return false;
-  } catch {}
-
-  if (/Chrome\//i.test(ua) || /Chromium\//i.test(ua)) return true;
   return false;
 }
 
@@ -125,7 +72,6 @@ export function isRestrictedBrowser() {
 
 const _tmdbCache     = new Map();
 const TMDB_CACHE_TTL = 5 * 60 * 1000;
-
 let _inflight      = 0;
 const MAX_INFLIGHT = 4;
 const _waiters     = [];
@@ -143,121 +89,229 @@ export const tmdbFetch = async (path, apiKey) => {
   const cacheKey = `${apiKey}|${path}`;
   const cached   = _tmdbCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
-
   await _acquireSlot();
   let res;
   try {
     const sep = path.includes("?") ? "&" : "?";
     res = await fetch(`${TMDB_BASE}${path}${sep}api_key=${apiKey}`);
-  } catch {
-    _releaseSlot();
-    throw new Error("TMDB unreachable");
-  }
+  } catch { _releaseSlot(); throw new Error("TMDB unreachable"); }
   _releaseSlot();
-
   if (res.status === 401 || res.status === 403) throw new Error(`TMDB ${res.status}`);
   if (!res.ok) throw new Error(`TMDB ${res.status}`);
-
   const data = await res.json();
   _tmdbCache.set(cacheKey, { data, expiresAt: Date.now() + TMDB_CACHE_TTL });
-
   if (_tmdbCache.size > 80) {
     const now = Date.now();
-    for (const [k, v] of _tmdbCache) {
-      if (now >= v.expiresAt) _tmdbCache.delete(k);
-    }
+    for (const [k, v] of _tmdbCache) { if (now >= v.expiresAt) _tmdbCache.delete(k); }
   }
   return data;
 };
 
 
 // ═════════════════════════════════════════════════════════════════════════════
+// NON-EMBED PROVIDER FETCHING
+// ═════════════════════════════════════════════════════════════════════════════
+
+const BFF_BASE = "/api/sources";
+export const M3U8_PROXY = "/api/proxy?url=";
+export const SUB_PROXY  = "https://proxy.valhallastream.dpdns.org";
+const WYZIE_SUB         = "https://sub.wyzie.ru/search";
+
+export async function fetchOnlineSubtitles(tmdbId) {
+  try {
+    const res = await fetch(`${SUB_PROXY}/?destination=${encodeURIComponent(`${WYZIE_SUB}?id=${tmdbId}`)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data.map((s) => ({
+      url:      s.url  || s.file || "",
+      display:  s.display || s.label || s.language || "Unknown",
+      language: s.language || s.lang || "",
+      type:     s.type || s.format || "srt",
+    })).filter((s) => s.url);
+  } catch { return []; }
+}
+
+export async function fetchProviderSources(type, id, season, episode, service) {
+  try {
+    const params = new URLSearchParams({ id, service });
+    if (type === "tv" && season)  params.set("season",  season);
+    if (type === "tv" && episode) params.set("episode", episode);
+    const url = `${BFF_BASE}?type=${type}&${params}`;
+    const res  = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.data || null;
+  } catch { return null; }
+}
+
+export async function fetchProviderServices() {
+  return ["1", "2", "3", "4", "5", "6"];
+}
+
+export async function fetchAllNonEmbedSources(type, id, season, episode, {
+  onSourceFound    = null,
+  onProviderStatus = null,
+  signal           = null,
+} = {}) {
+  const services = await fetchProviderServices();
+  if (!services.length) return { sources: [], captions: [] };
+  const merged = { sources: [], captions: [] };
+  onProviderStatus?.(services.map((s) => ({ name: s, status: "available" })));
+  await Promise.allSettled(
+    services.map(async (service) => {
+      if (signal?.aborted) return;
+      onProviderStatus?.([{ name: service, status: "fetching" }]);
+      try {
+        const data = await fetchProviderSources(type, id, season, episode, service);
+        if (signal?.aborted) return;
+        const hasSources = data?.sources?.length > 0;
+        onProviderStatus?.([{ name: service, status: hasSources ? "success" : "error" }]);
+        if (hasSources) {
+          data.sources.forEach((src) => { merged.sources.push(src); onSourceFound?.(src); });
+          (data.captions || []).forEach((cap) => merged.captions.push(cap));
+        }
+      } catch { if (!signal?.aborted) onProviderStatus?.([{ name: service, status: "error" }]); }
+    })
+  );
+  return merged;
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
 // PLAYER SOURCES
+// ─────────────────────────────────────────────────────────────────────────────
+// Servers renamed Server 1–14. Removed: CineHD, Smashy, VAP, 2Embed,
+// VidBinge, VidUp — all known for aggressive ad popups / redirects in browser.
 // ═════════════════════════════════════════════════════════════════════════════
 
 export const PLAYER_SOURCES = [
 
-  // ── TIER 1: Fastest & most reliable ──────────────────────────────────────
+  // ── TIER 1 ───────────────────────────────────────────────────────────────
   {
-    id: "vidlink",
-    label: "Server 1",
-    tag: null, note: "Fast",
+    id: "primesrc", label: "Server 1",
+    tag: null, note: "★ Fast",
     tier: 1, moviePriority: 1, tvPriority: 1,
-    browserPriority: 99,
-    browserSafe: false,
-    supportsProgress: true,
-    movieUrl: (id) => `https://vidlink.pro/movie/${id}?autoplay=true`,
-    tvUrl:    (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true`,
+    browserPriority: 1, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://primesrc.me/embed/movie?tmdb=${id}`,
+    tvUrl:    (id, s, e) => `https://primesrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
   },
   {
-    id: "vidsrc_cc",
-    label: "Server 2",
-    tag: null, note: "Fast",
+    id: "vidlink", label: "Server 2",
+    tag: null, note: "★ Fast",
     tier: 1, moviePriority: 2, tvPriority: 2,
-    browserPriority: 99,
-    browserSafe: false,
-    supportsProgress: true, progressViaFrames: true,
+    browserPriority: 2, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidlink.pro/movie/${id}?ads=0`,
+    tvUrl:    (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}?ads=0`,
+  },
+  {
+    id: "videasy", label: "Server 3",
+    tag: null, note: "★ Fast",
+    tier: 1, moviePriority: 3, tvPriority: 3,
+    browserPriority: 3, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
     tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
-
-  // ── TIER 2: Fast & reliable ───────────────────────────────────────────────
   {
-    id: "autoembed",
-    label: "Server 3",
-    tag: null, note: null,
-    tier: 2, moviePriority: 7, tvPriority: 7,
-    browserPriority: 99,
-    browserSafe: false,
-    supportsProgress: true, progressViaFrames: true,
-    movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}`,
+    id: "multiembed", label: "Server 4",
+    tag: null, note: "★ Multi",
+    tier: 1, moviePriority: 4, tvPriority: 4,
+    browserPriority: 4, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1&server=2`,
+    tvUrl:    (id, s, e) => `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}&server=2`,
   },
 
-  // ── TIER 3: Reliable fallbacks ────────────────────────────────────────────
+  // ── TIER 2 ───────────────────────────────────────────────────────────────
   {
-    id: "vidsrcto",
-    label: "Server 4",
+    id: "autoembed", label: "Server 5",
+    tag: null, note: "★ Agg",
+    tier: 2, moviePriority: 5, tvPriority: 5,
+    browserPriority: 5, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}?server=1`,
+    tvUrl:    (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}?server=1`,
+  },
+  {
+    id: "vidsrc_cc", label: "Server 6",
+    tag: null, note: "★ HD",
+    tier: 2, moviePriority: 6, tvPriority: 6,
+    browserPriority: 6, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`,
+  },
+
+  // ── TIER 3 ───────────────────────────────────────────────────────────────
+  {
+    id: "vidsrc_me", label: "Server 7",
     tag: null, note: null,
+    tier: 3, moviePriority: 7, tvPriority: 7,
+    browserPriority: 7, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidsrc.me/embed/movie?tmdb=${id}`,
+    tvUrl:    (id, s, e) => `https://vidsrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
+  },
+  {
+    id: "vidfast", label: "Server 8",
+    tag: null, note: "★ Multi",
     tier: 3, moviePriority: 8, tvPriority: 8,
-    browserPriority: 99,
-    browserSafe: false,
-    supportsProgress: true, progressViaFrames: true,
-    movieUrl: (id) => `https://vidsrc.to/embed/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
+    browserPriority: 8, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidfast.pro/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://vidfast.pro/tv/${id}/${s}/${e}`,
   },
   {
-    id: "vidfast",
-    label: "Server 5",
-    tag: null, note: null,
+    id: "mapple", label: "Server 9",
+    tag: null, note: "★ 4K",
     tier: 3, moviePriority: 9, tvPriority: 9,
-    browserPriority: 3,
-    browserSafe: true,
-    supportsProgress: true,
-    movieUrl: (id) => `https://vidfast.pro/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://vidfast.pro/tv/${id}/${s}/${e}?autoPlay=true`,
+    browserPriority: 9, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://mapple.uk/watch/movie/${id}?nextButton=true&autoPlay=true&autoNext=true`,
+    tvUrl:    (id, s, e) => `https://mapple.uk/watch/tv/${id}-${s}-${e}?nextButton=true&autoPlay=true&autoNext=true`,
   },
   {
-    id: "videasy",
-    label: "Server 6",
+    id: "pstream", label: "Server 10",
     tag: null, note: null,
-    tier: 3, moviePriority: 11, tvPriority: 11,
-    browserPriority: 5,
-    browserSafe: true,
-    supportsProgress: true,
-    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
+    tier: 3, moviePriority: 10, tvPriority: 10,
+    browserPriority: 10, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://iframe.pstream.mov/embed/tmdb-movie-${id}`,
+    tvUrl:    (id, s, e) => `https://iframe.pstream.mov/embed/tmdb-tv-${id}/${s}/${e}`,
   },
+  {
+    id: "vidcorenl", label: "Server 11",
+    tag: null, note: "★ Multi",
+    tier: 3, moviePriority: 11, tvPriority: 11,
+    browserPriority: 11, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidcore.net/movie/${id}?autoplay=true`,
+    tvUrl:    (id, s, e) => `https://vidcore.net/tv/${id}/${s}/${e}?autoplay=true`,
+  },
+  {
+    id: "vidsrcnl", label: "Server 12",
+    tag: null, note: "★ Multi",
+    tier: 3, moviePriority: 12, tvPriority: 12,
+    browserPriority: 12, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://player.vidsrc.nl/embed/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://player.vidsrc.nl/embed/tv/${id}/${s}/${e}`,
+  },
+  {
+    id: "peachify", label: "Server 13",
+    tag: null, note: null,
+    tier: 3, moviePriority: 13, tvPriority: 13,
+    browserPriority: 13, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
+  },
+  {
+    id: "vidsrc_xyz", label: "Server 14",
+    tag: null, note: null,
+    tier: 3, moviePriority: 14, tvPriority: 14,
+    browserPriority: 14, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidsrc.xyz/embed/movie?tmdb=${id}`,
+    tvUrl:    (id, s, e) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
+  },
+
   // ── ANIME ─────────────────────────────────────────────────────────────────
   {
-    id: "allmanga",
-    label: "NsManga",
+    id: "allmanga", label: "AllManga",
     tag: "ANIME", note: null,
     tier: 1,
     moviePriority: 99, tvPriority: 99, browserPriority: 99,
-    browserSafe: true,
-    supportsProgress: true,
-    async: true,
+    browserSafe: true, supportsProgress: true, async: true,
     movieUrl: (_id) => "https://allmanga.to",
     tvUrl:    (_id, _s, _e) => "https://allmanga.to",
   },
@@ -277,14 +331,14 @@ export const sourceSupportsProgress  = (id) => PLAYER_SOURCES.find((s) => s.id =
 export const sourceProgressViaFrames = (id) => PLAYER_SOURCES.find((s) => s.id === id)?.progressViaFrames ?? false;
 export const sourceIsAsync           = (id) => PLAYER_SOURCES.find((s) => s.id === id)?.async             ?? false;
 
-export const NEEDS_INTERCEPT = ["vidsrc_cc", "autoembed", "vidlink", "vidsrc_fyi", "vidsrc_net"];
+export const NEEDS_INTERCEPT = [];
 
 export const ANIME_DEFAULT_SOURCE       = "allmanga";
-export const NON_ANIME_DEFAULT_SOURCE   = "vidlink";
-export const BROWSER_RESTRICTED_DEFAULT = "moviesapi";
+export const NON_ANIME_DEFAULT_SOURCE   = "primesrc";
+export const BROWSER_RESTRICTED_DEFAULT = "primesrc";
 
 export function getDefaultSource() {
-  return isRestrictedBrowser() ? BROWSER_RESTRICTED_DEFAULT : NON_ANIME_DEFAULT_SOURCE;
+  return NON_ANIME_DEFAULT_SOURCE;
 }
 
 
@@ -293,21 +347,14 @@ export function getDefaultSource() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function buildRetryQueue(type, preferredId) {
-  const restricted = isRestrictedBrowser();
-
   const eligible = PLAYER_SOURCES
     .filter((s) => !s.async && !s.tag)
-    .filter((s) => !restricted || s.browserSafe === true)
     .sort((a, b) => {
-      if (restricted) {
-        return (a.browserPriority ?? 99) - (b.browserPriority ?? 99);
-      }
       const pa = type === "movie" ? (a.moviePriority ?? 99) : (a.tvPriority ?? 99);
       const pb = type === "movie" ? (b.moviePriority ?? 99) : (b.tvPriority ?? 99);
       return pa - pb;
     })
     .map((s) => s.id);
-
   const startIdx = eligible.indexOf(preferredId);
   if (startIdx <= 0) return eligible;
   return [...eligible.slice(startIdx), ...eligible.slice(0, startIdx)];
@@ -315,21 +362,12 @@ export function buildRetryQueue(type, preferredId) {
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// PRE-FLIGHT URL PROBE  —  now with double-retry + jitter
-// ═════════════════════════════════════════════════════════════════════════════
-//
-// Strategy: probe each source up to PROBE_RETRIES times before declaring it
-// dead.  A slow CDN edge or transient TCP reset should not cause a false
-// "refused" on the first attempt.  Jitter between retries avoids
-// thundering-herd on the same edge server.
-//
-// Returns: "ok" | "refused" | "timeout"
+// PRE-FLIGHT URL PROBE
 // ═════════════════════════════════════════════════════════════════════════════
 
-const PROBE_RETRIES      = 2;    // total attempts per source (1 initial + 1 retry)
-const PROBE_RETRY_DELAY  = 800;  // ms between attempts
-const PROBE_TIMEOUT_FAST = 2500; // ms — first attempt
-const PROBE_TIMEOUT_SLOW = 4000; // ms — retry attempt (more generous)
+const PROBE_RETRY_DELAY  = 800;
+const PROBE_TIMEOUT_FAST = 2500;
+const PROBE_TIMEOUT_SLOW = 4000;
 
 async function _singleProbe(url, timeoutMs) {
   const controller = new AbortController();
@@ -346,28 +384,15 @@ async function _singleProbe(url, timeoutMs) {
 }
 
 export async function probeUrl(url, _legacyTimeout) {
-  // First attempt — fast timeout
   const first = await _singleProbe(url, PROBE_TIMEOUT_FAST);
   if (first === "ok") return "ok";
-
-  // Brief pause then retry with a more generous timeout
   await new Promise((r) => setTimeout(r, PROBE_RETRY_DELAY));
-  const second = await _singleProbe(url, PROBE_TIMEOUT_SLOW);
-  return second;
+  return _singleProbe(url, PROBE_TIMEOUT_SLOW);
 }
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// WORKING SOURCE FINDER  —  hardened with per-source double-probe
-// ═════════════════════════════════════════════════════════════════════════════
-//
-// Each source is probed twice (via probeUrl above) before being discarded.
-// The preferred source gets zero stagger delay so it wins on good connections.
-// A second tier of sources starts 200 ms later; third tier at 500 ms.
-// This means:
-//   - Fast connection  → preferred source wins immediately
-//   - Slow connection  → retry buys enough time for the preferred to respond
-//   - Dead source      → two full probe rounds exhaust before next source wins
+// WORKING SOURCE FINDER
 // ═════════════════════════════════════════════════════════════════════════════
 
 const _sourceCache     = new Map();
@@ -378,31 +403,16 @@ export async function findWorkingSource(type, id, season = null, episode = null,
   const cached   = _sourceCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.sourceId;
 
-  const restricted = isRestrictedBrowser();
-  const sources    = PLAYER_SOURCES.filter((s) => {
-    if (s.async) return false;
-    if (restricted && !s.browserSafe) return false;
-    return true;
-  });
-
+  const sources = PLAYER_SOURCES.filter((s) => !s.async);
   const racePromises = sources.map((src) => {
-    // Stagger: preferred = 0 ms, tier 1 = 0 ms, tier 2 = 200 ms, tier 3 = 500 ms
-    let delay = 0;
-    if (src.id !== preferredId) {
-      if (restricted) {
-        delay = ((src.browserPriority ?? 5) - 1) * 120;
-      } else {
-        delay = src.tier === 1 ? 0 : src.tier === 2 ? 200 : 500;
-      }
-    }
-
+    const delay = src.id !== preferredId
+      ? (src.tier === 1 ? 0 : src.tier === 2 ? 200 : 500)
+      : 0;
     return new Promise((resolve, reject) => {
       setTimeout(async () => {
         const url    = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, episode);
-        // probeUrl already does double-retry internally
         const result = await probeUrl(url);
-        if (result === "ok") resolve(src.id);
-        else reject();
+        if (result === "ok") resolve(src.id); else reject();
       }, delay);
     });
   });
@@ -413,15 +423,12 @@ export async function findWorkingSource(type, id, season = null, episode = null,
     _sourceCache.set(cacheKey, { sourceId: winner, expiresAt: Date.now() + SOURCE_CACHE_TTL });
     return winner;
   } catch {
-    // All sources failed probe — still return preferred/default so WatchPage
-    // can attempt anyway (iframe sometimes loads even when HEAD is blocked)
     const fallback = preferredId ?? defaultSource;
     _sourceCache.set(cacheKey, { sourceId: fallback, expiresAt: Date.now() + 2 * 60 * 1000 });
     return fallback;
   }
 }
 
-// Invalidate source cache for a specific content item (called after a confirmed failure)
 export function invalidateSourceCache(type, id, season = null, episode = null) {
   const cacheKey = `${type}|${id}|${season ?? ""}|${episode ?? ""}`;
   _sourceCache.delete(cacheKey);
@@ -437,15 +444,11 @@ const ANILIST_API = "https://graphql.anilist.co";
 export const cleanAnilistDescription = (desc) => {
   if (!desc) return desc;
   let clean = desc
-    .split("<")
-    .map((chunk, i) => (i === 0 ? chunk : chunk.slice(chunk.indexOf(">") + 1)))
-    .join("")
+    .split("<").map((chunk, i) => (i === 0 ? chunk : chunk.slice(chunk.indexOf(">") + 1))).join("")
     .replace(/>/g, "");
   clean = clean
-    .replace(/\(Source:[^)]*\)/gi, "")
-    .replace(/\bNote:[^\n]*/gi, "")
-    .replace(/[\s\n]+$/, "")
-    .trim();
+    .replace(/\(Source:[^)]*\)/gi, "").replace(/\bNote:[^\n]*/gi, "")
+    .replace(/[\s\n]+$/, "").trim();
   return clean;
 };
 
@@ -476,13 +479,12 @@ query ($search: String, $type: MediaType) {
 
 const ANILIST_CACHE_KEY = "novaspark_anilistCache";
 const ANILIST_CACHE_TTL = 1000 * 60 * 60 * 24 * 7;
-
 let _anilistCache = null;
 
 function getAnilistCache() {
   if (_anilistCache) return _anilistCache;
   try {
-    const raw     = localStorage.getItem(ANILIST_CACHE_KEY);
+    const raw = localStorage.getItem(ANILIST_CACHE_KEY);
     _anilistCache = raw ? JSON.parse(raw) : {};
   } catch { _anilistCache = {}; }
   const now = Date.now();
@@ -502,22 +504,15 @@ function flushAnilistCache() {
 }
 
 export const fetchAnilistData = async (title, type = "ANIME", tmdbId = null) => {
-  const cacheKey = tmdbId
-    ? `${type}__tmdb_${tmdbId}`
-    : `${type}__${title.toLowerCase().trim()}`;
+  const cacheKey = tmdbId ? `${type}__tmdb_${tmdbId}` : `${type}__${title.toLowerCase().trim()}`;
   const cache = getAnilistCache();
   const entry = cache[cacheKey];
 
   if (entry && Date.now() - entry.ts <= ANILIST_CACHE_TTL) {
-    const cachedTitles = [
-      entry.data?.title?.romaji,
-      entry.data?.title?.english,
-      entry.data?.title?.native,
-    ].filter(Boolean).map((t) => t.toLowerCase());
+    const cachedTitles = [entry.data?.title?.romaji, entry.data?.title?.english, entry.data?.title?.native]
+      .filter(Boolean).map((t) => t.toLowerCase());
     const searchTitle = title.toLowerCase();
-    const isMismatch  =
-      entry.data !== null &&
-      cachedTitles.length > 0 &&
+    const isMismatch = entry.data !== null && cachedTitles.length > 0 &&
       !cachedTitles.some((t) => t.includes(searchTitle) || searchTitle.includes(t));
     if (!isMismatch) return entry.data;
     delete cache[cacheKey];
@@ -526,9 +521,9 @@ export const fetchAnilistData = async (title, type = "ANIME", tmdbId = null) => 
 
   try {
     const res  = await fetch(ANILIST_API, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body:    JSON.stringify({ query: ANILIST_QUERY, variables: { search: title, type } }),
+      body: JSON.stringify({ query: ANILIST_QUERY, variables: { search: title, type } }),
     });
     const json = await res.json();
     const data = json?.data?.Media || null;
@@ -551,11 +546,8 @@ export const buildAnilistSeasons = (anilistData) => {
     month:    anilistData.startDate?.month || 0,
   };
   const sequels = (anilistData.relations?.edges || [])
-    .filter((e) =>
-      e.relationType === "SEQUEL" &&
-      e.node.type    === "ANIME"  &&
-      (e.node.format === "TV" || e.node.format === "TV_SHORT")
-    )
+    .filter((e) => e.relationType === "SEQUEL" && e.node.type === "ANIME" &&
+      (e.node.format === "TV" || e.node.format === "TV_SHORT"))
     .map((e) => ({
       id:       e.node.id,
       title:    e.node.title?.english || e.node.title?.romaji,
@@ -570,9 +562,9 @@ export const buildAnilistSeasons = (anilistData) => {
 };
 
 export const isAnimeContent = (item, details) => {
-  const d          = details || item;
-  const genreIds   = d.genre_ids || (d.genres || []).map((g) => g.id);
-  const countries  = d.origin_country || [];
+  const d = details || item;
+  const genreIds  = d.genre_ids || (d.genres || []).map((g) => g.id);
+  const countries = d.origin_country || [];
   return genreIds.includes(16) && (d.original_language === "ja" || countries.includes("JP"));
 };
 
@@ -583,15 +575,12 @@ export const isAnimeContent = (item, details) => {
 
 const EG_CACHE_KEY = "novaspark_episodeGroupCache";
 const EG_CACHE_TTL = 1000 * 60 * 60 * 24 * 7;
-
 let _egCache = null;
 
 function getEgCache() {
   if (_egCache) return _egCache;
-  try {
-    const raw = localStorage.getItem(EG_CACHE_KEY);
-    _egCache  = raw ? JSON.parse(raw) : {};
-  } catch { _egCache = {}; }
+  try { const raw = localStorage.getItem(EG_CACHE_KEY); _egCache = raw ? JSON.parse(raw) : {}; }
+  catch { _egCache = {}; }
   const now = Date.now();
   for (const key of Object.keys(_egCache)) {
     if (now - _egCache[key].ts > EG_CACHE_TTL) delete _egCache[key];

@@ -394,7 +394,7 @@ export default function HomePage({
           display: flex;
           align-items: flex-end;
           overflow: hidden;
-          background: var(--bg, #0a0a0a);
+          background: none;
         }
         .ns-home-hero-bg {
           position: absolute;
@@ -412,8 +412,8 @@ export default function HomePage({
           inset: 0;
           background: linear-gradient(
             to bottom,
-            rgba(10,10,10,0.1) 0%,
-            rgba(10,10,10,0.3) 30%,
+            rgba(10,10,10,0.7) 60%,
+            rgba(10,10,10,0.7) 60%,
             rgba(10,10,10,0.7) 60%,
             var(--bg, #0a0a0a) 100%
           );
@@ -424,7 +424,7 @@ export default function HomePage({
           left: 0;
           right: 0;
           height: 120px;
-          background: linear-gradient(to top, var(--bg, #0a0a0a) 0%, transparent 100%);
+          background: none;
           pointer-events: none;
           z-index: 2;
         }
@@ -444,7 +444,7 @@ export default function HomePage({
           font-weight: 700;
           letter-spacing: 2.5px;
           text-transform: uppercase;
-          color: var(--red, #e50914);
+          color: white;
         }
         .ns-home-hero-title {
           font-size: clamp(28px, 5vw, 52px);
@@ -509,7 +509,7 @@ export default function HomePage({
           background: rgba(255,255,255,0.5);
         }
         .ns-home-hero-dot.active {
-          background: var(--red, #e50914);
+          background: var(--red, #fff);
           transform: scale(1.15);
         }
 
@@ -524,7 +524,7 @@ export default function HomePage({
           bottom: 24px;
           right: 24px;
           z-index: 9999;
-          background: rgba(16,16,20,0.96);
+          background: none;
           border: 1px solid rgba(255,255,255,0.08);
           border-radius: 14px;
           padding: 14px 18px;
@@ -726,7 +726,7 @@ export default function HomePage({
           left: 0;
           width: 0;
           height: 1.5px;
-          background: var(--red, #e50914);
+          background: none;
           transition: width 0.3s ease;
         }
         .ns-footer-links span:hover {
