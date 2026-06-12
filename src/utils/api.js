@@ -141,8 +141,10 @@ export async function fetchProviderSources(type, id, season, episode, service) {
   } catch { return null; }
 }
 
+// NS 1–6 = self-hosted ad-free (Chrome primary)
+// NS 7–11 = public embed scrapers
 export async function fetchProviderServices() {
-  return ["1", "2", "3", "4", "5", "6"];
+  return ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"];
 }
 
 export async function fetchAllNonEmbedSources(type, id, season, episode, {
@@ -178,17 +180,19 @@ export async function fetchAllNonEmbedSources(type, id, season, episode, {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // PLAYER SOURCES  (Embed mode — iframe-based)
-// Dead servers removed: primesrc (→dead redirect), vapsrc (vaplayer.ru dead),
-//   cinezo, smashystream, twoembed, vidbinge, vidupto
+// Labels use NS numbering for public confidentiality.
+// NS 1–6 live in /api/sources.js (non-embed AD-free path).
+// NS 7–20 are the embed iframe sources below.
+// Dead servers removed: primesrc, vapsrc, cinezo, smashystream, twoembed, vidbinge, vidupto
 // ═════════════════════════════════════════════════════════════════════════════
 
 export const PLAYER_SOURCES = [
 
-  // ── TIER 1 — fast, reliable ───────────────────────────────────────────────
+  // ── TIER 1 ───────────────────────────────────────────────────────────────
 
   {
     id: "vidlink",
-    label: "VidLink",
+    label: "NS 7",
     tag: null, note: "★ Fast",
     tier: 1, moviePriority: 1, tvPriority: 1,
     browserPriority: 1, browserSafe: true, supportsProgress: true,
@@ -198,7 +202,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "videasy",
-    label: "Videasy",
+    label: "NS 8",
     tag: null, note: "★ Fast",
     tier: 1, moviePriority: 2, tvPriority: 2,
     browserPriority: 2, browserSafe: true, supportsProgress: true,
@@ -208,7 +212,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "multiembed",
-    label: "Multi",
+    label: "NS 9",
     tag: null, note: "★ Multi-Server",
     tier: 1, moviePriority: 3, tvPriority: 3,
     browserPriority: 3, browserSafe: true, supportsProgress: true,
@@ -220,7 +224,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "autoembed",
-    label: "AutoEmbed",
+    label: "NS 10",
     tag: null, note: "★ Aggregator",
     tier: 2, moviePriority: 4, tvPriority: 4,
     browserPriority: 4, browserSafe: true, supportsProgress: true,
@@ -230,7 +234,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "vidsrc_cc",
-    label: "VidSrc",
+    label: "NS 11",
     tag: null, note: "★ HD",
     tier: 2, moviePriority: 5, tvPriority: 5,
     browserPriority: 5, browserSafe: true, supportsProgress: true,
@@ -242,7 +246,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "vidsrc_me",
-    label: "VidSrc.me",
+    label: "NS 12",
     tag: null, note: null,
     tier: 3, moviePriority: 6, tvPriority: 6,
     browserPriority: 6, browserSafe: true, supportsProgress: true,
@@ -252,7 +256,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "vidfast",
-    label: "VidFast",
+    label: "NS 13",
     tag: null, note: "★ Multi",
     tier: 3, moviePriority: 7, tvPriority: 7,
     browserPriority: 7, browserSafe: true, supportsProgress: true,
@@ -262,7 +266,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "mapple",
-    label: "Mapple 4K",
+    label: "NS 14",
     tag: null, note: "★ 4K",
     tier: 3, moviePriority: 8, tvPriority: 8,
     browserPriority: 8, browserSafe: true, supportsProgress: true,
@@ -272,7 +276,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "pstream",
-    label: "PStream",
+    label: "NS 15",
     tag: null, note: null,
     tier: 3, moviePriority: 9, tvPriority: 9,
     browserPriority: 9, browserSafe: true, supportsProgress: true,
@@ -282,7 +286,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "vidcorenl",
-    label: "VidCore",
+    label: "NS 16",
     tag: null, note: "★ Multi",
     tier: 3, moviePriority: 10, tvPriority: 10,
     browserPriority: 10, browserSafe: true, supportsProgress: true,
@@ -292,7 +296,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "vidsrcnl",
-    label: "VidSrc NL",
+    label: "NS 17",
     tag: null, note: "★ Multi",
     tier: 3, moviePriority: 11, tvPriority: 11,
     browserPriority: 11, browserSafe: true, supportsProgress: true,
@@ -302,7 +306,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "peachify",
-    label: "Peach",
+    label: "NS 18",
     tag: null, note: null,
     tier: 3, moviePriority: 12, tvPriority: 12,
     browserPriority: 12, browserSafe: true, supportsProgress: true,
@@ -312,7 +316,7 @@ export const PLAYER_SOURCES = [
 
   {
     id: "vidsrc_xyz",
-    label: "VidSrc.xyz",
+    label: "NS 19",
     tag: null, note: null,
     tier: 3, moviePriority: 13, tvPriority: 13,
     browserPriority: 13, browserSafe: true, supportsProgress: true,
@@ -323,7 +327,7 @@ export const PLAYER_SOURCES = [
   // ── ANIME ─────────────────────────────────────────────────────────────────
   {
     id: "allmanga",
-    label: "AllManga",
+    label: "NS 20",
     tag: "ANIME", note: null,
     tier: 1,
     moviePriority: 99, tvPriority: 99, browserPriority: 99,
@@ -350,7 +354,7 @@ export const sourceIsAsync           = (id) => PLAYER_SOURCES.find((s) => s.id =
 export const NEEDS_INTERCEPT = [];
 
 export const ANIME_DEFAULT_SOURCE       = "allmanga";
-export const NON_ANIME_DEFAULT_SOURCE   = "vidlink";   // primesrc removed — dead redirect
+export const NON_ANIME_DEFAULT_SOURCE   = "vidlink";
 export const BROWSER_RESTRICTED_DEFAULT = "vidlink";
 
 export function getDefaultSource() {
@@ -380,13 +384,12 @@ export function buildRetryQueue(type, preferredId) {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // PRE-FLIGHT URL PROBE
-// Tuned tighter: DNS failures resolve in <100ms so retries are cheap.
 // ═════════════════════════════════════════════════════════════════════════════
 
 const PROBE_RETRIES      = 2;
-const PROBE_RETRY_DELAY  = 250;   // was 800 — dead servers fail fast, no need to wait
-const PROBE_TIMEOUT_FAST = 1800;  // was 2500
-const PROBE_TIMEOUT_SLOW = 2800;  // was 4000
+const PROBE_RETRY_DELAY  = 250;
+const PROBE_TIMEOUT_FAST = 1800;
+const PROBE_TIMEOUT_SLOW = 2800;
 
 async function _singleProbe(url, timeoutMs) {
   const controller = new AbortController();
@@ -412,7 +415,7 @@ export async function probeUrl(url, _legacyTimeout) {
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// WORKING SOURCE FINDER  (parallel race with tier-based stagger)
+// WORKING SOURCE FINDER
 // ═════════════════════════════════════════════════════════════════════════════
 
 const _sourceCache     = new Map();

@@ -65,7 +65,9 @@ const TRUSTED_EMBED_ORIGINS = new Set([
   'player.smashy.stream','player.videasy.net',
   'vidlink.pro','vidsrc.cc','vidsrc.fyi',
   'vidsrc.net','vidsrc.to','player.autoembed.cc',
-  'allmanga.to',
+  'allmanga.to','vidsrc.to',
+  'vidsrc.wtf',
+  'cinepro.cc',
   // CDNs commonly used by embed players (legitimate)
   'cdn.jwplayer.com','ssl.p.jwpcdn.com','cdn.plyr.io',
   'vjs.zencdn.net','player.vimeo.com',

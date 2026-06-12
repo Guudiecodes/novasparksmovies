@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   PLAYER_SOURCES, getSourceUrl, tmdbFetch, imgUrl,
   NON_ANIME_DEFAULT_SOURCE, BROWSER_RESTRICTED_DEFAULT, NEEDS_INTERCEPT,
@@ -795,11 +795,6 @@ export default function WatchPage({
   }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, type, m3u8Url]); // eslint-disable-line
 
   // ── Web-browser iframe detection (non-Electron) ───────────────────────────
-  // KEY FIX: if the fetch probe throws a network/DNS error we call onFail()
-  // immediately instead of entering second-chance, which prevented detecting
-  // servers like primesrc.me that redirect to a dead domain.
-  // probeNetworkFailed flag stops iframeLoad from incorrectly calling onReady()
-  // when the browser has loaded its own "DNS error" page into the iframe.
   useEffect(() => {
     if (isElectron || isNonEmbedMode) return;
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
@@ -808,8 +803,8 @@ export default function WatchPage({
     let probeNetworkFailed = false;
     const PROBE_TIMEOUT     = 600;
     const LOAD_REVEAL_DELAY = 200;
-    const HARD_TIMEOUT_MS   = 2500;  // tighter — faster failover
-    const SECOND_CHANCE_MS  = 800;   // tighter
+    const HARD_TIMEOUT_MS   = 2500;
+    const SECOND_CHANCE_MS  = 800;
     let probeAbortCtrl = new AbortController();
     let probeTimerId = null, hardTimerId = null, revealTimerId = null, secondTimerId = null;
     const clearAll = () => {
@@ -841,9 +836,8 @@ export default function WatchPage({
     webBeastReadyRef.current = onReady;
     webBeastFailRef.current  = onFail;
 
-    // iframe loaded — only trust it if the probe did NOT report a network failure
     iframeLoadCallbackRef.current = () => {
-      if (!active || probeNetworkFailed) return; // DNS error page loaded — ignore
+      if (!active || probeNetworkFailed) return;
       iframeHasLoaded = true;
       clearTimeout(hardTimerId);
       clearTimeout(secondTimerId);
@@ -853,14 +847,12 @@ export default function WatchPage({
       if (!active) return; clearTimeout(hardTimerId); enterSecondChance();
     };
 
-    // Quick preflight probe
     probeTimerId = setTimeout(() => probeAbortCtrl.abort(), PROBE_TIMEOUT);
     fetch(embedUrl, { method:"HEAD", mode:"no-cors", signal: probeAbortCtrl.signal })
       .then(() => clearTimeout(probeTimerId))
       .catch((err) => {
         clearTimeout(probeTimerId);
-        if (!active || err.name === "AbortError") return; // timeout abort — not a hard failure
-        // Network / DNS error — server is unreachable; fail immediately
+        if (!active || err.name === "AbortError") return;
         probeNetworkFailed = true;
         onFail();
       });
@@ -958,17 +950,18 @@ export default function WatchPage({
     wv.executeJavaScript(`(()=>{const v=document.querySelector('video');if(v)v.currentTime+=90;})()`).catch(() => {});
   }, [isElectron]);
 
-  // ── Smart dropdown position — always opens downward, flips up only if no room ──
+  // ── Smart dropdown position — strongly prefer downward (topbar buttons) ──────
   const openDropdownPos = useCallback((btnRef, itemCount) => {
     const btn = btnRef?.current;
     if (!btn) return null;
     const rect = btn.getBoundingClientRect();
     const estimatedH = Math.min(itemCount * 46 + 16, 320);
     const spaceBelow = window.innerHeight - rect.bottom - 8;
-    const top = spaceBelow >= estimatedH
+    // Topbar buttons always have space below — only flip if truly cramped (<120px)
+    const top = spaceBelow >= 120
       ? rect.bottom + 6
       : Math.max(8, rect.top - estimatedH - 6);
-    const left = Math.min(rect.left, window.innerWidth - 210);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 215));
     return { top, left };
   }, []);
 
@@ -1160,7 +1153,6 @@ export default function WatchPage({
           {/* ── Embed-mode server button / loading bar ─────────────────────── */}
           {!isNonEmbedMode && (
             showLoadBar ? (
-              // Loading bar replaces the button while probing servers
               <div
                 className="ns-probe-bar"
                 style={{
@@ -1179,7 +1171,6 @@ export default function WatchPage({
                   cursor:     "default",
                 }}
               >
-                {/* Progress fill */}
                 <div style={{
                   position:   "absolute",
                   left: 0, top: 0, bottom: 0,
@@ -1190,7 +1181,6 @@ export default function WatchPage({
                   transition: "width 0.5s cubic-bezier(0.4,0,0.2,1), background 0.3s ease",
                   borderRadius: 8,
                 }} />
-                {/* Shimmer sweep */}
                 {autoSourceStatus !== "found" && (
                   <div style={{
                     position:   "absolute",
@@ -1199,7 +1189,6 @@ export default function WatchPage({
                     animation:  "shimmerSweep 1.9s infinite ease-in-out",
                   }} />
                 )}
-                {/* Content */}
                 <div style={{ position:"relative", zIndex:1, display:"flex", alignItems:"center", gap:6 }}>
                   {autoSourceStatus === "found" ? (
                     <>
@@ -1217,7 +1206,6 @@ export default function WatchPage({
                 </div>
               </div>
             ) : (
-              // Normal server button
               <button
                 ref={sourceRef}
                 className="watch-server-btn"
@@ -1279,6 +1267,8 @@ export default function WatchPage({
             runtimeMinutes={runtimeMinutes}
             genreIds={(d.genres || []).map((g) => g.id)}
             type={type}
+            dropdownDirection="down"
+            dropdownOffsetTop={6}
           />
 
           {isElectron && (
@@ -1398,10 +1388,13 @@ export default function WatchPage({
             />
             {iframeShieldActive && (
               <>
-                <div style={{ position:"absolute", top:0, left:0, right:0, height:"22%", zIndex:2, pointerEvents:"all" }} />
-                <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"6%", zIndex:2, pointerEvents:"all" }} />
-                <div style={{ position:"absolute", top:"22%", left:0, width:"4%", bottom:"6%", zIndex:2, pointerEvents:"all" }} />
-                <div style={{ position:"absolute", top:"22%", right:0, width:"4%", bottom:"6%", zIndex:2, pointerEvents:"all" }} />
+                {/* Top strip: covers header/banner ads — player controls sit well below this */}
+                <div style={{ position:"absolute", top:0, left:0, right:0, height:36, zIndex:2, pointerEvents:"all" }} />
+                {/* Bottom strip: razor-thin, well above the player control bar */}
+                <div style={{ position:"absolute", bottom:0, left:0, right:0, height:12, zIndex:2, pointerEvents:"all" }} />
+                {/* Side strips: 8 px — won't trap settings / quality menus */}
+                <div style={{ position:"absolute", top:36, left:0, width:8, bottom:12, zIndex:2, pointerEvents:"all" }} />
+                <div style={{ position:"absolute", top:36, right:0, width:8, bottom:12, zIndex:2, pointerEvents:"all" }} />
               </>
             )}
           </>
@@ -1425,7 +1418,7 @@ export default function WatchPage({
           />
         )}
 
-        {/* ── Source dropdown — always opens downward, inline styles only ── */}
+        {/* ── Source dropdown ── */}
         {showSourceMenu && menuPos && (
           <div data-ns-dropdown="1" style={dropdownStyle} onClick={(e) => e.stopPropagation()}>
             {(isNonEmbedMode ? nonEmbedSources : visibleSources).map((src, i) => {
