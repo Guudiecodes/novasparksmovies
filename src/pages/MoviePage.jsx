@@ -1156,3 +1156,4 @@ const CollectionCard = memo(function CollectionCard({ part, isCurrent, onSelect,
     </div>
   );
 });
+

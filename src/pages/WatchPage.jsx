@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   PLAYER_SOURCES, getSourceUrl, tmdbFetch, imgUrl,
   NON_ANIME_DEFAULT_SOURCE, BROWSER_RESTRICTED_DEFAULT, NEEDS_INTERCEPT,
@@ -26,13 +26,11 @@ const BEAST_TIMEOUT = { tier1: 3000, tier2: 4500, tier3: 6500 };
 const BEAST_SECOND_CHANCE_MS = 1200;
 const MAX_FULL_CYCLES = 2;
 
-// Dead servers — includes primesrc (was redirecting to dead domain player.dodonoted.co)
 const DEAD_SOURCES = [
   "embedsu", "cinezo", "smashystream", "vapsrc",
   "twoembed", "vidbinge", "vidupto", "primesrc",
 ];
 
-// ── Embed CSS ─────────────────────────────────────────────────────────────────
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],
@@ -48,7 +46,6 @@ video{opacity:1!important;visibility:visible!important;display:block!important;}
   display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;}
 `;
 
-// ── Embed JS ──────────────────────────────────────────────────────────────────
 const _EMBED_JS = `(function(){
   if(window.__ns)return;window.__ns=true;
   var BAD=['FETCHING, ONE MOMENT...','FETCHING','ONE MOMENT...','PLEASE WAIT','LOADING...','LOADING','BUFFERING',
@@ -146,7 +143,6 @@ function parsePlayerMessage(data) {
   } catch { return null; }
 }
 
-// ── Scrolling Disclaimer Banner ───────────────────────────────────────────────
 function DisclaimerBanner() {
   const text = "⚠  NovaSparks does not host, store, or distribute any media content. Stream availability and quality may vary by region and network conditions. We are not responsible for third-party content or advertisements.   ⚠";
   return (
@@ -160,7 +156,6 @@ function DisclaimerBanner() {
   );
 }
 
-// ── Stealth loading overlay ───────────────────────────────────────────────────
 function StealthLoader({ status, attempt }) {
   const [show, setShow] = useState(false);
   const [fade, setFade] = useState(false);
@@ -315,7 +310,6 @@ export default function WatchPage({
   const receivedRealSignalRef = useRef(false);
   const sourceFailCountRef    = useRef({});
 
-  // ── Loading bar state ──────────────────────────────────────────────────────
   const [probeProgress, setProbeProgress] = useState(8);
   const [showLoadBar,   setShowLoadBar]   = useState(false);
 
@@ -351,7 +345,10 @@ export default function WatchPage({
   const [nonEmbedRetry,    setNonEmbedRetry]    = useState(0);
   const nonEmbedAbortRef     = useRef(null);
   const nonEmbedStreamIdxRef = useRef(0);
-  const nonEmbedSrcBtnRef    = useRef(null);   // for dropdown positioning
+  const nonEmbedSrcBtnRef        = useRef(null);
+  const userManuallySelectedRef  = useRef(false);  // user picked manually — hold before auto-switch
+  const manualSourceIdRef        = useRef(null);   // which source user manually picked
+  const nonEmbedFailCountRef     = useRef(0);      // non-embed total fail counter
 
   const unifiedCaptions = useMemo(() =>
     nonEmbedCaptions
@@ -392,9 +389,12 @@ export default function WatchPage({
     retryQueueRef.current = buildRetryQueue(type, seedSource);
     retryIdxRef.current   = 1;
     sourceFailCountRef.current = {};
+    // New media = clear manual selection lock
+    userManuallySelectedRef.current = false;
+    manualSourceIdRef.current = null;
+    nonEmbedFailCountRef.current = 0;
   }, [item?.id, currentSeason, currentEpisode, type]); // eslint-disable-line
 
-  // ── Loading bar progress tracking ─────────────────────────────────────────
   useEffect(() => {
     if (isNonEmbedMode) { setShowLoadBar(false); return; }
     const total = Math.max(retryQueueRef.current.length, 1);
@@ -418,6 +418,24 @@ export default function WatchPage({
     clearTimeout(secondChanceRef.current);
     const cur = retryQueueRef.current[retryIdxRef.current - 1] || playerSource;
     sourceFailCountRef.current[cur] = (sourceFailCountRef.current[cur] || 0) + 1;
+
+    // If user manually picked this source, give it one extra full retry before abandoning
+    if (userManuallySelectedRef.current && manualSourceIdRef.current === cur) {
+      const failCount = sourceFailCountRef.current[cur] || 0;
+      if (failCount < 2) {
+        // Give it another chance — re-queue at front
+        setRetryAttempt((a) => a + 1);
+        setAutoSourceStatus("retrying");
+        setWebviewLoading(true);
+        setPlayerSource(cur);
+        storage.set("playerSource", cur);
+        return;
+      }
+      // Confirmed broken after 2 tries — clear manual lock and move on
+      userManuallySelectedRef.current = false;
+      manualSourceIdRef.current = null;
+    }
+
     const idx = retryIdxRef.current;
     if (idx >= retryQueueRef.current.length) {
       setCycleCount((prev) => {
@@ -433,9 +451,17 @@ export default function WatchPage({
           setPlayerSource(firstId);
           storage.set("playerSource", firstId);
         } else {
-          setAutoSourceStatus("failed");
-          setWebviewLoading(false);
+          // Instead of failing hard, reset and try from the top quietly
+          sourceFailCountRef.current = {};
+          retryQueueRef.current = buildRetryQueue(type, getDefaultSource());
+          retryIdxRef.current = 1;
+          setCycleCount(0);
+          setRetryAttempt(0);
+          setAutoSourceStatus("testing");
+          setWebviewLoading(true);
           invalidateSourceCache(type, item?.id, currentSeason, currentEpisode);
+          setPlayerSource(getDefaultSource());
+          storage.set("playerSource", getDefaultSource());
         }
         return next;
       });
@@ -456,10 +482,24 @@ export default function WatchPage({
       nonEmbedStreamIdxRef.current = next;
       setNonEmbedStream(nonEmbedSources[next]);
     } else {
-      setAutoSourceStatus("failed");
-      setWebviewLoading(false);
+      // All non-embed sources exhausted — silently fall back to embed mode
+      // instead of showing the failure overlay. User won't see a dead end.
+      nonEmbedFailCountRef.current += 1;
+      setIsNonEmbedMode(false);
+      storage.set("playerMode", "embed");
+      nonEmbedStreamIdxRef.current = 0;
+      setNonEmbedStream(null);
+      setNonEmbedSources([]);
+      setNonEmbedCaptions([]);
+      setAutoSourceStatus("testing");
+      setWebviewLoading(true);
+      const defaultSrc = getDefaultSource();
+      retryQueueRef.current = buildRetryQueue(type, defaultSrc);
+      retryIdxRef.current = 1;
+      setPlayerSource(defaultSrc);
+      storage.set("playerSource", defaultSrc);
     }
-  }, [nonEmbedSources]);
+  }, [nonEmbedSources, type]);
 
   const retryFromScratch = useCallback(() => {
     clearTimeout(secondChanceRef.current);
@@ -557,6 +597,7 @@ export default function WatchPage({
     setIsActuallyPlaying(false); receivedRealSignalRef.current = false;
     setNonEmbedStream(null); setNonEmbedSources([]); setNonEmbedCaptions([]);
     nonEmbedStreamIdxRef.current = 0;
+    // Reset manual lock only when media changes, not source changes
   }, [playerSource, item?.id, currentSeason, currentEpisode, type]);
 
   const totalEpisodesInSeason = episodeList.length;
@@ -794,17 +835,18 @@ export default function WatchPage({
     };
   }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, type, m3u8Url]); // eslint-disable-line
 
-  // ── Web-browser iframe detection (non-Electron) ───────────────────────────
   useEffect(() => {
     if (isElectron || isNonEmbedMode) return;
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
     if (useHLSPath && (hlsLoading || (hlsStream && !hlsFailed))) return;
     let active = true, iframeHasLoaded = false;
     let probeNetworkFailed = false;
+    // Give manually-selected sources more time before declaring them broken
+    const isManualPick = userManuallySelectedRef.current && manualSourceIdRef.current;
     const PROBE_TIMEOUT     = 600;
     const LOAD_REVEAL_DELAY = 200;
-    const HARD_TIMEOUT_MS   = 2500;
-    const SECOND_CHANCE_MS  = 800;
+    const HARD_TIMEOUT_MS   = isManualPick ? 5000 : 2500;
+    const SECOND_CHANCE_MS  = isManualPick ? 2000 : 800;
     let probeAbortCtrl = new AbortController();
     let probeTimerId = null, hardTimerId = null, revealTimerId = null, secondTimerId = null;
     const clearAll = () => {
@@ -835,7 +877,6 @@ export default function WatchPage({
     };
     webBeastReadyRef.current = onReady;
     webBeastFailRef.current  = onFail;
-
     iframeLoadCallbackRef.current = () => {
       if (!active || probeNetworkFailed) return;
       iframeHasLoaded = true;
@@ -846,7 +887,6 @@ export default function WatchPage({
     iframeErrorCallbackRef.current = () => {
       if (!active) return; clearTimeout(hardTimerId); enterSecondChance();
     };
-
     probeTimerId = setTimeout(() => probeAbortCtrl.abort(), PROBE_TIMEOUT);
     fetch(embedUrl, { method:"HEAD", mode:"no-cors", signal: probeAbortCtrl.signal })
       .then(() => clearTimeout(probeTimerId))
@@ -856,12 +896,10 @@ export default function WatchPage({
         probeNetworkFailed = true;
         onFail();
       });
-
     hardTimerId = setTimeout(() => {
       if (!active) return;
       if (iframeHasLoaded && !probeNetworkFailed) onReady(); else enterSecondChance();
     }, HARD_TIMEOUT_MS);
-
     return () => {
       active = false; clearAll();
       if (webBeastReadyRef.current === onReady) webBeastReadyRef.current = null;
@@ -916,6 +954,9 @@ export default function WatchPage({
     clearTimeout(secondChanceRef.current);
     setShowSourceMenu(false);
     if (id === playerSource) return;
+    // Mark as user-initiated — hold on this source longer before auto-switching
+    userManuallySelectedRef.current = true;
+    manualSourceIdRef.current = id;
     retryQueueRef.current = buildRetryQueue(type, id);
     retryIdxRef.current = 1; setCycleCount(0); setRetryAttempt(0);
     setAutoSourceStatus("testing"); setWebviewLoading(true);
@@ -950,18 +991,16 @@ export default function WatchPage({
     wv.executeJavaScript(`(()=>{const v=document.querySelector('video');if(v)v.currentTime+=90;})()`).catch(() => {});
   }, [isElectron]);
 
-  // ── Smart dropdown position — strongly prefer downward (topbar buttons) ──────
   const openDropdownPos = useCallback((btnRef, itemCount) => {
     const btn = btnRef?.current;
     if (!btn) return null;
     const rect = btn.getBoundingClientRect();
     const estimatedH = Math.min(itemCount * 46 + 16, 320);
     const spaceBelow = window.innerHeight - rect.bottom - 8;
-    // Topbar buttons always have space below — only flip if truly cramped (<120px)
-    const top = spaceBelow >= 120
+    const top = spaceBelow >= estimatedH
       ? rect.bottom + 6
       : Math.max(8, rect.top - estimatedH - 6);
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 215));
+    const left = Math.min(rect.left, window.innerWidth - 210);
     return { top, left };
   }, []);
 
@@ -1004,43 +1043,24 @@ export default function WatchPage({
         : nonEmbedStream.url)
     : null;
 
-  const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading && !m3u8Url && !nonEmbedStream;
+  // Never show the AllFailedOverlay — if non-embed fails, silently fall back to embed.
+  // Only show it for embed mode after exhausting all retries AND user did NOT manually pick.
+  const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading && !m3u8Url && !nonEmbedStream && !isNonEmbedMode && !userManuallySelectedRef.current;
   const iframeShieldActive = !isElectron && !isNonEmbedMode && !webviewLoading && !pipOpen;
 
-  // Probe bar values
   const probeTotal = Math.max(retryQueueRef.current.length, 1);
 
-  // ── Reusable inline dropdown styles ───────────────────────────────────────
   const dropdownStyle = {
-    position:         "fixed",
-    top:              menuPos?.top  ?? 60,
-    left:             menuPos?.left ?? 0,
-    zIndex:           99999,
-    background:       "rgba(10,14,18,0.98)",
-    border:           "1px solid rgba(255,255,255,0.1)",
-    borderRadius:     10,
-    padding:          "6px 0",
-    minWidth:         195,
-    maxHeight:        320,
-    overflowY:        "auto",
-    boxShadow:        "0 10px 40px rgba(0,0,0,0.85)",
-    backdropFilter:   "blur(16px)",
-    WebkitBackdropFilter: "blur(16px)",
+    position:"fixed", top:menuPos?.top ?? 60, left:menuPos?.left ?? 0,
+    zIndex:99999, background:"rgba(10,14,18,0.98)", border:"1px solid rgba(255,255,255,0.1)",
+    borderRadius:10, padding:"6px 0", minWidth:195, maxHeight:320, overflowY:"auto",
+    boxShadow:"0 10px 40px rgba(0,0,0,0.85)", backdropFilter:"blur(16px)", WebkitBackdropFilter:"blur(16px)",
   };
   const dropdownItemBase = {
-    display:     "flex",
-    width:       "100%",
-    textAlign:   "left",
-    alignItems:  "center",
-    justifyContent: "space-between",
-    gap:         8,
-    padding:     "10px 18px",
-    background:  "none",
-    border:      "none",
-    fontSize:    13,
-    cursor:      "pointer",
-    fontFamily:  "inherit",
-    transition:  "background 0.12s",
+    display:"flex", width:"100%", textAlign:"left", alignItems:"center",
+    justifyContent:"space-between", gap:8, padding:"10px 18px",
+    background:"none", border:"none", fontSize:13, cursor:"pointer",
+    fontFamily:"inherit", transition:"background 0.12s",
   };
 
   return (
@@ -1150,72 +1170,24 @@ export default function WatchPage({
             )}
           </button>
 
-          {/* ── Embed-mode server button / loading bar ─────────────────────── */}
           {!isNonEmbedMode && (
             showLoadBar ? (
-              <div
-                className="ns-probe-bar"
-                style={{
-                  position:   "relative",
-                  display:    "flex",
-                  alignItems: "center",
-                  gap:        6,
-                  minWidth:   128,
-                  height:     34,
-                  borderRadius: 8,
-                  overflow:   "hidden",
-                  background: "rgba(255,255,255,0.07)",
-                  border:     "1px solid rgba(255,255,255,0.14)",
-                  padding:    "0 14px",
-                  flexShrink: 0,
-                  cursor:     "default",
-                }}
-              >
-                <div style={{
-                  position:   "absolute",
-                  left: 0, top: 0, bottom: 0,
-                  width:      `${probeProgress}%`,
-                  background: autoSourceStatus === "found"
-                    ? "linear-gradient(90deg, rgba(76,175,80,0.3), rgba(76,175,80,0.5))"
-                    : "linear-gradient(90deg, rgba(229,9,20,0.22), rgba(229,9,20,0.42))",
-                  transition: "width 0.5s cubic-bezier(0.4,0,0.2,1), background 0.3s ease",
-                  borderRadius: 8,
-                }} />
+              <div className="ns-probe-bar" style={{ position:"relative", display:"flex", alignItems:"center", gap:6, minWidth:128, height:34, borderRadius:8, overflow:"hidden", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.14)", padding:"0 14px", flexShrink:0, cursor:"default" }}>
+                <div style={{ position:"absolute", left:0, top:0, bottom:0, width:`${probeProgress}%`, background:autoSourceStatus==="found"?"linear-gradient(90deg, rgba(76,175,80,0.3), rgba(76,175,80,0.5))":"linear-gradient(90deg, rgba(229,9,20,0.22), rgba(229,9,20,0.42))", transition:"width 0.5s cubic-bezier(0.4,0,0.2,1), background 0.3s ease", borderRadius:8 }} />
                 {autoSourceStatus !== "found" && (
-                  <div style={{
-                    position:   "absolute",
-                    top: 0, bottom: 0, width: "42%",
-                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)",
-                    animation:  "shimmerSweep 1.9s infinite ease-in-out",
-                  }} />
+                  <div style={{ position:"absolute", top:0, bottom:0, width:"42%", background:"linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)", animation:"shimmerSweep 1.9s infinite ease-in-out" }} />
                 )}
                 <div style={{ position:"relative", zIndex:1, display:"flex", alignItems:"center", gap:6 }}>
                   {autoSourceStatus === "found" ? (
-                    <>
-                      <span style={{ color:"#4caf50", fontSize:15, lineHeight:1, fontWeight:700 }}>✓</span>
-                      <span className="probe-label" style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.9)", whiteSpace:"nowrap" }}>{currentLabel}</span>
-                    </>
+                    <><span style={{ color:"#4caf50", fontSize:15, lineHeight:1, fontWeight:700 }}>✓</span><span className="probe-label" style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.9)", whiteSpace:"nowrap" }}>{currentLabel}</span></>
                   ) : (
-                    <>
-                      <div style={{ width:10, height:10, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.18)", borderTopColor:"rgba(255,255,255,0.8)", animation:"spin 0.65s linear infinite", flexShrink:0 }} />
-                      <span className="probe-label" style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.72)", whiteSpace:"nowrap", animation:"probePulse 1.8s infinite" }}>
-                        {retryAttempt === 0 ? "Finding..." : `Server ${retryAttempt + 1}`}
-                      </span>
-                    </>
+                    <><div style={{ width:10, height:10, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.18)", borderTopColor:"rgba(255,255,255,0.8)", animation:"spin 0.65s linear infinite", flexShrink:0 }} /><span className="probe-label" style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.72)", whiteSpace:"nowrap", animation:"probePulse 1.8s infinite" }}>{retryAttempt === 0 ? "Finding..." : `Server ${retryAttempt + 1}`}</span></>
                   )}
                 </div>
               </div>
             ) : (
-              <button
-                ref={sourceRef}
-                className="watch-server-btn"
-                style={{
-                  display:"flex", alignItems:"center", gap:6,
-                  background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)",
-                  borderRadius:8, color:"#fff", fontSize:13, fontWeight:600,
-                  padding:"7px 14px", cursor:"pointer", transition:"background 0.15s",
-                  fontFamily:"inherit", lineHeight:1, flexShrink:0,
-                }}
+              <button ref={sourceRef} className="watch-server-btn"
+                style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:8, color:"#fff", fontSize:13, fontWeight:600, padding:"7px 14px", cursor:"pointer", transition:"background 0.15s", fontFamily:"inherit", lineHeight:1, flexShrink:0 }}
                 onMouseEnter={(e) => e.currentTarget.style.background="rgba(255,255,255,0.12)"}
                 onMouseLeave={(e) => e.currentTarget.style.background="rgba(255,255,255,0.07)"}
                 onClick={() => {
@@ -1225,27 +1197,16 @@ export default function WatchPage({
                   setShowSourceMenu((v) => !v);
                 }}
               >
-                <span style={{ display:"flex", alignItems:"center", justifyContent:"center", width:14, height:14, flexShrink:0 }}>
-                  <SourceIcon size={14} />
-                </span>
+                <span style={{ display:"flex", alignItems:"center", justifyContent:"center", width:14, height:14, flexShrink:0 }}><SourceIcon size={14} /></span>
                 <span>{hlsStream && !hlsFailed && useHLSPath ? "Direct" : currentLabel}</span>
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.5, flexShrink:0 }}>
-                  <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-                </svg>
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.5, flexShrink:0 }}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
               </button>
             )
           )}
 
-          {/* ── Non-embed source selector ──────────────────────────────────── */}
           {isNonEmbedMode && nonEmbedSources.length > 1 && (
-            <button
-              ref={nonEmbedSrcBtnRef}
-              style={{
-                display:"flex", alignItems:"center", gap:5,
-                background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)",
-                borderRadius:8, color:"#fff", fontSize:12, fontWeight:600,
-                padding:"7px 12px", cursor:"pointer", fontFamily:"inherit", flexShrink:0,
-              }}
+            <button ref={nonEmbedSrcBtnRef}
+              style={{ display:"flex", alignItems:"center", gap:5, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:8, color:"#fff", fontSize:12, fontWeight:600, padding:"7px 12px", cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}
               onClick={() => {
                 const pos = openDropdownPos(nonEmbedSrcBtnRef, nonEmbedSources.length);
                 if (pos) setMenuPos(pos);
@@ -1255,9 +1216,7 @@ export default function WatchPage({
               <SourceIcon size={13} />
               <span>{nonEmbedStream?.source || "Source"}</span>
               {nonEmbedStream?.quality && <span style={{ opacity:0.6, fontSize:11 }}>{nonEmbedStream.quality}</span>}
-              <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.5 }}>
-                <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-              </svg>
+              <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.5 }}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
             </button>
           )}
 
@@ -1267,8 +1226,6 @@ export default function WatchPage({
             runtimeMinutes={runtimeMinutes}
             genreIds={(d.genres || []).map((g) => g.id)}
             type={type}
-            dropdownDirection="down"
-            dropdownOffsetTop={6}
           />
 
           {isElectron && (
@@ -1305,25 +1262,14 @@ export default function WatchPage({
                 nodeintegration="no"
                 webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
                 useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-                style={{
-                  position:"absolute", inset:0, width:"100%", height:"100%",
-                  border:"none", background:"#000",
-                  opacity:(showNSPlayer || webviewLoading) ? 0 : 1,
-                  pointerEvents:showNSPlayer ? "none" : "auto",
-                  transition:"opacity 0.35s ease",
-                  zIndex:1,
-                }}
+                style={{ position:"absolute", inset:0, width:"100%", height:"100%", border:"none", background:"#000", opacity:(showNSPlayer || webviewLoading) ? 0 : 1, pointerEvents:showNSPlayer ? "none" : "auto", transition:"opacity 0.35s ease", zIndex:1 }}
               />
             )}
             {showNSPlayer && (
               <NovaSparksPlayer
                 key={`nsp-${isNonEmbedMode ? "ne" : "em"}-${item.id}-s${currentSeason}e${currentEpisode}${isNonEmbedMode ? `-${nonEmbedStreamIdxRef.current}` : ""}`}
                 streamUrl={nsStreamUrl}
-                subtitles={
-                  isNonEmbedMode
-                    ? unifiedCaptions.map((c) => ({ url:c.url, lang:c.lang||"" }))
-                    : interceptedSubs
-                }
+                subtitles={isNonEmbedMode ? unifiedCaptions.map((c) => ({ url:c.url, lang:c.lang||"" })) : interceptedSubs}
                 title={`${title}${type === "tv" ? ` · S${currentSeason}E${currentEpisode}` : ""}`}
                 onReady={() => { setWebviewLoading(false); setAutoSourceStatus("found"); setIsActuallyPlaying(true); }}
                 onError={() => {
@@ -1378,23 +1324,14 @@ export default function WatchPage({
               referrerPolicy="origin"
               onLoad={() => iframeLoadCallbackRef.current?.()}
               onError={() => iframeErrorCallbackRef.current?.()}
-              style={{
-                position:"absolute", inset:0, width:"100%", height:"100%",
-                border:"none", background:"#000",
-                opacity:webviewLoading ? 0 : 1,
-                transition:"opacity 0.4s ease",
-                pointerEvents:webviewLoading ? "none" : "auto",
-              }}
+              style={{ position:"absolute", inset:0, width:"100%", height:"100%", border:"none", background:"#000", opacity:webviewLoading ? 0 : 1, transition:"opacity 0.4s ease", pointerEvents:webviewLoading ? "none" : "auto" }}
             />
             {iframeShieldActive && (
               <>
-                {/* Top strip: covers header/banner ads — player controls sit well below this */}
-                <div style={{ position:"absolute", top:0, left:0, right:0, height:36, zIndex:2, pointerEvents:"all" }} />
-                {/* Bottom strip: razor-thin, well above the player control bar */}
-                <div style={{ position:"absolute", bottom:0, left:0, right:0, height:12, zIndex:2, pointerEvents:"all" }} />
-                {/* Side strips: 8 px — won't trap settings / quality menus */}
-                <div style={{ position:"absolute", top:36, left:0, width:8, bottom:12, zIndex:2, pointerEvents:"all" }} />
-                <div style={{ position:"absolute", top:36, right:0, width:8, bottom:12, zIndex:2, pointerEvents:"all" }} />
+                <div style={{ position:"absolute", top:0, left:0, right:0, height:"5%", zIndex:2, pointerEvents:"all" }} />
+                <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"4%", zIndex:2, pointerEvents:"all" }} />
+                <div style={{ position:"absolute", top:"5%", left:0, width:"2%", bottom:"4%", zIndex:2, pointerEvents:"all" }} />
+                <div style={{ position:"absolute", top:"5%", right:0, width:"2%", bottom:"4%", zIndex:2, pointerEvents:"all" }} />
               </>
             )}
           </>
@@ -1418,39 +1355,30 @@ export default function WatchPage({
           />
         )}
 
-        {/* ── Source dropdown ── */}
         {showSourceMenu && menuPos && (
           <div data-ns-dropdown="1" style={dropdownStyle} onClick={(e) => e.stopPropagation()}>
             {(isNonEmbedMode ? nonEmbedSources : visibleSources).map((src, i) => {
-              const isActive = isNonEmbedMode
-                ? nonEmbedStream?.url === src.url
-                : playerSource === src.id;
+              const isActive = isNonEmbedMode ? nonEmbedStream?.url === src.url : playerSource === src.id;
               const label = isNonEmbedMode ? (src.source || `Source ${i + 1}`) : src.label;
               const tag   = isNonEmbedMode ? src.quality : src.tag;
               return (
                 <button
                   key={isNonEmbedMode ? `${src.url}-${i}` : src.id}
                   className="ns-src-dd-item"
-                  style={{
-                    ...dropdownItemBase,
-                    color:      isActive ? "#e50914" : "rgba(255,255,255,0.85)",
-                    fontWeight: isActive ? 700 : 500,
-                  }}
+                  style={{ ...dropdownItemBase, color:isActive ? "#e50914" : "rgba(255,255,255,0.85)", fontWeight:isActive ? 700 : 500 }}
                   onClick={() => {
                     if (isNonEmbedMode) {
+                      userManuallySelectedRef.current = true;
+                      manualSourceIdRef.current = src.url;
                       nonEmbedStreamIdxRef.current = i;
                       setNonEmbedStream(src);
-                    } else {
-                      switchSource(src.id);
-                    }
+                    } else { switchSource(src.id); }
                     setShowSourceMenu(false);
                   }}
                 >
                   <span>{label}</span>
                   <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                    {tag && (
-                      <span style={{ fontSize:10, fontWeight:700, letterSpacing:0.4, background:"rgba(229,9,20,0.12)", color:"#e50914", border:"1px solid rgba(229,9,20,0.22)", borderRadius:4, padding:"2px 6px" }}>{tag}</span>
-                    )}
+                    {tag && <span style={{ fontSize:10, fontWeight:700, letterSpacing:0.4, background:"rgba(229,9,20,0.12)", color:"#e50914", border:"1px solid rgba(229,9,20,0.22)", borderRadius:4, padding:"2px 6px" }}>{tag}</span>}
                     {isActive && <span style={{ color:"#e50914", fontSize:12, fontWeight:700 }}>✓</span>}
                   </div>
                 </button>
@@ -1476,9 +1404,7 @@ export default function WatchPage({
                   onMouseEnter={(e) => e.currentTarget.style.background="rgba(255,255,255,0.12)"}
                   onMouseLeave={(e) => e.currentTarget.style.background="rgba(255,255,255,0.07)"}>
                   Season {currentSeason}
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.7 }}>
-                    <path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-                  </svg>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.7 }}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
                 </button>
                 {showSeasonMenu && seasonMenuPos && (
                   <div className="season-dropdown-menu" style={{ top:seasonMenuPos.top, left:seasonMenuPos.left }}>

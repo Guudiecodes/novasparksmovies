@@ -264,8 +264,8 @@ export default function DataMeterWidget({
       {open && (
         <div style={{
           position: "absolute",
-          bottom: "calc(100% + 10px)",
-          right: 0,
+   top: "calc(100% + 10px)",     
+     right: 0,
           width: 300,
           background: "rgba(8,14,18,0.98)",
           border: "1px solid rgba(255,255,255,0.09)",
