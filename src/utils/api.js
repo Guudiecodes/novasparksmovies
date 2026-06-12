@@ -56,14 +56,10 @@ export async function initBrowserEnv() {
   if (/Edg\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
   const brave = await _checkIsBrave();
   if (brave) { _isRestrictedBrowserCache = false; return; }
-  if (/Chrome\//i.test(ua) && !/Chromium\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
-  if (/Chromium\//i.test(ua)) { _isRestrictedBrowserCache = false; return; }
   _isRestrictedBrowserCache = false;
 }
 
-export function isRestrictedBrowser() {
-  return false;
-}
+export function isRestrictedBrowser() { return false; }
 
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -72,9 +68,9 @@ export function isRestrictedBrowser() {
 
 const _tmdbCache     = new Map();
 const TMDB_CACHE_TTL = 5 * 60 * 1000;
-let _inflight      = 0;
-const MAX_INFLIGHT = 4;
-const _waiters     = [];
+let _inflight        = 0;
+const MAX_INFLIGHT   = 4;
+const _waiters       = [];
 
 function _acquireSlot() {
   if (_inflight < MAX_INFLIGHT) { _inflight++; return Promise.resolve(); }
@@ -171,7 +167,9 @@ export async function fetchAllNonEmbedSources(type, id, season, episode, {
           data.sources.forEach((src) => { merged.sources.push(src); onSourceFound?.(src); });
           (data.captions || []).forEach((cap) => merged.captions.push(cap));
         }
-      } catch { if (!signal?.aborted) onProviderStatus?.([{ name: service, status: "error" }]); }
+      } catch {
+        if (!signal?.aborted) onProviderStatus?.([{ name: service, status: "error" }]);
+      }
     })
   );
   return merged;
@@ -179,135 +177,153 @@ export async function fetchAllNonEmbedSources(type, id, season, episode, {
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// PLAYER SOURCES
-// ─────────────────────────────────────────────────────────────────────────────
-// Servers renamed Server 1–14. Removed: CineHD, Smashy, VAP, 2Embed,
-// VidBinge, VidUp — all known for aggressive ad popups / redirects in browser.
+// PLAYER SOURCES  (Embed mode — iframe-based)
+// Dead servers removed: primesrc (→dead redirect), vapsrc (vaplayer.ru dead),
+//   cinezo, smashystream, twoembed, vidbinge, vidupto
 // ═════════════════════════════════════════════════════════════════════════════
 
 export const PLAYER_SOURCES = [
 
-  // ── TIER 1 ───────────────────────────────────────────────────────────────
+  // ── TIER 1 — fast, reliable ───────────────────────────────────────────────
+
   {
-    id: "primesrc", label: "Server 1",
+    id: "vidlink",
+    label: "VidLink",
     tag: null, note: "★ Fast",
     tier: 1, moviePriority: 1, tvPriority: 1,
     browserPriority: 1, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://primesrc.me/embed/movie?tmdb=${id}`,
-    tvUrl:    (id, s, e) => `https://primesrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
-  },
-  {
-    id: "vidlink", label: "Server 2",
-    tag: null, note: "★ Fast",
-    tier: 1, moviePriority: 2, tvPriority: 2,
-    browserPriority: 2, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidlink.pro/movie/${id}?ads=0`,
     tvUrl:    (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}?ads=0`,
   },
+
   {
-    id: "videasy", label: "Server 3",
+    id: "videasy",
+    label: "Videasy",
     tag: null, note: "★ Fast",
-    tier: 1, moviePriority: 3, tvPriority: 3,
-    browserPriority: 3, browserSafe: true, supportsProgress: true,
+    tier: 1, moviePriority: 2, tvPriority: 2,
+    browserPriority: 2, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
     tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
+
   {
-    id: "multiembed", label: "Server 4",
-    tag: null, note: "★ Multi",
-    tier: 1, moviePriority: 4, tvPriority: 4,
-    browserPriority: 4, browserSafe: true, supportsProgress: true,
+    id: "multiembed",
+    label: "Multi",
+    tag: null, note: "★ Multi-Server",
+    tier: 1, moviePriority: 3, tvPriority: 3,
+    browserPriority: 3, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1&server=2`,
     tvUrl:    (id, s, e) => `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}&server=2`,
   },
 
   // ── TIER 2 ───────────────────────────────────────────────────────────────
+
   {
-    id: "autoembed", label: "Server 5",
-    tag: null, note: "★ Agg",
-    tier: 2, moviePriority: 5, tvPriority: 5,
-    browserPriority: 5, browserSafe: true, supportsProgress: true,
+    id: "autoembed",
+    label: "AutoEmbed",
+    tag: null, note: "★ Aggregator",
+    tier: 2, moviePriority: 4, tvPriority: 4,
+    browserPriority: 4, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}?server=1`,
     tvUrl:    (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}?server=1`,
   },
+
   {
-    id: "vidsrc_cc", label: "Server 6",
+    id: "vidsrc_cc",
+    label: "VidSrc",
     tag: null, note: "★ HD",
-    tier: 2, moviePriority: 6, tvPriority: 6,
-    browserPriority: 6, browserSafe: true, supportsProgress: true,
+    tier: 2, moviePriority: 5, tvPriority: 5,
+    browserPriority: 5, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
     tvUrl:    (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`,
   },
 
   // ── TIER 3 ───────────────────────────────────────────────────────────────
+
   {
-    id: "vidsrc_me", label: "Server 7",
+    id: "vidsrc_me",
+    label: "VidSrc.me",
     tag: null, note: null,
-    tier: 3, moviePriority: 7, tvPriority: 7,
-    browserPriority: 7, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 6, tvPriority: 6,
+    browserPriority: 6, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidsrc.me/embed/movie?tmdb=${id}`,
     tvUrl:    (id, s, e) => `https://vidsrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
   },
+
   {
-    id: "vidfast", label: "Server 8",
+    id: "vidfast",
+    label: "VidFast",
     tag: null, note: "★ Multi",
-    tier: 3, moviePriority: 8, tvPriority: 8,
-    browserPriority: 8, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 7, tvPriority: 7,
+    browserPriority: 7, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidfast.pro/movie/${id}`,
     tvUrl:    (id, s, e) => `https://vidfast.pro/tv/${id}/${s}/${e}`,
   },
+
   {
-    id: "mapple", label: "Server 9",
+    id: "mapple",
+    label: "Mapple 4K",
     tag: null, note: "★ 4K",
-    tier: 3, moviePriority: 9, tvPriority: 9,
-    browserPriority: 9, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 8, tvPriority: 8,
+    browserPriority: 8, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://mapple.uk/watch/movie/${id}?nextButton=true&autoPlay=true&autoNext=true`,
     tvUrl:    (id, s, e) => `https://mapple.uk/watch/tv/${id}-${s}-${e}?nextButton=true&autoPlay=true&autoNext=true`,
   },
+
   {
-    id: "pstream", label: "Server 10",
+    id: "pstream",
+    label: "PStream",
     tag: null, note: null,
-    tier: 3, moviePriority: 10, tvPriority: 10,
-    browserPriority: 10, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 9, tvPriority: 9,
+    browserPriority: 9, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://iframe.pstream.mov/embed/tmdb-movie-${id}`,
     tvUrl:    (id, s, e) => `https://iframe.pstream.mov/embed/tmdb-tv-${id}/${s}/${e}`,
   },
+
   {
-    id: "vidcorenl", label: "Server 11",
+    id: "vidcorenl",
+    label: "VidCore",
     tag: null, note: "★ Multi",
-    tier: 3, moviePriority: 11, tvPriority: 11,
-    browserPriority: 11, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 10, tvPriority: 10,
+    browserPriority: 10, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidcore.net/movie/${id}?autoplay=true`,
     tvUrl:    (id, s, e) => `https://vidcore.net/tv/${id}/${s}/${e}?autoplay=true`,
   },
+
   {
-    id: "vidsrcnl", label: "Server 12",
+    id: "vidsrcnl",
+    label: "VidSrc NL",
     tag: null, note: "★ Multi",
-    tier: 3, moviePriority: 12, tvPriority: 12,
-    browserPriority: 12, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 11, tvPriority: 11,
+    browserPriority: 11, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://player.vidsrc.nl/embed/movie/${id}`,
     tvUrl:    (id, s, e) => `https://player.vidsrc.nl/embed/tv/${id}/${s}/${e}`,
   },
+
   {
-    id: "peachify", label: "Server 13",
+    id: "peachify",
+    label: "Peach",
     tag: null, note: null,
-    tier: 3, moviePriority: 13, tvPriority: 13,
-    browserPriority: 13, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 12, tvPriority: 12,
+    browserPriority: 12, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
     tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
   },
+
   {
-    id: "vidsrc_xyz", label: "Server 14",
+    id: "vidsrc_xyz",
+    label: "VidSrc.xyz",
     tag: null, note: null,
-    tier: 3, moviePriority: 14, tvPriority: 14,
-    browserPriority: 14, browserSafe: true, supportsProgress: true,
+    tier: 3, moviePriority: 13, tvPriority: 13,
+    browserPriority: 13, browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidsrc.xyz/embed/movie?tmdb=${id}`,
     tvUrl:    (id, s, e) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
   },
 
   // ── ANIME ─────────────────────────────────────────────────────────────────
   {
-    id: "allmanga", label: "AllManga",
+    id: "allmanga",
+    label: "AllManga",
     tag: "ANIME", note: null,
     tier: 1,
     moviePriority: 99, tvPriority: 99, browserPriority: 99,
@@ -334,8 +350,8 @@ export const sourceIsAsync           = (id) => PLAYER_SOURCES.find((s) => s.id =
 export const NEEDS_INTERCEPT = [];
 
 export const ANIME_DEFAULT_SOURCE       = "allmanga";
-export const NON_ANIME_DEFAULT_SOURCE   = "primesrc";
-export const BROWSER_RESTRICTED_DEFAULT = "primesrc";
+export const NON_ANIME_DEFAULT_SOURCE   = "vidlink";   // primesrc removed — dead redirect
+export const BROWSER_RESTRICTED_DEFAULT = "vidlink";
 
 export function getDefaultSource() {
   return NON_ANIME_DEFAULT_SOURCE;
@@ -355,6 +371,7 @@ export function buildRetryQueue(type, preferredId) {
       return pa - pb;
     })
     .map((s) => s.id);
+
   const startIdx = eligible.indexOf(preferredId);
   if (startIdx <= 0) return eligible;
   return [...eligible.slice(startIdx), ...eligible.slice(0, startIdx)];
@@ -363,11 +380,13 @@ export function buildRetryQueue(type, preferredId) {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // PRE-FLIGHT URL PROBE
+// Tuned tighter: DNS failures resolve in <100ms so retries are cheap.
 // ═════════════════════════════════════════════════════════════════════════════
 
-const PROBE_RETRY_DELAY  = 800;
-const PROBE_TIMEOUT_FAST = 2500;
-const PROBE_TIMEOUT_SLOW = 4000;
+const PROBE_RETRIES      = 2;
+const PROBE_RETRY_DELAY  = 250;   // was 800 — dead servers fail fast, no need to wait
+const PROBE_TIMEOUT_FAST = 1800;  // was 2500
+const PROBE_TIMEOUT_SLOW = 2800;  // was 4000
 
 async function _singleProbe(url, timeoutMs) {
   const controller = new AbortController();
@@ -387,12 +406,13 @@ export async function probeUrl(url, _legacyTimeout) {
   const first = await _singleProbe(url, PROBE_TIMEOUT_FAST);
   if (first === "ok") return "ok";
   await new Promise((r) => setTimeout(r, PROBE_RETRY_DELAY));
-  return _singleProbe(url, PROBE_TIMEOUT_SLOW);
+  const second = await _singleProbe(url, PROBE_TIMEOUT_SLOW);
+  return second;
 }
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// WORKING SOURCE FINDER
+// WORKING SOURCE FINDER  (parallel race with tier-based stagger)
 // ═════════════════════════════════════════════════════════════════════════════
 
 const _sourceCache     = new Map();
@@ -404,15 +424,18 @@ export async function findWorkingSource(type, id, season = null, episode = null,
   if (cached && Date.now() < cached.expiresAt) return cached.sourceId;
 
   const sources = PLAYER_SOURCES.filter((s) => !s.async);
+
   const racePromises = sources.map((src) => {
-    const delay = src.id !== preferredId
-      ? (src.tier === 1 ? 0 : src.tier === 2 ? 200 : 500)
-      : 0;
+    let delay = 0;
+    if (src.id !== preferredId) {
+      delay = src.tier === 1 ? 0 : src.tier === 2 ? 150 : 400;
+    }
     return new Promise((resolve, reject) => {
       setTimeout(async () => {
         const url    = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, episode);
         const result = await probeUrl(url);
-        if (result === "ok") resolve(src.id); else reject();
+        if (result === "ok") resolve(src.id);
+        else reject();
       }, delay);
     });
   });
@@ -444,11 +467,15 @@ const ANILIST_API = "https://graphql.anilist.co";
 export const cleanAnilistDescription = (desc) => {
   if (!desc) return desc;
   let clean = desc
-    .split("<").map((chunk, i) => (i === 0 ? chunk : chunk.slice(chunk.indexOf(">") + 1))).join("")
+    .split("<")
+    .map((chunk, i) => (i === 0 ? chunk : chunk.slice(chunk.indexOf(">") + 1)))
+    .join("")
     .replace(/>/g, "");
   clean = clean
-    .replace(/\(Source:[^)]*\)/gi, "").replace(/\bNote:[^\n]*/gi, "")
-    .replace(/[\s\n]+$/, "").trim();
+    .replace(/\(Source:[^)]*\)/gi, "")
+    .replace(/\bNote:[^\n]*/gi, "")
+    .replace(/[\s\n]+$/, "")
+    .trim();
   return clean;
 };
 
@@ -484,7 +511,7 @@ let _anilistCache = null;
 function getAnilistCache() {
   if (_anilistCache) return _anilistCache;
   try {
-    const raw = localStorage.getItem(ANILIST_CACHE_KEY);
+    const raw     = localStorage.getItem(ANILIST_CACHE_KEY);
     _anilistCache = raw ? JSON.parse(raw) : {};
   } catch { _anilistCache = {}; }
   const now = Date.now();
@@ -504,26 +531,31 @@ function flushAnilistCache() {
 }
 
 export const fetchAnilistData = async (title, type = "ANIME", tmdbId = null) => {
-  const cacheKey = tmdbId ? `${type}__tmdb_${tmdbId}` : `${type}__${title.toLowerCase().trim()}`;
+  const cacheKey = tmdbId
+    ? `${type}__tmdb_${tmdbId}`
+    : `${type}__${title.toLowerCase().trim()}`;
   const cache = getAnilistCache();
   const entry = cache[cacheKey];
-
   if (entry && Date.now() - entry.ts <= ANILIST_CACHE_TTL) {
-    const cachedTitles = [entry.data?.title?.romaji, entry.data?.title?.english, entry.data?.title?.native]
-      .filter(Boolean).map((t) => t.toLowerCase());
+    const cachedTitles = [
+      entry.data?.title?.romaji,
+      entry.data?.title?.english,
+      entry.data?.title?.native,
+    ].filter(Boolean).map((t) => t.toLowerCase());
     const searchTitle = title.toLowerCase();
-    const isMismatch = entry.data !== null && cachedTitles.length > 0 &&
+    const isMismatch  =
+      entry.data !== null &&
+      cachedTitles.length > 0 &&
       !cachedTitles.some((t) => t.includes(searchTitle) || searchTitle.includes(t));
     if (!isMismatch) return entry.data;
     delete cache[cacheKey];
     flushAnilistCache();
   }
-
   try {
     const res  = await fetch(ANILIST_API, {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ query: ANILIST_QUERY, variables: { search: title, type } }),
+      body:    JSON.stringify({ query: ANILIST_QUERY, variables: { search: title, type } }),
     });
     const json = await res.json();
     const data = json?.data?.Media || null;
@@ -546,8 +578,11 @@ export const buildAnilistSeasons = (anilistData) => {
     month:    anilistData.startDate?.month || 0,
   };
   const sequels = (anilistData.relations?.edges || [])
-    .filter((e) => e.relationType === "SEQUEL" && e.node.type === "ANIME" &&
-      (e.node.format === "TV" || e.node.format === "TV_SHORT"))
+    .filter((e) =>
+      e.relationType === "SEQUEL" &&
+      e.node.type    === "ANIME"  &&
+      (e.node.format === "TV" || e.node.format === "TV_SHORT")
+    )
     .map((e) => ({
       id:       e.node.id,
       title:    e.node.title?.english || e.node.title?.romaji,
@@ -562,9 +597,9 @@ export const buildAnilistSeasons = (anilistData) => {
 };
 
 export const isAnimeContent = (item, details) => {
-  const d = details || item;
-  const genreIds  = d.genre_ids || (d.genres || []).map((g) => g.id);
-  const countries = d.origin_country || [];
+  const d          = details || item;
+  const genreIds   = d.genre_ids || (d.genres || []).map((g) => g.id);
+  const countries  = d.origin_country || [];
   return genreIds.includes(16) && (d.original_language === "ja" || countries.includes("JP"));
 };
 
@@ -579,8 +614,10 @@ let _egCache = null;
 
 function getEgCache() {
   if (_egCache) return _egCache;
-  try { const raw = localStorage.getItem(EG_CACHE_KEY); _egCache = raw ? JSON.parse(raw) : {}; }
-  catch { _egCache = {}; }
+  try {
+    const raw = localStorage.getItem(EG_CACHE_KEY);
+    _egCache  = raw ? JSON.parse(raw) : {};
+  } catch { _egCache = {}; }
   const now = Date.now();
   for (const key of Object.keys(_egCache)) {
     if (now - _egCache[key].ts > EG_CACHE_TTL) delete _egCache[key];
