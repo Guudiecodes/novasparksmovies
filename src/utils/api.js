@@ -295,13 +295,13 @@ export const PLAYER_SOURCES = [
   },
 
   {
-    id: "vidsrcnl",
+    id: "peachify",
     label: "NS 17",
-    tag: null, note: "★ Multi",
-    tier: 3, moviePriority: 11, tvPriority: 11,
-    browserPriority: 11, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://player.vidsrc.nl/embed/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://player.vidsrc.nl/embed/tv/${id}/${s}/${e}`,
+    tag: null, note: null,
+    tier: 3, moviePriority: 12, tvPriority: 12,
+    browserPriority: 12, browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
   },
 
   {
