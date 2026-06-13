@@ -201,13 +201,13 @@ export const PLAYER_SOURCES = [
   },
 
   {
-    id: "videasy",
+    id: "peachify",
     label: "NS 8",
     tag: null, note: "★ Fast",
     tier: 1, moviePriority: 2, tvPriority: 2,
     browserPriority: 2, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
+    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
   },
 
   {
