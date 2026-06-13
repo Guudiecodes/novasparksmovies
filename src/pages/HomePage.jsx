@@ -407,17 +407,17 @@ export default function HomePage({
         .ns-home-hero-bg.is-fading {
           opacity: 0;
         }
-        .ns-home-hero-grad {
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(
-            to bottom,
-            rgba(10,10,10,0.7) 60%,
-            rgba(10,10,10,0.7) 60%,
-            rgba(10,10,10,0.7) 60%,
-            var(--bg, #0a0a0a) 100%
-          );
-        }
+        // .ns-home-hero-grad {
+        //   position: absolute;
+        //   inset: 0;
+        //   background: linear-gradient(
+        //     to bottom,
+        //     rgba(10,10,10,0.7) 60%,
+        //     rgba(10,10,10,0.7) 60%,
+        //     rgba(10,10,10,0.7) 60%,
+        //     var(--bg, #0a0a0a) 100%
+        //   );
+        // }
         .ns-home-hero-bottom-fade {
           position: absolute;
           bottom: 0;

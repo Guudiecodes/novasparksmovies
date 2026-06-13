@@ -143,50 +143,108 @@ function parsePlayerMessage(data) {
   } catch { return null; }
 }
 
-function DisclaimerBanner() {
-  const text = "⚠  NovaSparks does not host, store, or distribute any media content. Stream availability and quality may vary by region and network conditions. We are not responsible for third-party content or advertisements.   ⚠";
+/* ── Compact info strip below player (no title — already in topnav) ────────── */
+function InfoStrip({ year, voteAverage, runtime, overview, genres }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasLong = overview && overview.length > 200;
   return (
-    <div style={{ background:"rgba(229,9,20,0.05)", borderBottom:"1px solid rgba(229,9,20,0.12)", padding:"5px 0", overflow:"hidden", position:"relative", flexShrink:0 }}>
-      <div style={{ display:"inline-flex", animation:"disclaimerScroll 45s linear infinite", whiteSpace:"nowrap", willChange:"transform" }}>
-        {[0,1].map((i) => (
-          <span key={i} style={{ fontSize:11, color:"rgba(255,255,255,0.42)", paddingRight:80, letterSpacing:0.2 }}>{text}</span>
+    <div className="ns-info-strip">
+      <div className="ns-info-meta">
+        {year && <span className="ns-info-chip">{year}</span>}
+        {voteAverage > 0 && (
+          <span className="ns-info-chip ns-info-rating">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#f5c518" style={{ flexShrink:0 }}>
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+            {voteAverage.toFixed(1)}
+          </span>
+        )}
+        {runtime > 0 && <span className="ns-info-chip">{runtime} min</span>}
+        {(genres || []).slice(0, 3).map((g) => (
+          <span key={g.id} className="ns-info-chip ns-info-genre">{g.name}</span>
         ))}
       </div>
+      {overview && (
+        <div className="ns-info-overview-wrap">
+          <p className={`ns-info-overview${hasLong && !expanded ? " clamped" : ""}`}>{overview}</p>
+          {hasLong && (
+            <button className="ns-info-expand" onClick={() => setExpanded(v => !v)}>
+              {expanded ? "Show less ▲" : "Read more ▼"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
+/* ── Disclaimer with dismiss ✕ ─────────────────────────────────────────────── */
+function DisclaimerBanner() {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem("ns_disclaimer_dismissed") === "1"; } catch { return false; }
+  });
+  const text = "⚠  NovaSparks does not host, store, or distribute any media content. Stream availability and quality may vary by region and network conditions. We are not responsible for third-party content or advertisements.";
+  if (dismissed) return null;
+  return (
+    <div style={{ background:"rgba(229,9,20,0.05)", borderBottom:"1px solid rgba(229,9,20,0.10)", padding:"4px 0", overflow:"hidden", position:"relative", flexShrink:0, display:"flex", alignItems:"center" }}>
+      <div style={{ flex:1, overflow:"hidden" }}>
+        <div style={{ display:"inline-flex", animation:"disclaimerScroll 50s linear infinite", whiteSpace:"nowrap", willChange:"transform" }}>
+          {[0, 1].map((i) => (
+            <span key={i} style={{ fontSize:11, color:"rgba(255,255,255,0.38)", paddingRight:80, letterSpacing:0.2 }}>{text}</span>
+          ))}
+        </div>
+      </div>
+      <button
+        onClick={() => { setDismissed(true); try { localStorage.setItem("ns_disclaimer_dismissed", "1"); } catch {} }}
+        title="Dismiss"
+        style={{ flexShrink:0, background:"none", border:"none", color:"rgba(255,255,255,0.3)", cursor:"pointer", padding:"0 14px", fontSize:14, lineHeight:1, alignSelf:"stretch", display:"flex", alignItems:"center", justifyContent:"center", transition:"color 0.15s" }}
+        onMouseEnter={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}
+        onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.3)"}
+      >✕</button>
+    </div>
+  );
+}
+
+/* ── StealthLoader — loading only, never shows "Ready" toast ───────────────── */
 function StealthLoader({ status, attempt }) {
-  const [show, setShow] = useState(false);
-  const [fade, setFade] = useState(false);
-  const timerRef = useRef(null);
+  const [show, setShow]   = useState(false);
+  const [fade, setFade]   = useState(false);
+  const timerRef          = useRef(null);
+
   useEffect(() => {
     clearTimeout(timerRef.current);
-    if (status === "testing" || status === "retrying") { setShow(true); setFade(false); }
-    else if (status === "found") {
-      setFade(false);
-      timerRef.current = setTimeout(() => { setFade(true); timerRef.current = setTimeout(() => setShow(false), 500); }, 1800);
-    } else if (status === "failed") { setFade(true); timerRef.current = setTimeout(() => setShow(false), 400); }
+    if (status === "testing" || status === "retrying") {
+      setShow(true); setFade(false);
+    } else if (status === "found") {
+      // Immediately fade out — zero "Ready" flash
+      setFade(true);
+      timerRef.current = setTimeout(() => setShow(false), 420);
+    } else if (status === "failed") {
+      setFade(true);
+      timerRef.current = setTimeout(() => setShow(false), 400);
+    }
     return () => clearTimeout(timerRef.current);
   }, [status]);
-  if (!show) return null;
-  const isLoading = status === "testing" || status === "retrying";
+
+  // Only render while actively loading — never render the found/ready state
+  if (!show || status === "found") return null;
+
   const messages = ["Connecting…", "Preparing stream…", "Loading content…", "Almost ready…", "Establishing connection…"];
-  const msg = status === "retrying" ? messages[Math.min((attempt || 1) - 1, messages.length - 1)] : "Connecting…";
+  const msg = status === "retrying"
+    ? messages[Math.min((attempt || 1) - 1, messages.length - 1)]
+    : "Connecting…";
+
   return (
-    <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:9999, background:"rgba(8,8,8,0.96)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"11px 22px", display:"flex", alignItems:"center", gap:10, color:"#fff", fontSize:13, fontWeight:500, backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)", boxShadow:"0 6px 32px rgba(0,0,0,0.7)", opacity:fade?0:1, transition:"opacity 0.45s ease", pointerEvents:"none" }}>
-      {isLoading ? (
-        <><div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.15)", borderTopColor:"#fff", animation:"spin 0.7s linear infinite", flexShrink:0 }} /><span>{msg}</span></>
-      ) : (
-        <><span style={{ color:"#4caf50", fontSize:17, lineHeight:1 }}>✓</span><span>Ready</span></>
-      )}
+    <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:9999, background:"rgba(8,8,8,0.96)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"11px 22px", display:"flex", alignItems:"center", gap:10, color:"#fff", fontSize:13, fontWeight:500, backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)", boxShadow:"0 6px 32px rgba(0,0,0,0.7)", opacity:fade ? 0 : 1, transition:"opacity 0.42s ease", pointerEvents:"none" }}>
+      <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.14)", borderTopColor:"#fff", animation:"spin 0.7s linear infinite", flexShrink:0 }} />
+      <span>{msg}</span>
     </div>
   );
 }
 
 function BlackScreen({ visible }) {
   return (
-    <div style={{ position:"absolute", inset:0, zIndex:4, background:"#000", display:"flex", alignItems:"center", justifyContent:"center", opacity:visible?1:0, transition:"opacity 0.4s ease", pointerEvents:visible?"auto":"none" }}>
+    <div style={{ position:"absolute", inset:0, zIndex:4, background:"#000", display:"flex", alignItems:"center", justifyContent:"center", opacity:visible ? 1 : 0, transition:"opacity 0.4s ease", pointerEvents:visible ? "auto" : "none" }}>
       {visible && <div style={{ width:40, height:40, borderRadius:"50%", border:"3px solid rgba(255,255,255,0.08)", borderTopColor:"rgba(255,255,255,0.5)", animation:"spin 0.9s linear infinite" }} />}
     </div>
   );
@@ -202,7 +260,7 @@ function AllFailedOverlay({ onRetry, onBack }) {
       </div>
       <div style={{ maxWidth:300 }}>
         <div style={{ fontSize:17, fontWeight:700, color:"#fff", lineHeight:1.4, marginBottom:8 }}>Having trouble loading</div>
-        <div style={{ fontSize:13, color:"rgba(255,255,255,0.45)", lineHeight:1.7 }}>We tried every available server and couldn't connect. This can happen on slow networks or during high demand. Tap retry to scan again.</div>
+        <div style={{ fontSize:13, color:"rgba(255,255,255,0.45)", lineHeight:1.7 }}>We tried every available server and couldn't connect. This can happen on slow networks or during high demand.</div>
       </div>
       <div style={{ display:"flex", gap:10, marginTop:4, flexWrap:"wrap", justifyContent:"center" }}>
         <button onClick={onRetry} style={{ background:"var(--red,#e50914)", border:"none", borderRadius:8, color:"#fff", fontSize:14, fontWeight:700, padding:"11px 28px", cursor:"pointer", display:"flex", alignItems:"center", gap:8 }}>
@@ -240,21 +298,59 @@ function PlayerOverlayBtns({ showSkip, showNext, nextEpNum, onSkip, onNext }) {
   );
 }
 
+/* ── Episode card — no blue play icon, polished hover/active states ─────────── */
 function EpisodeThumb({ ep, isActive, onPlay }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div onClick={onPlay} style={{ flexShrink:0, width:210, borderRadius:10, overflow:"hidden", cursor:"pointer", border:isActive?"2px solid var(--red,#e50914)":"2px solid transparent", background:"rgba(255,255,255,0.03)", transition:"border-color 0.15s" }}
-      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor="rgba(255,255,255,0.2)"; }}
-      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor="transparent"; }}>
+    <div
+      onClick={onPlay}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        flexShrink:0, width:210, borderRadius:10, overflow:"hidden", cursor:"pointer",
+        border: isActive ? "2px solid var(--red,#e50914)" : "2px solid transparent",
+        background:"rgba(255,255,255,0.03)",
+        transform: hovered && !isActive ? "scale(1.025)" : "scale(1)",
+        transition:"border-color 0.15s, transform 0.18s cubic-bezier(0.34,1.2,0.64,1), box-shadow 0.18s",
+        boxShadow: isActive
+          ? "0 0 0 1px rgba(229,9,20,0.25), 0 4px 24px rgba(229,9,20,0.15)"
+          : hovered ? "0 4px 20px rgba(0,0,0,0.5)" : "none",
+      }}
+    >
       <div style={{ width:"100%", aspectRatio:"16/9", position:"relative", background:"rgba(255,255,255,0.06)" }}>
-        {ep.still_path
-          ? <img src={imgUrl(ep.still_path,"w300")} alt={ep.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
-          : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.18)", fontSize:22 }}>▶</div>}
-        <div style={{ position:"absolute", top:7, left:8, background:isActive?"var(--red,#e50914)":"rgba(0,0,0,0.78)", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, color:"#fff", letterSpacing:0.5 }}>E{ep.episode_number}</div>
-        {isActive && <div style={{ position:"absolute", inset:0, background:"rgba(229,9,20,0.15)", display:"flex", alignItems:"center", justifyContent:"center" }}><div style={{ width:34, height:34, borderRadius:"50%", background:"var(--red,#e50914)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, boxShadow:"0 2px 16px rgba(229,9,20,0.6)" }}>▶</div></div>}
-        {ep.runtime > 0 && <div style={{ position:"absolute", bottom:7, right:8, background:"rgba(0,0,0,0.75)", borderRadius:4, padding:"2px 6px", fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:600 }}>{ep.runtime}m</div>}
+        {ep.still_path ? (
+          <img
+            src={imgUrl(ep.still_path, "w300")}
+            alt={ep.name}
+            style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", transition:"filter 0.2s", filter: hovered && !isActive ? "brightness(1.1)" : "brightness(1)" }}
+          />
+        ) : (
+          /* Clean dark placeholder — no play icon */
+          <div style={{ width:"100%", height:"100%", background:"linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)" }} />
+        )}
+
+        {/* Episode number badge */}
+        <div style={{ position:"absolute", top:7, left:8, background: isActive ? "var(--red,#e50914)" : "rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, color:"#fff", letterSpacing:0.5, backdropFilter:"blur(4px)" }}>
+          E{ep.episode_number}
+        </div>
+
+        {/* Active glow overlay — no play button, just a subtle tint */}
+        {isActive && (
+          <div style={{ position:"absolute", inset:0, background:"rgba(229,9,20,0.10)", borderRadius:0 }} />
+        )}
+
+        {/* Runtime badge */}
+        {ep.runtime > 0 && (
+          <div style={{ position:"absolute", bottom:7, right:8, background:"rgba(0,0,0,0.72)", borderRadius:4, padding:"2px 6px", fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:600, backdropFilter:"blur(4px)" }}>
+            {ep.runtime}m
+          </div>
+        )}
       </div>
+
       <div style={{ padding:"9px 12px 11px" }}>
-        <div style={{ fontSize:12, fontWeight:700, lineHeight:1.35, color:isActive?"var(--red,#e50914)":"rgba(255,255,255,0.88)", overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{ep.name || `Episode ${ep.episode_number}`}</div>
+        <div style={{ fontSize:12, fontWeight:700, lineHeight:1.35, color: isActive ? "var(--red,#e50914)" : hovered ? "#fff" : "rgba(255,255,255,0.85)", overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", transition:"color 0.15s" }}>
+          {ep.name || `Episode ${ep.episode_number}`}
+        </div>
       </div>
     </div>
   );
@@ -343,12 +439,12 @@ export default function WatchPage({
   const [nonEmbedCaptions, setNonEmbedCaptions] = useState([]);
   const [nonEmbedFetching, setNonEmbedFetching] = useState(false);
   const [nonEmbedRetry,    setNonEmbedRetry]    = useState(0);
-  const nonEmbedAbortRef     = useRef(null);
-  const nonEmbedStreamIdxRef = useRef(0);
-  const nonEmbedSrcBtnRef        = useRef(null);
-  const userManuallySelectedRef  = useRef(false);  // user picked manually — hold before auto-switch
-  const manualSourceIdRef        = useRef(null);   // which source user manually picked
-  const nonEmbedFailCountRef     = useRef(0);      // non-embed total fail counter
+  const nonEmbedAbortRef        = useRef(null);
+  const nonEmbedStreamIdxRef    = useRef(0);
+  const nonEmbedSrcBtnRef       = useRef(null);
+  const userManuallySelectedRef = useRef(false);
+  const manualSourceIdRef       = useRef(null);
+  const nonEmbedFailCountRef    = useRef(0);
 
   const unifiedCaptions = useMemo(() =>
     nonEmbedCaptions
@@ -389,7 +485,6 @@ export default function WatchPage({
     retryQueueRef.current = buildRetryQueue(type, seedSource);
     retryIdxRef.current   = 1;
     sourceFailCountRef.current = {};
-    // New media = clear manual selection lock
     userManuallySelectedRef.current = false;
     manualSourceIdRef.current = null;
     nonEmbedFailCountRef.current = 0;
@@ -419,11 +514,9 @@ export default function WatchPage({
     const cur = retryQueueRef.current[retryIdxRef.current - 1] || playerSource;
     sourceFailCountRef.current[cur] = (sourceFailCountRef.current[cur] || 0) + 1;
 
-    // If user manually picked this source, give it one extra full retry before abandoning
     if (userManuallySelectedRef.current && manualSourceIdRef.current === cur) {
       const failCount = sourceFailCountRef.current[cur] || 0;
       if (failCount < 2) {
-        // Give it another chance — re-queue at front
         setRetryAttempt((a) => a + 1);
         setAutoSourceStatus("retrying");
         setWebviewLoading(true);
@@ -431,7 +524,6 @@ export default function WatchPage({
         storage.set("playerSource", cur);
         return;
       }
-      // Confirmed broken after 2 tries — clear manual lock and move on
       userManuallySelectedRef.current = false;
       manualSourceIdRef.current = null;
     }
@@ -451,7 +543,7 @@ export default function WatchPage({
           setPlayerSource(firstId);
           storage.set("playerSource", firstId);
         } else {
-          // Instead of failing hard, reset and try from the top quietly
+          // Silent reset — never show the hard-fail overlay
           sourceFailCountRef.current = {};
           retryQueueRef.current = buildRetryQueue(type, getDefaultSource());
           retryIdxRef.current = 1;
@@ -482,8 +574,7 @@ export default function WatchPage({
       nonEmbedStreamIdxRef.current = next;
       setNonEmbedStream(nonEmbedSources[next]);
     } else {
-      // All non-embed sources exhausted — silently fall back to embed mode
-      // instead of showing the failure overlay. User won't see a dead end.
+      // Exhausted — silently fall back to embed mode, never show white screen
       nonEmbedFailCountRef.current += 1;
       setIsNonEmbedMode(false);
       storage.set("playerMode", "embed");
@@ -597,7 +688,6 @@ export default function WatchPage({
     setIsActuallyPlaying(false); receivedRealSignalRef.current = false;
     setNonEmbedStream(null); setNonEmbedSources([]); setNonEmbedCaptions([]);
     nonEmbedStreamIdxRef.current = 0;
-    // Reset manual lock only when media changes, not source changes
   }, [playerSource, item?.id, currentSeason, currentEpisode, type]);
 
   const totalEpisodesInSeason = episodeList.length;
@@ -841,7 +931,6 @@ export default function WatchPage({
     if (useHLSPath && (hlsLoading || (hlsStream && !hlsFailed))) return;
     let active = true, iframeHasLoaded = false;
     let probeNetworkFailed = false;
-    // Give manually-selected sources more time before declaring them broken
     const isManualPick = userManuallySelectedRef.current && manualSourceIdRef.current;
     const PROBE_TIMEOUT     = 600;
     const LOAD_REVEAL_DELAY = 200;
@@ -865,9 +954,7 @@ export default function WatchPage({
         } catch {}
       }, 150);
     };
-    const onFail = () => {
-      if (!active) return; active = false; clearAll(); tryNextSource();
-    };
+    const onFail = () => { if (!active) return; active = false; clearAll(); tryNextSource(); };
     const enterSecondChance = () => {
       if (!active) return;
       secondTimerId = setTimeout(() => {
@@ -884,9 +971,7 @@ export default function WatchPage({
       clearTimeout(secondTimerId);
       revealTimerId = setTimeout(() => { if (active) onReady(); }, LOAD_REVEAL_DELAY);
     };
-    iframeErrorCallbackRef.current = () => {
-      if (!active) return; clearTimeout(hardTimerId); enterSecondChance();
-    };
+    iframeErrorCallbackRef.current = () => { if (!active) return; clearTimeout(hardTimerId); enterSecondChance(); };
     probeTimerId = setTimeout(() => probeAbortCtrl.abort(), PROBE_TIMEOUT);
     fetch(embedUrl, { method:"HEAD", mode:"no-cors", signal: probeAbortCtrl.signal })
       .then(() => clearTimeout(probeTimerId))
@@ -954,7 +1039,6 @@ export default function WatchPage({
     clearTimeout(secondChanceRef.current);
     setShowSourceMenu(false);
     if (id === playerSource) return;
-    // Mark as user-initiated — hold on this source longer before auto-switching
     userManuallySelectedRef.current = true;
     manualSourceIdRef.current = id;
     retryQueueRef.current = buildRetryQueue(type, id);
@@ -1043,8 +1127,7 @@ export default function WatchPage({
         : nonEmbedStream.url)
     : null;
 
-  // Never show the AllFailedOverlay — if non-embed fails, silently fall back to embed.
-  // Only show it for embed mode after exhausting all retries AND user did NOT manually pick.
+  // Never show AllFailedOverlay — always auto-recover silently
   const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading && !m3u8Url && !nonEmbedStream && !isNonEmbedMode && !userManuallySelectedRef.current;
   const iframeShieldActive = !isElectron && !isNonEmbedMode && !webviewLoading && !pipOpen;
 
@@ -1071,11 +1154,13 @@ export default function WatchPage({
         @keyframes disclaimerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         @keyframes shimmerSweep { 0% { left: -45%; } 100% { left: 120%; } }
         @keyframes probePulse { 0%,100% { opacity:0.7; } 50% { opacity:1; } }
+
         .ep-carousel::-webkit-scrollbar { display: none; }
         .ep-carousel { scrollbar-width: none; }
         .watch-server-btn { white-space: nowrap !important; }
         .watch-server-btn svg { width: 14px !important; height: 14px !important; flex-shrink: 0; display: block; }
         .ns-probe-bar { transition: opacity 0.25s ease; }
+
         .season-dropdown-menu {
           position:fixed; z-index:99999; background:rgba(10,14,18,0.98);
           border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:6px 0;
@@ -1084,40 +1169,77 @@ export default function WatchPage({
         .season-dropdown-menu button { display:block; width:100%; text-align:left; padding:10px 18px; background:none; border:none; color:var(--text,#fff); font-size:14px; cursor:pointer; transition:background 0.15s; font-family:inherit; }
         .season-dropdown-menu button:hover { background:rgba(255,255,255,0.08); }
         .season-dropdown-menu button.active { color:var(--red,#e50914); font-weight:700; }
+
         .load-more-btn:hover { background: rgba(255,255,255,0.08) !important; }
         .watch-rel-card:hover .watch-rel-overlay { opacity:1 !important; }
+
         .topbar-pip-btn { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:#fff; font-size:13px; font-weight:600; padding:7px 14px; cursor:pointer; transition:background 0.15s; font-family:inherit; white-space:nowrap; }
         .topbar-pip-btn:hover { background:rgba(255,255,255,0.13); }
         .topbar-pip-btn.active { color:var(--red,#e50914); border-color:rgba(229,9,20,0.35); }
         .topbar-pip-btn svg { width:14px !important; height:14px !important; }
+
         .ns-player-badge { display:inline-flex; align-items:center; gap:4px; background:rgba(229,9,20,0.15); border:1px solid rgba(229,9,20,0.3); border-radius:6px; padding:3px 8px; font-size:11px; font-weight:700; color:#e50914; letter-spacing:.5px; }
+
         .adfree-btn { display:flex; align-items:center; gap:5px; border-radius:8px; font-size:12px; font-weight:600; padding:7px 12px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; border:1px solid; }
         .adfree-btn.off { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.12); color:rgba(255,255,255,0.6); }
         .adfree-btn.off:hover { background:rgba(255,255,255,0.12); color:#fff; }
         .adfree-btn.on { background:rgba(76,175,80,0.12); border-color:rgba(76,175,80,0.35); color:#4caf50; }
         .adfree-btn.on:hover { background:rgba(76,175,80,0.2); }
+
         .ns-src-dd-item { transition: background 0.12s; }
         .ns-src-dd-item:hover { background: rgba(255,255,255,0.07) !important; }
+
+        /* ── Info strip below player ── */
+        .ns-info-strip { padding: 14px 20px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .ns-info-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+        .ns-info-chip { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.06); border-radius:5px; padding:3px 8px; white-space:nowrap; }
+        .ns-info-chip.ns-info-rating { color:#f5c518; background:rgba(245,197,24,0.08); font-weight:700; }
+        .ns-info-chip.ns-info-genre { color:rgba(255,255,255,0.4); font-size:11px; }
+        .ns-info-overview-wrap { max-width: 720px; }
+        .ns-info-overview { font-size:13px; color:rgba(255,255,255,0.5); line-height:1.7; margin:0; }
+        .ns-info-overview.clamped { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .ns-info-expand { background:none; border:none; color:rgba(255,255,255,0.35); font-size:12px; cursor:pointer; padding:5px 0 0; font-family:inherit; transition:color 0.15s; }
+        .ns-info-expand:hover { color:rgba(255,255,255,0.8); }
+
+        /* ── Shadow removal ── */
+        .watch-player-wrap { box-shadow: none !important; }
+        .watch-topbar { box-shadow: none !important; }
+
+        /* ── 768px tablet / large mobile ── */
         @media (max-width: 768px) {
-          .watch-topbar { padding: 8px 12px !important; gap: 6px !important; }
-          .watch-topbar-title { font-size: 12px !important; }
+          .watch-topbar { padding: 8px 10px !important; gap: 5px !important; flex-wrap: nowrap; }
+          .watch-topbar-title { font-size: 13px !important; max-width: 150px !important; }
           .watch-topbar-ep { display: none !important; }
           .watch-meta { padding: 12px 14px !important; }
           .watch-meta-actions { flex-wrap: wrap !important; gap: 6px !important; }
           .watch-meta-actions .btn { flex: 1 1 auto !important; font-size: 12px !important; padding: 8px 10px !important; min-width: 80px !important; justify-content: center !important; }
           .ep-carousel { padding-left: 12px !important; gap: 8px !important; }
+          .ep-carousel > div { width: 165px !important; }
           .cards-grid { grid-template-columns: repeat(2, 1fr) !important; }
           .section { padding-left: 14px !important; padding-right: 14px !important; }
           .topbar-pip-btn span { display: none !important; }
           .topbar-pip-btn { padding: 7px 10px !important; }
           .adfree-btn span.adfree-label { display: none !important; }
           .ns-probe-bar .probe-label { display: none !important; }
-          .ns-probe-bar { min-width: 44px !important; padding: 0 12px !important; }
+          .ns-probe-bar { min-width: 40px !important; padding: 0 10px !important; }
+          .ns-info-strip { padding: 12px 14px 8px !important; }
+          .ns-info-overview { font-size: 12px !important; }
+          .watch-server-btn { font-size: 12px !important; padding: 6px 10px !important; }
         }
+
+        /* ── 480px small mobile ── */
         @media (max-width: 480px) {
-          .watch-topbar-title { font-size: 11px !important; max-width: 100px !important; }
+          .watch-topbar { padding: 7px 8px !important; gap: 3px !important; }
+          .watch-topbar-title { font-size: 11px !important; max-width: 80px !important; }
+          .watch-topbar-ep { display: none !important; }
           .watch-server-btn span:first-of-type { display: none; }
-          .watch-topbar { gap: 4px !important; }
+          .adfree-btn { padding: 6px 8px !important; }
+          .topbar-pip-btn { display: none !important; }
+          .cards-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+          .ns-info-strip { padding: 10px 12px 6px !important; }
+          .ep-carousel > div { width: 140px !important; }
+          .ns-player-badge { display: none !important; }
+          .ns-info-chip.ns-info-genre { display: none; }
         }
       `}</style>
 
@@ -1245,7 +1367,8 @@ export default function WatchPage({
         </div>
       </div>
 
-      <div className="watch-player-wrap" style={{ background:"#000", position:"relative" }}>
+      {/* ── Player ── */}
+      <div className="watch-player-wrap" style={{ background:"#000", position:"relative", boxShadow:"none" }}>
         <BlackScreen visible={webviewLoading && !showFailedOverlay && !showNSPlayer && !(isNonEmbedMode && !!nonEmbedStream)} />
         {showFailedOverlay && <AllFailedOverlay onRetry={retryFromScratch} onBack={onBack} />}
 
@@ -1388,6 +1511,18 @@ export default function WatchPage({
         )}
       </div>
 
+      {/* ── Compact info strip — title stays in topnav ── */}
+      {(d?.overview || year || d?.vote_average > 0) && (
+        <InfoStrip
+          year={year}
+          voteAverage={d?.vote_average}
+          runtime={runtimeMinutes}
+          overview={d?.overview}
+          genres={d?.genres || []}
+        />
+      )}
+
+      {/* ── Episodes ── */}
       {type === "tv" && episodeList.length > 0 && (
         <div style={{ paddingTop:28, paddingBottom:4 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", paddingLeft:20, paddingRight:20, marginBottom:16 }}>
