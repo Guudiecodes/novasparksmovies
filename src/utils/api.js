@@ -223,13 +223,13 @@ export const PLAYER_SOURCES = [
   // ── TIER 2 ───────────────────────────────────────────────────────────────
 
   {
-    id: "autoembed",
+    id: "peachify",
     label: "NS 10",
     tag: null, note: "★ Aggregator",
     tier: 2, moviePriority: 4, tvPriority: 4,
     browserPriority: 4, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}?server=1`,
-    tvUrl:    (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}?server=1`,
+    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
   },
 
   {
@@ -238,8 +238,8 @@ export const PLAYER_SOURCES = [
     tag: null, note: "★ HD",
     tier: 2, moviePriority: 5, tvPriority: 5,
     browserPriority: 5, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`,
+    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
   },
 
   // ── TIER 3 ───────────────────────────────────────────────────────────────
@@ -315,13 +315,13 @@ export const PLAYER_SOURCES = [
   },
 
   {
-    id: "vidsrc_xyz",
+    id: "peachify",
     label: "NS 19",
     tag: null, note: null,
     tier: 3, moviePriority: 13, tvPriority: 13,
     browserPriority: 13, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://vidsrc.xyz/embed/movie?tmdb=${id}`,
-    tvUrl:    (id, s, e) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
+    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
+    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
   },
 
   // ── ANIME ─────────────────────────────────────────────────────────────────
