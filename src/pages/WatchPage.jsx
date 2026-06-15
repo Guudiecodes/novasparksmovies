@@ -29,6 +29,8 @@ const MAX_FULL_CYCLES = 2;
 const DEAD_SOURCES = [
   "embedsu", "cinezo", "smashystream", "vapsrc",
   "twoembed", "vidbinge", "vidupto", "primesrc",
+  "vidcorenl",
+  // peachify re-enabled — quality source, ads handled by injected blockers
 ];
 
 const _EMBED_CSS = `
@@ -42,19 +44,68 @@ video{opacity:1!important;visibility:visible!important;display:block!important;}
 [class*="consent-popup"i],[class*="gdpr"i],[id*="adblock"i],[id*="adblocker"i],
 [id*="cookie-banner"i],[id*="cookie-modal"i],[id*="consent"i],
 [class*="popup"i][class*="ad"i],[class*="ad"i][class*="popup"i],
-[class*="interstitial"i],[class*="overlay-ad"i],[class*="ad-overlay"i]{
+[class*="interstitial"i],[class*="overlay-ad"i],[class*="ad-overlay"i],
+[class*="countdown"i][class*="ad"i],[id*="countdown"i][id*="ad"i],
+[class*="skip-ad"i],[id*="skip-ad"i],[class*="ad-skip"i],
+a[href*="advertisement"i],a[href*="adclick"i],a[href*="doubleclick"i],
+iframe[src*="ads"],iframe[src*="adserv"],iframe[src*="doubleclick"],
+iframe[src*="googlesyndication"],iframe[id*="ad-"],iframe[class*="ad-"],
+[class*="peachify-promo"i],[class*="mapple-ad"i],
+div[style*="z-index: 9999"]:not([class*="player"i]):not([class*="video"i]):not([class*="jw"i]):not([class*="plyr"i]){
   display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;}
 `;
 
 const _EMBED_JS = `(function(){
   if(window.__ns)return;window.__ns=true;
+
+  /* ── 1. BLOCK ALL POPUPS & EXTERNAL NAVIGATION ──────────────────────────── */
+  try{
+    // Block window.open (popup ads, redirect new-tabs)
+    window.open=function(){return null;};
+    // Block location-based redirects
+    var _loc=window.location;
+    try{
+      Object.defineProperty(window,'location',{
+        configurable:true,get:function(){return _loc;},
+        set:function(v){
+          try{var u=new URL(v,_loc.href);if(u.origin===_loc.origin)_loc.assign(u.href);}catch(e){}
+        }
+      });
+    }catch(e){}
+    // Block external link clicks and _blank targets
+    document.addEventListener('click',function(e){
+      var el=e.target;
+      for(var i=0;i<6;i++){
+        if(!el)break;
+        if(el.tagName==='A'){
+          var href=el.href||'';var tgt=(el.target||'').toLowerCase();
+          if(tgt==='_blank'||tgt==='_top'||tgt==='_parent'){
+            try{var u=new URL(href);if(u.origin!==window.location.origin){e.preventDefault();e.stopImmediatePropagation();return;}}
+            catch(er){e.preventDefault();e.stopImmediatePropagation();return;}
+          }
+          break;
+        }
+        el=el.parentElement;
+      }
+    },true);
+    // Block meta-refresh redirects
+    document.querySelectorAll('meta[http-equiv="refresh"]').forEach(function(m){m.remove();});
+    var _metaObs=new MutationObserver(function(muts){
+      muts.forEach(function(m){m.addedNodes.forEach(function(n){
+        if(n.tagName==='META'&&(n.httpEquiv||'').toLowerCase()==='refresh')n.remove();
+      });});
+    });
+    if(document.head)_metaObs.observe(document.head,{childList:true});
+  }catch(e){}
+
+  /* ── 2. KILL AD OVERLAYS ─────────────────────────────────────────────────── */
   var BAD=['FETCHING, ONE MOMENT...','FETCHING','ONE MOMENT...','PLEASE WAIT','LOADING...','LOADING','BUFFERING',
     'SOURCE NOT FOUND','VIDEO NOT FOUND','MEDIA NOT FOUND','CONTENT NOT FOUND','FILE NOT FOUND','NOT FOUND','404',
     'NO SOURCE','NO VIDEO','COULD NOT CONNECT','CONNECTION ERROR','FAILED TO LOAD','LOAD ERROR','NETWORK ERROR',
     'SERVER ERROR','INTERNAL SERVER ERROR','503','502','500','VIDEO UNAVAILABLE','MEDIA UNAVAILABLE',
     'CONTENT UNAVAILABLE','EMBED ERROR','PLAYER ERROR','STREAM ERROR','STREAM NOT FOUND','API ERROR',
     'VIDSRC','VIDLINK','EMBEDSU','MOVIESAPI','AUTOEMBED','VIDSRC.CC','VIDSRC.NET','VIDSRC.TO','VIDSRC.FYI',
-    'VIDFAST','SMASHY','VIDEASY','ERROR LOADING','ERROR FETCHING','UNABLE TO LOAD','UNABLE TO PLAY',
+    'VIDFAST','SMASHY','VIDEASY','PEACHIFY','MAPPLE','ERROR LOADING','ERROR FETCHING','UNABLE TO LOAD','UNABLE TO PLAY',
     'PLAYBACK ERROR','TRY AGAIN LATER','SOMETHING WENT WRONG','ACCESS DENIED','FORBIDDEN','REGION LOCKED',
     'GEO BLOCKED','PLEASE TRY ANOTHER SERVER','TRY ANOTHER SERVER','SWITCH SERVER',
     'THIS VIDEO IS NOT AVAILABLE','VIDEO NOT AVAILABLE','NOT AVAILABLE','CANNOT LOAD VIDEO',
@@ -64,15 +115,18 @@ const _EMBED_JS = `(function(){
     'AD BLOCKER DETECTED','DISABLE YOUR ADBLOCK','DISABLE ADBLOCK','TURN OFF ADBLOCK',
     'WHITELIST THIS SITE','PLEASE DISABLE','INSTALL ADBLOCKER','REMOVE ADS',
     'COOKIE CONSENT','ACCEPT COOKIES','ACCEPT ALL COOKIES','MANAGE COOKIES',
-    'WE USE COOKIES','THIS SITE USES COOKIES','ADVERTISEMENT','YOUR AD BLOCKER'];
-  var HIDE='display:none!important;opacity:0!important;pointer-events:none!important;visibility:hidden!important;';
+    'WE USE COOKIES','THIS SITE USES COOKIES','ADVERTISEMENT','YOUR AD BLOCKER',
+    'SKIP AD','SKIP ADS','WATCH AD','SPONSORED'];
+  var HIDE='display:none!important;opacity:0!important;pointer-events:none!important;visibility:hidden!important;position:fixed!important;z-index:-9999!important;';
   function killAdOverlays(){
     try{
       document.querySelectorAll(
         '[class*="modal"i],[class*="popup"i],[class*="adblock"i],[class*="ad-block"i],'
         +'[class*="adblocker"i],[class*="ad-overlay"i],[class*="interstitial"i],'
         +'[id*="adblock"i],[id*="popup"i],[id*="ad-modal"i],[class*="consent"i],'
-        +'[class*="cookie-banner"i],[class*="cookie-modal"i],[class*="gdpr"i]'
+        +'[class*="cookie-banner"i],[class*="cookie-modal"i],[class*="gdpr"i],'
+        +'[class*="ad-container"i],[class*="advert"i],[id*="advert"i],'
+        +'[class*="countdown"i][class*="ad"i],[class*="skip-ad"i]'
       ).forEach(function(el){
         if(!el||!el.textContent)return;
         var t=el.textContent.toUpperCase();
@@ -88,7 +142,11 @@ const _EMBED_JS = `(function(){
           }
         }catch(e2){}
       }
-      document.querySelectorAll('iframe[src*="ads"],iframe[src*="adserv"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[id*="ad-"],iframe[class*="ad-"]').forEach(function(el){el.style.cssText=HIDE;});
+      document.querySelectorAll(
+        'iframe[src*="ads"],iframe[src*="adserv"],iframe[src*="doubleclick"],'
+        +'iframe[src*="googlesyndication"],iframe[id*="ad-"],iframe[class*="ad-"],'
+        +'script[src*="ads."],script[src*="doubleclick"],script[src*="adsbygoogle"]'
+      ).forEach(function(el){el.style.cssText=HIDE;});
     }catch(e){}
   }
   function clean(){
@@ -131,19 +189,41 @@ function parsePlayerMessage(data) {
   try {
     const d = typeof data === "string" ? JSON.parse(data) : data;
     if (!d || typeof d !== "object") return null;
+
     if (d.type === "PLAYER_EVENT" && d.data?.event) {
       const evt = String(d.data.event).toLowerCase();
       if (evt === "play" || evt === "playing") return "play";
       if (evt === "pause" || evt === "complete" || evt === "ended") return "pause";
+      if (evt === "error" || evt === "load_error" || evt === "stream_error") return "error";
     }
-    const evt = String(d.event || d.type || d.action || d.playbackState || d.state || "").toLowerCase();
-    if (evt === "play" || evt === "playing" || evt === "resume" || evt === "started" || d.playing === true || d.isPlaying === true || d.playbackState === "playing") return "play";
-    if (evt === "pause" || evt === "paused" || evt === "stop" || evt === "stopped" || evt === "ended" || evt === "complete" || evt === "finish" || evt === "finished" || evt === "idle" || d.playing === false || d.isPlaying === false || d.playbackState === "paused" || d.playbackState === "ended") return "pause";
+
+    const evt = String(
+      d.event || d.type || d.action || d.playbackState || d.state || ""
+    ).toLowerCase();
+
+    if (
+      evt === "error" || evt === "player_error" || evt === "load_error" ||
+      evt === "stream_error" || evt === "source_error" || evt === "media_error" ||
+      d.error === true || d.hasError === true || d.isError === true ||
+      (d.error && typeof d.error === "object" && d.error.code > 0)
+    ) return "error";
+
+    if (
+      evt === "play" || evt === "playing" || evt === "resume" || evt === "started" ||
+      d.playing === true || d.isPlaying === true || d.playbackState === "playing"
+    ) return "play";
+
+    if (
+      evt === "pause" || evt === "paused" || evt === "stop" || evt === "stopped" ||
+      evt === "ended" || evt === "complete" || evt === "finish" || evt === "finished" ||
+      evt === "idle" || d.playing === false || d.isPlaying === false ||
+      d.playbackState === "paused" || d.playbackState === "ended"
+    ) return "pause";
+
     return null;
   } catch { return null; }
 }
 
-/* ── Compact info strip below player (no title — already in topnav) ────────── */
 function InfoStrip({ year, voteAverage, runtime, overview, genres }) {
   const [expanded, setExpanded] = useState(false);
   const hasLong = overview && overview.length > 200;
@@ -178,7 +258,6 @@ function InfoStrip({ year, voteAverage, runtime, overview, genres }) {
   );
 }
 
-/* ── Disclaimer with dismiss ✕ ─────────────────────────────────────────────── */
 function DisclaimerBanner() {
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem("ns_disclaimer_dismissed") === "1"; } catch { return false; }
@@ -205,7 +284,6 @@ function DisclaimerBanner() {
   );
 }
 
-/* ── StealthLoader — loading only, never shows "Ready" toast ───────────────── */
 function StealthLoader({ status, attempt }) {
   const [show, setShow]   = useState(false);
   const [fade, setFade]   = useState(false);
@@ -216,7 +294,6 @@ function StealthLoader({ status, attempt }) {
     if (status === "testing" || status === "retrying") {
       setShow(true); setFade(false);
     } else if (status === "found") {
-      // Immediately fade out — zero "Ready" flash
       setFade(true);
       timerRef.current = setTimeout(() => setShow(false), 420);
     } else if (status === "failed") {
@@ -226,7 +303,6 @@ function StealthLoader({ status, attempt }) {
     return () => clearTimeout(timerRef.current);
   }, [status]);
 
-  // Only render while actively loading — never render the found/ready state
   if (!show || status === "found") return null;
 
   const messages = ["Connecting…", "Preparing stream…", "Loading content…", "Almost ready…", "Establishing connection…"];
@@ -298,7 +374,6 @@ function PlayerOverlayBtns({ showSkip, showNext, nextEpNum, onSkip, onNext }) {
   );
 }
 
-/* ── Episode card — no blue play icon, polished hover/active states ─────────── */
 function EpisodeThumb({ ep, isActive, onPlay }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -325,34 +400,38 @@ function EpisodeThumb({ ep, isActive, onPlay }) {
             style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", transition:"filter 0.2s", filter: hovered && !isActive ? "brightness(1.1)" : "brightness(1)" }}
           />
         ) : (
-          /* Clean dark placeholder — no play icon */
           <div style={{ width:"100%", height:"100%", background:"linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)" }} />
         )}
-
-        {/* Episode number badge */}
         <div style={{ position:"absolute", top:7, left:8, background: isActive ? "var(--red,#e50914)" : "rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, color:"#fff", letterSpacing:0.5, backdropFilter:"blur(4px)" }}>
           E{ep.episode_number}
         </div>
-
-        {/* Active glow overlay — no play button, just a subtle tint */}
         {isActive && (
           <div style={{ position:"absolute", inset:0, background:"rgba(229,9,20,0.10)", borderRadius:0 }} />
         )}
-
-        {/* Runtime badge */}
         {ep.runtime > 0 && (
           <div style={{ position:"absolute", bottom:7, right:8, background:"rgba(0,0,0,0.72)", borderRadius:4, padding:"2px 6px", fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:600, backdropFilter:"blur(4px)" }}>
             {ep.runtime}m
           </div>
         )}
       </div>
-
       <div style={{ padding:"9px 12px 11px" }}>
         <div style={{ fontSize:12, fontWeight:700, lineHeight:1.35, color: isActive ? "var(--red,#e50914)" : hovered ? "#fff" : "rgba(255,255,255,0.85)", overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", transition:"color 0.15s" }}>
           {ep.name || `Episode ${ep.episode_number}`}
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── RefreshIcon inline SVG ─────────────────────────────────────────────────── */
+function RefreshIcon({ spinning }) {
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 24 24" fill="currentColor"
+      style={{ flexShrink:0, transition:"transform 0.3s ease", animation: spinning ? "spin 0.7s linear infinite" : "none" }}
+    >
+      <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+    </svg>
   );
 }
 
@@ -408,6 +487,8 @@ export default function WatchPage({
 
   const [probeProgress, setProbeProgress] = useState(8);
   const [showLoadBar,   setShowLoadBar]   = useState(false);
+  /* ── Refresh button spin state ── */
+  const [refreshSpinning, setRefreshSpinning] = useState(false);
 
   const [related,        setRelated]        = useState([]);
   const [relatedPage,    setRelatedPage]    = useState(1);
@@ -488,6 +569,13 @@ export default function WatchPage({
     userManuallySelectedRef.current = false;
     manualSourceIdRef.current = null;
     nonEmbedFailCountRef.current = 0;
+
+    if (!isNonEmbedMode) {
+      invalidateSourceCache(type, item?.id, currentSeason, currentEpisode);
+      setAutoSourceStatus("testing");
+      setCycleCount(0);
+      setRetryAttempt(0);
+    }
   }, [item?.id, currentSeason, currentEpisode, type]); // eslint-disable-line
 
   useEffect(() => {
@@ -543,7 +631,6 @@ export default function WatchPage({
           setPlayerSource(firstId);
           storage.set("playerSource", firstId);
         } else {
-          // Silent reset — never show the hard-fail overlay
           sourceFailCountRef.current = {};
           retryQueueRef.current = buildRetryQueue(type, getDefaultSource());
           retryIdxRef.current = 1;
@@ -574,7 +661,6 @@ export default function WatchPage({
       nonEmbedStreamIdxRef.current = next;
       setNonEmbedStream(nonEmbedSources[next]);
     } else {
-      // Exhausted — silently fall back to embed mode, never show white screen
       nonEmbedFailCountRef.current += 1;
       setIsNonEmbedMode(false);
       storage.set("playerMode", "embed");
@@ -594,6 +680,9 @@ export default function WatchPage({
 
   const retryFromScratch = useCallback(() => {
     clearTimeout(secondChanceRef.current);
+    /* spin the refresh icon briefly */
+    setRefreshSpinning(true);
+    setTimeout(() => setRefreshSpinning(false), 900);
     if (isNonEmbedMode) {
       setAutoSourceStatus("testing"); setWebviewLoading(true);
       nonEmbedStreamIdxRef.current = 0;
@@ -778,8 +867,9 @@ export default function WatchPage({
       const signal = parsePlayerMessage(e.data);
       if (!signal) return;
       receivedRealSignalRef.current = true;
-      if (signal === "play") { webBeastReadyRef.current?.(); setIsActuallyPlaying(true); }
+      if (signal === "play")  { webBeastReadyRef.current?.(); setIsActuallyPlaying(true); }
       if (signal === "pause") setIsActuallyPlaying(false);
+      if (signal === "error") { webBeastFailRef.current?.(); }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
@@ -929,70 +1019,102 @@ export default function WatchPage({
     if (isElectron || isNonEmbedMode) return;
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
     if (useHLSPath && (hlsLoading || (hlsStream && !hlsFailed))) return;
-    let active = true, iframeHasLoaded = false;
+
+    let active = true;
+    let iframeHasLoaded = false;
     let probeNetworkFailed = false;
-    const isManualPick = userManuallySelectedRef.current && manualSourceIdRef.current;
-    const PROBE_TIMEOUT     = 600;
-    const LOAD_REVEAL_DELAY = 200;
-    const HARD_TIMEOUT_MS   = isManualPick ? 5000 : 2500;
-    const SECOND_CHANCE_MS  = isManualPick ? 2000 : 800;
-    let probeAbortCtrl = new AbortController();
-    let probeTimerId = null, hardTimerId = null, revealTimerId = null, secondTimerId = null;
+
+    const isManualPick = userManuallySelectedRef.current &&
+                         manualSourceIdRef.current === playerSource;
+    const srcDef = PLAYER_SOURCES.find((s) => s.id === playerSource);
+    const tier   = srcDef?.tier ?? 2;
+
+    const LOAD_TIMEOUT   = isManualPick ? 14000
+                         : tier === 1   ?  5000
+                         : tier === 2   ?  7000
+                         :                 9000;
+
+    const POST_LOAD_GRACE = isManualPick ? 5000
+                          : tier === 1   ? 3000
+                          : tier === 2   ? 4500
+                          :                6000;
+
+    let probeKillId  = null;
+    let postGraceId  = null;
+    let loadTimeoutId = null;
+    const probeAbortCtrl = new AbortController();
+
     const clearAll = () => {
-      clearTimeout(probeTimerId); clearTimeout(hardTimerId);
-      clearTimeout(revealTimerId); clearTimeout(secondTimerId);
+      clearTimeout(probeKillId);
+      clearTimeout(postGraceId);
+      clearTimeout(loadTimeoutId);
       try { probeAbortCtrl.abort(); } catch {}
     };
+
     const onReady = () => {
-      if (!active) return; active = false; clearAll();
+      if (!active) return;
+      active = false;
+      clearAll();
       setAutoSourceStatus((s) => (s === "testing" || s === "retrying") ? "found" : s);
       setWebviewLoading(false);
       setTimeout(() => {
         try {
-          iframeRef.current?.contentWindow?.postMessage({ event:"play", action:"play" }, "*");
-          iframeRef.current?.contentWindow?.postMessage({ type:"play" }, "*");
+          iframeRef.current?.contentWindow?.postMessage({ event: "play", action: "play" }, "*");
+          iframeRef.current?.contentWindow?.postMessage({ type: "play" }, "*");
         } catch {}
       }, 150);
     };
-    const onFail = () => { if (!active) return; active = false; clearAll(); tryNextSource(); };
-    const enterSecondChance = () => {
+
+    const onFail = () => {
       if (!active) return;
-      secondTimerId = setTimeout(() => {
-        if (!active) return;
-        if (iframeHasLoaded && !probeNetworkFailed) onReady(); else onFail();
-      }, SECOND_CHANCE_MS);
+      active = false;
+      clearAll();
+      tryNextSource();
     };
+
     webBeastReadyRef.current = onReady;
     webBeastFailRef.current  = onFail;
+
     iframeLoadCallbackRef.current = () => {
       if (!active || probeNetworkFailed) return;
       iframeHasLoaded = true;
-      clearTimeout(hardTimerId);
-      clearTimeout(secondTimerId);
-      revealTimerId = setTimeout(() => { if (active) onReady(); }, LOAD_REVEAL_DELAY);
+      clearTimeout(loadTimeoutId);
+      postGraceId = setTimeout(() => {
+        if (active) onReady();
+      }, POST_LOAD_GRACE);
     };
-    iframeErrorCallbackRef.current = () => { if (!active) return; clearTimeout(hardTimerId); enterSecondChance(); };
-    probeTimerId = setTimeout(() => probeAbortCtrl.abort(), PROBE_TIMEOUT);
-    fetch(embedUrl, { method:"HEAD", mode:"no-cors", signal: probeAbortCtrl.signal })
-      .then(() => clearTimeout(probeTimerId))
+
+    iframeErrorCallbackRef.current = () => {
+      if (!active) return;
+      if (iframeHasLoaded) return;
+      clearTimeout(loadTimeoutId);
+      setTimeout(() => { if (active) onFail(); }, 300);
+    };
+
+    probeKillId = setTimeout(() => probeAbortCtrl.abort(), 900);
+    fetch(embedUrl, { method: "HEAD", mode: "no-cors", signal: probeAbortCtrl.signal })
+      .then(() => clearTimeout(probeKillId))
       .catch((err) => {
-        clearTimeout(probeTimerId);
+        clearTimeout(probeKillId);
         if (!active || err.name === "AbortError") return;
         probeNetworkFailed = true;
         onFail();
       });
-    hardTimerId = setTimeout(() => {
-      if (!active) return;
-      if (iframeHasLoaded && !probeNetworkFailed) onReady(); else enterSecondChance();
-    }, HARD_TIMEOUT_MS);
+
+    loadTimeoutId = setTimeout(() => {
+      if (!active || iframeHasLoaded) return;
+      onFail();
+    }, LOAD_TIMEOUT);
+
     return () => {
-      active = false; clearAll();
+      active = false;
+      clearAll();
       if (webBeastReadyRef.current === onReady) webBeastReadyRef.current = null;
       if (webBeastFailRef.current  === onFail)  webBeastFailRef.current  = null;
       iframeLoadCallbackRef.current  = null;
       iframeErrorCallbackRef.current = null;
     };
-  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, isRestrictedForServers, hlsLoading, hlsStream, hlsFailed, useHLSPath]);
+  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, hlsLoading, hlsStream, hlsFailed, useHLSPath]); // eslint-disable-line
 
   useEffect(() => {
     if (!isElectron || showNSPlayer || isNonEmbedMode) return;
@@ -1063,11 +1185,21 @@ export default function WatchPage({
     return () => document.removeEventListener("mousedown", close);
   }, [showSourceMenu, showSeasonMenu]);
 
-  const goToEpisode = useCallback((s, e) => { setCurrentSeason(s); setCurrentEpisode(e); setShowNextEp(false); setShowSkipIntro(false); }, []);
+  const goToEpisode = useCallback((s, e) => {
+    setCurrentSeason(s);
+    setCurrentEpisode(e);
+    setShowNextEp(false);
+    setShowSkipIntro(false);
+    /* close any open menus immediately so re-render is clean */
+    setShowSeasonMenu(false);
+    setShowSourceMenu(false);
+  }, []);
+
   const handleNextEpisode = useCallback(() => {
     if (currentEpisode < totalEpisodesInSeason) goToEpisode(currentSeason, currentEpisode + 1);
     else if (currentSeason < totalSeasons) goToEpisode(currentSeason + 1, 1);
   }, [currentEpisode, currentSeason, totalEpisodesInSeason, totalSeasons, goToEpisode]);
+
   const handleSkipIntro = useCallback(() => {
     setShowSkipIntro(false);
     if (!isElectron) return;
@@ -1127,7 +1259,6 @@ export default function WatchPage({
         : nonEmbedStream.url)
     : null;
 
-  // Never show AllFailedOverlay — always auto-recover silently
   const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading && !m3u8Url && !nonEmbedStream && !isNonEmbedMode && !userManuallySelectedRef.current;
   const iframeShieldActive = !isElectron && !isNonEmbedMode && !webviewLoading && !pipOpen;
 
@@ -1154,6 +1285,7 @@ export default function WatchPage({
         @keyframes disclaimerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         @keyframes shimmerSweep { 0% { left: -45%; } 100% { left: 120%; } }
         @keyframes probePulse { 0%,100% { opacity:0.7; } 50% { opacity:1; } }
+        @keyframes refreshPop { 0% { transform:scale(1); } 40% { transform:scale(0.88); } 100% { transform:scale(1); } }
 
         .ep-carousel::-webkit-scrollbar { display: none; }
         .ep-carousel { scrollbar-width: none; }
@@ -1178,6 +1310,18 @@ export default function WatchPage({
         .topbar-pip-btn.active { color:var(--red,#e50914); border-color:rgba(229,9,20,0.35); }
         .topbar-pip-btn svg { width:14px !important; height:14px !important; }
 
+        /* Refresh button */
+        .ns-refresh-btn {
+          display:flex; align-items:center; gap:6px;
+          background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+          border-radius:8px; color:rgba(255,255,255,0.75); font-size:13px; font-weight:600;
+          padding:7px 14px; cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s;
+          font-family:inherit; white-space:nowrap; line-height:1; flex-shrink:0;
+        }
+        .ns-refresh-btn:hover { background:rgba(255,255,255,0.13); color:#fff; border-color:rgba(255,255,255,0.22); }
+        .ns-refresh-btn:active { animation:refreshPop 0.25s ease; }
+        .ns-refresh-btn.spinning { border-color:rgba(229,9,20,0.3); color:rgba(229,9,20,0.9); }
+
         .ns-player-badge { display:inline-flex; align-items:center; gap:4px; background:rgba(229,9,20,0.15); border:1px solid rgba(229,9,20,0.3); border-radius:6px; padding:3px 8px; font-size:11px; font-weight:700; color:#e50914; letter-spacing:.5px; }
 
         .adfree-btn { display:flex; align-items:center; gap:5px; border-radius:8px; font-size:12px; font-weight:600; padding:7px 12px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; border:1px solid; }
@@ -1189,7 +1333,6 @@ export default function WatchPage({
         .ns-src-dd-item { transition: background 0.12s; }
         .ns-src-dd-item:hover { background: rgba(255,255,255,0.07) !important; }
 
-        /* ── Info strip below player ── */
         .ns-info-strip { padding: 14px 20px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .ns-info-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
         .ns-info-chip { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.06); border-radius:5px; padding:3px 8px; white-space:nowrap; }
@@ -1201,11 +1344,9 @@ export default function WatchPage({
         .ns-info-expand { background:none; border:none; color:rgba(255,255,255,0.35); font-size:12px; cursor:pointer; padding:5px 0 0; font-family:inherit; transition:color 0.15s; }
         .ns-info-expand:hover { color:rgba(255,255,255,0.8); }
 
-        /* ── Shadow removal ── */
         .watch-player-wrap { box-shadow: none !important; }
         .watch-topbar { box-shadow: none !important; }
 
-        /* ── 768px tablet / large mobile ── */
         @media (max-width: 768px) {
           .watch-topbar { padding: 8px 10px !important; gap: 5px !important; flex-wrap: nowrap; }
           .watch-topbar-title { font-size: 13px !important; max-width: 150px !important; }
@@ -1225,9 +1366,10 @@ export default function WatchPage({
           .ns-info-strip { padding: 12px 14px 8px !important; }
           .ns-info-overview { font-size: 12px !important; }
           .watch-server-btn { font-size: 12px !important; padding: 6px 10px !important; }
+          .ns-refresh-btn span { display: none !important; }
+          .ns-refresh-btn { padding: 7px 10px !important; }
         }
 
-        /* ── 480px small mobile ── */
         @media (max-width: 480px) {
           .watch-topbar { padding: 7px 8px !important; gap: 3px !important; }
           .watch-topbar-title { font-size: 11px !important; max-width: 80px !important; }
@@ -1341,6 +1483,16 @@ export default function WatchPage({
               <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.5 }}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
             </button>
           )}
+
+          {/* ── Refresh button ────────────────────────────────────────────── */}
+          <button
+            className={`ns-refresh-btn${refreshSpinning ? " spinning" : ""}`}
+            onClick={retryFromScratch}
+            title="Refresh player"
+          >
+            <RefreshIcon spinning={refreshSpinning} />
+            <span>Refresh</span>
+          </button>
 
           <DataMeterWidget
             isPlaying={!webviewLoading && !pipOpen}
@@ -1511,7 +1663,6 @@ export default function WatchPage({
         )}
       </div>
 
-      {/* ── Compact info strip — title stays in topnav ── */}
       {(d?.overview || year || d?.vote_average > 0) && (
         <InfoStrip
           year={year}
@@ -1522,7 +1673,6 @@ export default function WatchPage({
         />
       )}
 
-      {/* ── Episodes ── */}
       {type === "tv" && episodeList.length > 0 && (
         <div style={{ paddingTop:28, paddingBottom:4 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", paddingLeft:20, paddingRight:20, marginBottom:16 }}>
@@ -1542,7 +1692,9 @@ export default function WatchPage({
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.7 }}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
                 </button>
                 {showSeasonMenu && seasonMenuPos && (
-                  <div className="season-dropdown-menu" style={{ top:seasonMenuPos.top, left:seasonMenuPos.left }}>
+                  // FIX: data-ns-dropdown prevents the global mousedown handler from
+                  // closing the menu before the season button's onClick fires.
+                  <div className="season-dropdown-menu" data-ns-dropdown="1" style={{ top:seasonMenuPos.top, left:seasonMenuPos.left }}>
                     {seasons.map((s) => (
                       <button key={s.season_number} className={currentSeason === s.season_number ? "active" : ""}
                         onClick={() => { goToEpisode(s.season_number, 1); setShowSeasonMenu(false); }}>

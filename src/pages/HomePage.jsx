@@ -69,10 +69,10 @@ function SocialSlideNoti() {
       <div className="ns-social-noti-inner">
         <div className="ns-social-noti-label">Join our community</div>
         <div className="ns-social-noti-icons">
-          <a href="https://discord.gg/9BWtjg9c9E" target="_blank" rel="noopener noreferrer" aria-label="Discord" title="Discord"><DiscordIcon size={16} /></a>
+          <a href="https://discord.gg/6UyqP9Qr" target="_blank" rel="noopener noreferrer" aria-label="Discord" title="Discord"><DiscordIcon size={16} /></a>
           <a href="#" target="_blank" rel="noopener noreferrer" aria-label="X" title="X"><XIcon size={16} /></a>
-          <a href="#" target="_blank" rel="noopener noreferrer" aria-label="Facebook" title="Facebook"><FacebookIcon size={16} /></a>
-          <a href="#" target="_blank" rel="noopener noreferrer" aria-label="TikTok" title="TikTok"><TikTokIcon size={16} /></a>
+          <a href="https://www.facebook.com/Novasparksmovies" target="_blank" rel="noopener noreferrer" aria-label="Facebook" title="Facebook"><FacebookIcon size={16} /></a>
+          <a href="https://www.tiktok.com/@novaspark4k" target="_blank" rel="noopener noreferrer" aria-label="TikTok" title="TikTok"><TikTokIcon size={16} /></a>
         </div>
       </div>
     </div>

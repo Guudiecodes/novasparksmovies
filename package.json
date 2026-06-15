@@ -26,7 +26,8 @@
     "gsap": "^3.15.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^7.16.0"
+    "react-router-dom": "^7.16.0",
+    "webtorrent": "^3.0.16"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.7.0",

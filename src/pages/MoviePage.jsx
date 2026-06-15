@@ -22,7 +22,10 @@ import { storage }       from "../utils/storage";
 import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } from "../utils/ageRating";
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate       from "../components/PremiumGate";
+import NativeBanner from '../components/NativeBanner';
 
+// Place between movie rows:
+<NativeBanner />
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],

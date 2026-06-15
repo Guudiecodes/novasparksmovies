@@ -180,148 +180,115 @@ export async function fetchAllNonEmbedSources(type, id, season, episode, {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // PLAYER SOURCES  (Embed mode — iframe-based)
-// Labels use NS numbering for public confidentiality.
-// NS 1–6 live in /api/sources.js (non-embed AD-free path).
-// NS 7–20 are the embed iframe sources below.
-// Dead servers removed: primesrc, vapsrc, cinezo, smashystream, twoembed, vidbinge, vidupto
+//
+// TIER 1 — Zero-redirect direct players. URL loads the player immediately,
+//           no intermediate hops. These are tried first every time.
+//
+// TIER 2 — Reliable aggregators / light-redirect servers. Solid second line.
+//
+// TIER 3 — Last-resort fallbacks. Known to have ad-popups or internal
+//           redirect chains. Only tried after tier 1 and 2 both fail.
+//
+// DEAD (removed): primesrc, vapsrc, cinezo, smashystream, twoembed,
+//                 vidbinge, vidupto, embedsu
 // ═════════════════════════════════════════════════════════════════════════════
 
 export const PLAYER_SOURCES = [
 
-  // ── TIER 1 ───────────────────────────────────────────────────────────────
+  // ── TIER 1 — Zero-redirect, instant load ─────────────────────────────────
 
   {
     id: "vidlink",
     label: "NS 7",
     tag: null, note: "★ Fast",
-    tier: 1, moviePriority: 1, tvPriority: 1,
-    browserPriority: 1, browserSafe: true, supportsProgress: true,
+    tier: 1, moviePriority: 1, tvPriority: 1, browserPriority: 1,
+    browserSafe: true, supportsProgress: true, zeroRedirect: true,
     movieUrl: (id) => `https://vidlink.pro/movie/${id}?ads=0`,
     tvUrl:    (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}?ads=0`,
-  },
-
-  {
-    id: "peachify",
-    label: "NS 8",
-    tag: null, note: "★ Fast",
-    tier: 1, moviePriority: 2, tvPriority: 2,
-    browserPriority: 2, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
   },
 
   {
     id: "multiembed",
     label: "NS 9",
     tag: null, note: "★ Multi-Server",
-    tier: 1, moviePriority: 3, tvPriority: 3,
-    browserPriority: 3, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1&server=2`,
-    tvUrl:    (id, s, e) => `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}&server=2`,
-  },
-
-  // ── TIER 2 ───────────────────────────────────────────────────────────────
-
-  {
-    id: "peachify",
-    label: "NS 10",
-    tag: null, note: "★ Aggregator",
-    tier: 2, moviePriority: 4, tvPriority: 4,
-    browserPriority: 4, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
+    tier: 1, moviePriority: 2, tvPriority: 2, browserPriority: 2,
+    browserSafe: true, supportsProgress: true, zeroRedirect: true,
+    movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1`,
+    tvUrl:    (id, s, e) => `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`,
   },
 
   {
-    id: "vidsrc_cc",
-    label: "NS 11",
-    tag: null, note: "★ HD",
-    tier: 2, moviePriority: 5, tvPriority: 5,
-    browserPriority: 5, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
-  },
-
-  // ── TIER 3 ───────────────────────────────────────────────────────────────
-
-  {
-    id: "vidsrc_me",
-    label: "NS 12",
-    tag: null, note: null,
-    tier: 3, moviePriority: 6, tvPriority: 6,
-    browserPriority: 6, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://vidsrc.me/embed/movie?tmdb=${id}`,
-    tvUrl:    (id, s, e) => `https://vidsrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
-  },
-
-  {
-    id: "vidfast",
-    label: "NS 13",
-    tag: null, note: "★ Multi",
-    tier: 3, moviePriority: 7, tvPriority: 7,
-    browserPriority: 7, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://vidfast.pro/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://vidfast.pro/tv/${id}/${s}/${e}`,
+    id: "pstream",
+    label: "NS 15",
+    tag: null, note: "★ Direct",
+    tier: 1, moviePriority: 3, tvPriority: 3, browserPriority: 3,
+    browserSafe: true, supportsProgress: true, zeroRedirect: true,
+    movieUrl: (id) => `https://iframe.pstream.mov/embed/tmdb-movie-${id}`,
+    tvUrl:    (id, s, e) => `https://iframe.pstream.mov/embed/tmdb-tv-${id}/${s}/${e}`,
   },
 
   {
     id: "mapple",
     label: "NS 14",
     tag: null, note: "★ 4K",
-    tier: 3, moviePriority: 8, tvPriority: 8,
-    browserPriority: 8, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://mapple.uk/watch/movie/${id}?nextButton=true&autoPlay=true&autoNext=true`,
-    tvUrl:    (id, s, e) => `https://mapple.uk/watch/tv/${id}-${s}-${e}?nextButton=true&autoPlay=true&autoNext=true`,
+    tier: 1, moviePriority: 4, tvPriority: 4, browserPriority: 4,
+    browserSafe: true, supportsProgress: true, zeroRedirect: true,
+    movieUrl: (id) => `https://mapple.uk/watch/movie/${id}?autoPlay=true&autoNext=true`,
+    tvUrl:    (id, s, e) => `https://mapple.uk/watch/tv/${id}-${s}-${e}?autoPlay=true&autoNext=true`,
+  },
+
+  // ── TIER 2 — Reliable aggregators, minimal internal redirects ────────────
+
+  {
+    id: "videasy",
+    label: "NS 8",
+    tag: null, note: "★ Clean",
+    tier: 2, moviePriority: 5, tvPriority: 5, browserPriority: 5,
+    browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
 
   {
-    id: "pstream",
-    label: "NS 15",
+    id: "autoembed",
+    label: "NS 10",
+    tag: null, note: "★ Clean",
+    tier: 2, moviePriority: 6, tvPriority: 6, browserPriority: 6,
+    browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}?season=${s}&episode=${e}`,
+  },
+
+  {
+    id: "vidsrc_cc",
+    label: "NS 11",
+    tag: null, note: "★ HD",
+    tier: 2, moviePriority: 7, tvPriority: 7, browserPriority: 7,
+    browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`,
+  },
+
+  // ── TIER 3 — Last-resort fallbacks (ad popups / redirect chains) ─────────
+
+  {
+    id: "embed2",
+    label: "NS 13",
     tag: null, note: null,
-    tier: 3, moviePriority: 9, tvPriority: 9,
-    browserPriority: 9, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://iframe.pstream.mov/embed/tmdb-movie-${id}`,
-    tvUrl:    (id, s, e) => `https://iframe.pstream.mov/embed/tmdb-tv-${id}/${s}/${e}`,
+    tier: 3, moviePriority: 8, tvPriority: 8, browserPriority: 8,
+    browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://www.2embed.cc/embed/${id}`,
+    tvUrl:    (id, s, e) => `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}`,
   },
 
   {
-    id: "vidcorenl",
-    label: "NS 16",
-    tag: null, note: "★ Multi",
-    tier: 3, moviePriority: 10, tvPriority: 10,
-    browserPriority: 10, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://vidcore.net/movie/${id}?autoplay=true`,
-    tvUrl:    (id, s, e) => `https://vidcore.net/tv/${id}/${s}/${e}?autoplay=true`,
-  },
-
-  {
-    id: "peachify",
-    label: "NS 17",
+    id: "vidsrc_xyz",
+    label: "NS 12",
     tag: null, note: null,
-    tier: 3, moviePriority: 12, tvPriority: 12,
-    browserPriority: 12, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
-  },
-
-  {
-    id: "peachify",
-    label: "NS 18",
-    tag: null, note: null,
-    tier: 3, moviePriority: 12, tvPriority: 12,
-    browserPriority: 12, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
-  },
-
-  {
-    id: "peachify",
-    label: "NS 19",
-    tag: null, note: null,
-    tier: 3, moviePriority: 13, tvPriority: 13,
-    browserPriority: 13, browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://peachify.top/embed/movie/${id}?autoPlay=true`,
-    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}?autoPlay=true`,
+    tier: 3, moviePriority: 9, tvPriority: 9, browserPriority: 9,
+    browserSafe: true, supportsProgress: true,
+    movieUrl: (id) => `https://vidsrc.xyz/embed/movie?tmdb=${id}`,
+    tvUrl:    (id, s, e) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
   },
 
   // ── ANIME ─────────────────────────────────────────────────────────────────
@@ -364,11 +331,19 @@ export function getDefaultSource() {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // RETRY QUEUE
+// Builds an ordered fallback list starting from preferredId.
+// Deduplicates by id so the same server is never tried twice.
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function buildRetryQueue(type, preferredId) {
+  const seen = new Set();
   const eligible = PLAYER_SOURCES
-    .filter((s) => !s.async && !s.tag)
+    .filter((s) => {
+      if (s.async || s.tag) return false;   // exclude async/anime
+      if (seen.has(s.id)) return false;     // deduplicate
+      seen.add(s.id);
+      return true;
+    })
     .sort((a, b) => {
       const pa = type === "movie" ? (a.moviePriority ?? 99) : (a.tvPriority ?? 99);
       const pb = type === "movie" ? (b.moviePriority ?? 99) : (b.tvPriority ?? 99);
@@ -376,8 +351,9 @@ export function buildRetryQueue(type, preferredId) {
     })
     .map((s) => s.id);
 
-  const startIdx = eligible.indexOf(preferredId);
+  const startIdx = eligible.indexOf(preferredId ?? "");
   if (startIdx <= 0) return eligible;
+  // Start from preferred, wrap around so every server gets a turn
   return [...eligible.slice(startIdx), ...eligible.slice(0, startIdx)];
 }
 
