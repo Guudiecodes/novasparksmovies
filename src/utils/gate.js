@@ -7,14 +7,15 @@
  * Plan order (ascending):
  *   free → mobile → basic → standard → premium
  *
- * Admin override:
- *   Admin can set a global plan floor in the admin panel.
- *   Storage key: "ns_admin_global_plan" (plain localStorage, admin-only)
- *   When set, ALL users are treated as at least that plan tier.
+ * ── OPEN ACCESS MODE ─────────────────────────────────────────────────────────
+ * All features are currently FREE for all users.
+ * Set OPEN_ACCESS = false to re-enable plan-based gating.
  */
 
+export const OPEN_ACCESS = true; // ← flip to false to re-enable gating
+
 // ── Storage prefix (must match storage.js) ────────────────────────────────────
-const PREFIX = "streambert_";
+const PREFIX = "novasparks_";
 
 // ── Plan rank map ─────────────────────────────────────────────────────────────
 const PLAN_RANK = {
@@ -27,17 +28,15 @@ const PLAN_RANK = {
 
 /**
  * Returns the active plan id for the current user.
- * Reads from the full premium record (streambert_ns_premium_record)
- * so it gets the planId AND checks expiry correctly.
- * Falls back to "free" if nothing stored or subscription expired.
+ * In OPEN_ACCESS mode always returns "premium" so UI labels reflect full access.
  */
 export function getCurrentPlan() {
+  if (OPEN_ACCESS) return "premium";
   try {
     const raw = localStorage.getItem(PREFIX + "ns_premium_record");
     if (!raw) return "free";
     const rec = JSON.parse(raw);
     if (!rec || !rec.planId || rec.planId === "free") return "free";
-    // Treat expired subscriptions as free
     if (rec.expiresAt && Date.now() >= rec.expiresAt) return "free";
     return rec.planId;
   } catch {
@@ -45,12 +44,6 @@ export function getCurrentPlan() {
   }
 }
 
-/**
- * Returns the admin-set global plan floor.
- * If admin has set "ns_admin_global_plan" = "basic", every user
- * is treated as at least basic regardless of their own plan.
- * Admin key is intentionally unprefixed (set directly by admin tools).
- */
 export function getAdminGlobalPlan() {
   try {
     return localStorage.getItem("ns_admin_global_plan") || "free";
@@ -59,10 +52,6 @@ export function getAdminGlobalPlan() {
   }
 }
 
-/**
- * Save the admin global plan floor.
- * Called from the admin panel when admin clicks Save.
- */
 export function setAdminGlobalPlan(planId) {
   try {
     if (!planId || planId === "free") {
@@ -73,10 +62,8 @@ export function setAdminGlobalPlan(planId) {
   } catch {}
 }
 
-/**
- * Effective plan: whichever is higher — user's own plan or admin's global floor.
- */
 export function getEffectivePlan(planId) {
+  if (OPEN_ACCESS) return "premium";
   const user  = planId || getCurrentPlan();
   const floor = getAdminGlobalPlan();
   const userRank  = PLAN_RANK[user]  ?? 0;
@@ -84,46 +71,24 @@ export function getEffectivePlan(planId) {
   return floorRank > userRank ? floor : user;
 }
 
-/** True when planId ranks >= requiredId (respects admin floor). */
+/** In OPEN_ACCESS mode always returns true. */
 function atLeast(planId, requiredId) {
+  if (OPEN_ACCESS) return true;
   const effective = getEffectivePlan(planId);
   return (PLAN_RANK[effective] ?? 0) >= (PLAN_RANK[requiredId] ?? 999);
 }
 
-// ── Feature gates ─────────────────────────────────────────────────────────────
+// ── Feature gates (all return true in OPEN_ACCESS mode) ─────────────────────
 
-/** Any paid plan can switch streaming source. */
-export function canSwitchSource(planId) {
-  return atLeast(planId, "mobile");
-}
+export function canSwitchSource(planId)  { return atLeast(planId, "mobile");   }
+export function canDownload(planId)      { return atLeast(planId, "basic");    }
+export function canUseSubtitles(planId)  { return atLeast(planId, "basic");    }
+export function canPopOut(planId)        { return atLeast(planId, "standard"); }
+export function canMultiDevice(planId)   { return atLeast(planId, "standard"); }
+export function can4K(planId)           { return atLeast(planId, "premium");  }
 
-/** Basic+ can download content. */
-export function canDownload(planId) {
-  return atLeast(planId, "basic");
-}
-
-/** Basic+ can use the subtitle downloader. */
-export function canUseSubtitles(planId) {
-  return atLeast(planId, "basic");
-}
-
-/** Standard+ can use pop-out / PiP player. */
-export function canPopOut(planId) {
-  return atLeast(planId, "standard");
-}
-
-/** Standard+ can use multiple simultaneous devices (enforced client-side as info). */
-export function canMultiDevice(planId) {
-  return atLeast(planId, "standard");
-}
-
-/** Premium only — 4K quality badge (actual quality depends on source). */
-export function can4K(planId) {
-  return atLeast(planId, "premium");
-}
-
-/** Returns human-readable max quality label for UI display. */
 export function maxQualityLabel(planId) {
+  if (OPEN_ACCESS) return "4K Ultra HD";
   const p = getEffectivePlan(planId);
   if (atLeast(p, "premium"))  return "4K Ultra HD";
   if (atLeast(p, "standard")) return "Full HD 1080p";
@@ -177,7 +142,6 @@ const GATE_ICONS = {
   quality_4k:    "🎬",
 };
 
-// DOLLAR FIRST, then Naira — anchors higher value perception
 const GATE_PRICES = {
   mobile:   "$0.65 · ₦1,000",
   basic:    "$0.95 · ₦1,500",
@@ -185,7 +149,6 @@ const GATE_PRICES = {
   premium:  "$4.10 · ₦6,500",
 };
 
-/** Resolve a feature key (e.g. "download", "source", "pip") to modal content. */
 export function getGateMessage(feature) {
   const keyMap = {
     source:     "source_switch",
@@ -212,4 +175,59 @@ export function getGateMessage(feature) {
     desc:  gate.description,
     price: GATE_PRICES[gate.required] || null,
   };
+}
+
+// ── User Activity Tracker ─────────────────────────────────────────────────────
+/**
+ * Track feature usage per user session.
+ * Writes to localStorage under "ns_activity_log".
+ * Admin dashboard reads this to show real-time usage stats.
+ *
+ * Usage: trackActivity("watch", { title: "Inception", type: "movie" })
+ *        trackActivity("download", { title: "Breaking Bad S01E01" })
+ *        trackActivity("source_switch", { from: "embed1", to: "embed2" })
+ */
+export function trackActivity(feature, meta = {}) {
+  try {
+    const userId = localStorage.getItem(PREFIX + "ns_user_id") || "guest";
+    const raw    = localStorage.getItem(PREFIX + "ns_activity_log");
+    const log    = raw ? JSON.parse(raw) : [];
+
+    log.push({
+      feature,
+      meta,
+      userId,
+      ts: Date.now(),
+    });
+
+    // Keep last 500 events to avoid bloat
+    if (log.length > 500) log.splice(0, log.length - 500);
+    localStorage.setItem(PREFIX + "ns_activity_log", JSON.stringify(log));
+  } catch {}
+}
+
+/**
+ * Read activity log — used by admin dashboard.
+ * Returns array sorted newest-first.
+ */
+export function getActivityLog() {
+  try {
+    const raw = localStorage.getItem(PREFIX + "ns_activity_log");
+    const log = raw ? JSON.parse(raw) : [];
+    return log.sort((a, b) => b.ts - a.ts);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Summarise feature usage counts — used by admin charts.
+ * Returns: { watch: 42, download: 18, source_switch: 7, ... }
+ */
+export function getFeatureUsageSummary() {
+  const log = getActivityLog();
+  return log.reduce((acc, e) => {
+    acc[e.feature] = (acc[e.feature] || 0) + 1;
+    return acc;
+  }, {});
 }

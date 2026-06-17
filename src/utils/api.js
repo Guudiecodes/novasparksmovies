@@ -181,16 +181,14 @@ export async function fetchAllNonEmbedSources(type, id, season, episode, {
 // ═════════════════════════════════════════════════════════════════════════════
 // PLAYER SOURCES  (Embed mode — iframe-based)
 //
-// TIER 1 — Zero-redirect direct players. URL loads the player immediately,
-//           no intermediate hops. These are tried first every time.
+// TIER 1 — Zero-redirect direct players. Instant load, clean experience.
+// TIER 2 — Reliable aggregators, minimal internal redirects.
+// TIER 3 — Last-resort fallbacks. Known to have ad-popups or redirect chains.
 //
-// TIER 2 — Reliable aggregators / light-redirect servers. Solid second line.
-//
-// TIER 3 — Last-resort fallbacks. Known to have ad-popups or internal
-//           redirect chains. Only tried after tier 1 and 2 both fail.
-//
-// DEAD (removed): primesrc, vapsrc, cinezo, smashystream, twoembed,
-//                 vidbinge, vidupto, embedsu
+// REMOVED: videasy (NS 8) — excessive redirects, non-expandable player
+//          mapple (NS 14) — embed ads + user redirection
+// DEAD (previously removed): primesrc, vapsrc, cinezo, smashystream,
+//   twoembed, vidbinge, vidupto, embedsu
 // ═════════════════════════════════════════════════════════════════════════════
 
 export const PLAYER_SOURCES = [
@@ -227,33 +225,27 @@ export const PLAYER_SOURCES = [
     tvUrl:    (id, s, e) => `https://iframe.pstream.mov/embed/tmdb-tv-${id}/${s}/${e}`,
   },
 
+  // ── Peachify — clean multi-server player, built-in auto-failover,
+  //    progress events via postMessage (PLAYER_EVENT + MEDIA_DATA),
+  //    no embed ads, no user redirection, fullscreen + PiP ready ──────────
+
   {
-    id: "mapple",
+    id: "peachify",
     label: "NS 14",
-    tag: null, note: "★ 4K",
+    tag: null, note: "★ Clean",
     tier: 1, moviePriority: 4, tvPriority: 4, browserPriority: 4,
     browserSafe: true, supportsProgress: true, zeroRedirect: true,
-    movieUrl: (id) => `https://mapple.uk/watch/movie/${id}?autoPlay=true&autoNext=true`,
-    tvUrl:    (id, s, e) => `https://mapple.uk/watch/tv/${id}-${s}-${e}?autoPlay=true&autoNext=true`,
+    movieUrl: (id) => `https://peachify.top/embed/movie/${id}`,
+    tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}`,
   },
 
-  // ── TIER 2 — Reliable aggregators, minimal internal redirects ────────────
-
-  {
-    id: "videasy",
-    label: "NS 8",
-    tag: null, note: "★ Clean",
-    tier: 2, moviePriority: 5, tvPriority: 5, browserPriority: 5,
-    browserSafe: true, supportsProgress: true,
-    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
-    tvUrl:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
-  },
+  // ── TIER 2 — Reliable aggregators ────────────────────────────────────────
 
   {
     id: "autoembed",
     label: "NS 10",
     tag: null, note: "★ Clean",
-    tier: 2, moviePriority: 6, tvPriority: 6, browserPriority: 6,
+    tier: 2, moviePriority: 5, tvPriority: 5, browserPriority: 5,
     browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
     tvUrl:    (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}?season=${s}&episode=${e}`,
@@ -263,19 +255,19 @@ export const PLAYER_SOURCES = [
     id: "vidsrc_cc",
     label: "NS 11",
     tag: null, note: "★ HD",
-    tier: 2, moviePriority: 7, tvPriority: 7, browserPriority: 7,
+    tier: 2, moviePriority: 6, tvPriority: 6, browserPriority: 6,
     browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
     tvUrl:    (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`,
   },
 
-  // ── TIER 3 — Last-resort fallbacks (ad popups / redirect chains) ─────────
+  // ── TIER 3 — Last-resort fallbacks ───────────────────────────────────────
 
   {
     id: "embed2",
     label: "NS 13",
     tag: null, note: null,
-    tier: 3, moviePriority: 8, tvPriority: 8, browserPriority: 8,
+    tier: 3, moviePriority: 7, tvPriority: 7, browserPriority: 7,
     browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://www.2embed.cc/embed/${id}`,
     tvUrl:    (id, s, e) => `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}`,
@@ -285,7 +277,7 @@ export const PLAYER_SOURCES = [
     id: "vidsrc_xyz",
     label: "NS 12",
     tag: null, note: null,
-    tier: 3, moviePriority: 9, tvPriority: 9, browserPriority: 9,
+    tier: 3, moviePriority: 8, tvPriority: 8, browserPriority: 8,
     browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidsrc.xyz/embed/movie?tmdb=${id}`,
     tvUrl:    (id, s, e) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
@@ -330,42 +322,13 @@ export function getDefaultSource() {
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// RETRY QUEUE
-// Builds an ordered fallback list starting from preferredId.
-// Deduplicates by id so the same server is never tried twice.
-// ═════════════════════════════════════════════════════════════════════════════
-
-export function buildRetryQueue(type, preferredId) {
-  const seen = new Set();
-  const eligible = PLAYER_SOURCES
-    .filter((s) => {
-      if (s.async || s.tag) return false;   // exclude async/anime
-      if (seen.has(s.id)) return false;     // deduplicate
-      seen.add(s.id);
-      return true;
-    })
-    .sort((a, b) => {
-      const pa = type === "movie" ? (a.moviePriority ?? 99) : (a.tvPriority ?? 99);
-      const pb = type === "movie" ? (b.moviePriority ?? 99) : (b.tvPriority ?? 99);
-      return pa - pb;
-    })
-    .map((s) => s.id);
-
-  const startIdx = eligible.indexOf(preferredId ?? "");
-  if (startIdx <= 0) return eligible;
-  // Start from preferred, wrap around so every server gets a turn
-  return [...eligible.slice(startIdx), ...eligible.slice(0, startIdx)];
-}
-
-
-// ═════════════════════════════════════════════════════════════════════════════
 // PRE-FLIGHT URL PROBE
+// Placed before HealthRegistry so prewarmSources can call it.
 // ═════════════════════════════════════════════════════════════════════════════
 
-const PROBE_RETRIES      = 2;
-const PROBE_RETRY_DELAY  = 250;
 const PROBE_TIMEOUT_FAST = 1800;
 const PROBE_TIMEOUT_SLOW = 2800;
+const PROBE_RETRY_DELAY  = 250;
 
 async function _singleProbe(url, timeoutMs) {
   const controller = new AbortController();
@@ -391,7 +354,202 @@ export async function probeUrl(url, _legacyTimeout) {
 
 
 // ═════════════════════════════════════════════════════════════════════════════
+// SOURCE HEALTH REGISTRY
+// ─────────────────────────────────────────────────────────────────────────────
+// Two-signal health tracking per embed source:
+//
+//   1. HTTP probe results (fast, imprecise — reachability check only)
+//      recordProbe(id, success, responseTimeMs)
+//
+//   2. Actual playback outcomes (authoritative — did video actually play?)
+//      reportPlayOutcome(id, success)   ← called from WatchPage
+//
+// Score range: 0–100  |  50 = unknown/neutral  |  100 = fully trusted
+//
+// Circuit breaker: score < CIRCUIT_OPEN_SCORE AND failures ≥ 3 defers the
+// source to end of queue. Never permanently excluded — recovery is possible.
+//
+// Persistence: localStorage with 30-min TTL per probe entry.
+// Stale entries trigger a background re-probe on next prewarmSources() call.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const HEALTH_STORAGE_KEY = "novaspark_sourceHealth_v2";
+const HEALTH_PROBE_TTL   = 30 * 60 * 1000;   // 30 min before re-probe
+
+const SCORE_NEUTRAL      = 50;
+const SCORE_MAX          = 100;
+const SCORE_PROBE_HIT    = 18;   // probe success  — small (reachable ≠ plays)
+const SCORE_PROBE_MISS   = 28;   // probe fail     — bigger (unreachable = broken)
+const SCORE_PLAY_SUCCESS = 38;   // video played   — strong positive
+const SCORE_PLAY_FAIL    = 45;   // video failed   — strongest negative
+const CIRCUIT_OPEN_SCORE = 12;   // threshold to open circuit
+const MIN_FAILURES_OPEN  = 3;    // minimum consecutive failures to open circuit
+
+class _SourceHealthRegistry {
+  constructor() {
+    this._records   = {};
+    this._saveTimer = null;
+    this._hydrate();
+  }
+
+  _hydrate() {
+    try {
+      if (typeof localStorage === "undefined") return;
+      const raw = localStorage.getItem(HEALTH_STORAGE_KEY);
+      if (!raw) return;
+      const parsed   = JSON.parse(raw);
+      const validIds = new Set(PLAYER_SOURCES.map((s) => s.id));
+      for (const [id, rec] of Object.entries(parsed)) {
+        if (validIds.has(id)) this._records[id] = rec;
+      }
+    } catch { /* start fresh */ }
+  }
+
+  _scheduleSave() {
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(HEALTH_STORAGE_KEY, JSON.stringify(this._records));
+        }
+      } catch {}
+    }, 300);
+  }
+
+  _blank() {
+    return { score: SCORE_NEUTRAL, failures: 0, successes: 0, lastProbe: 0, lastPlay: 0, responseTime: 0 };
+  }
+
+  _get(id)   { return this._records[id] || this._blank(); }
+  _clamp(v)  { return Math.max(0, Math.min(SCORE_MAX, Math.round(v))); }
+
+  recordProbe(id, success, responseTimeMs = 0) {
+    const r = this._get(id);
+    this._records[id] = {
+      score:        this._clamp(r.score + (success ? SCORE_PROBE_HIT : -SCORE_PROBE_MISS)),
+      failures:     success ? 0 : r.failures + 1,
+      successes:    success ? r.successes + 1 : r.successes,
+      lastProbe:    Date.now(),
+      lastPlay:     r.lastPlay,
+      responseTime: success ? responseTimeMs : r.responseTime,
+    };
+    this._scheduleSave();
+  }
+
+  reportPlayOutcome(id, success) {
+    const r = this._get(id);
+    this._records[id] = {
+      ...r,
+      score:     this._clamp(r.score + (success ? SCORE_PLAY_SUCCESS : -SCORE_PLAY_FAIL)),
+      failures:  success ? 0 : r.failures + 1,
+      successes: success ? r.successes + 1 : r.successes,
+      lastPlay:  Date.now(),
+    };
+    this._scheduleSave();
+  }
+
+  getScore(id)      { return this._get(id).score; }
+
+  isCircuitOpen(id) {
+    const r = this._get(id);
+    return r.failures >= MIN_FAILURES_OPEN && r.score < CIRCUIT_OPEN_SCORE;
+  }
+
+  isStale(id) {
+    return (Date.now() - (this._records[id]?.lastProbe || 0)) > HEALTH_PROBE_TTL;
+  }
+
+  /**
+   * Returns source IDs in recommended trial order:
+   *   1. Circuit-closed sources first, sorted by score DESC then priority ASC
+   *   2. Circuit-open sources deferred to end (not excluded — recovery possible)
+   */
+  sortedIds(type) {
+    const eligible = PLAYER_SOURCES.filter((s) => !s.async && !s.tag);
+    const score    = (s) => this.getScore(s.id);
+    const prio     = (s) => type === "movie" ? (s.moviePriority ?? 99) : (s.tvPriority ?? 99);
+    const cmp      = (a, b) => {
+      const diff = score(b) - score(a);
+      return Math.abs(diff) > 10 ? diff : prio(a) - prio(b);
+    };
+    const active   = eligible.filter((s) => !this.isCircuitOpen(s.id)).sort(cmp);
+    const deferred = eligible.filter((s) =>  this.isCircuitOpen(s.id)).sort(cmp);
+    return [...active, ...deferred].map((s) => s.id);
+  }
+}
+
+export const sourceHealth = new _SourceHealthRegistry();
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PREWARM — background-probe all stale sources on module init
+// ─────────────────────────────────────────────────────────────────────────────
+// Uses Fight Club (TMDB 550) as a stable canary to check server reachability
+// without needing the user's actual title. Results populate sourceHealth so
+// WatchPage already has a sorted, trusted list before the user arrives.
+//
+// Auto-called 2 s after module import (see bottom of file).
+// Idempotent — runs at most once per session.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const CANARY_MOVIE_ID = "550"; // Fight Club — stable TMDB ID, indexed everywhere
+
+let _prewarmDone = false;
+
+export async function prewarmSources() {
+  if (_prewarmDone) return;
+  _prewarmDone = true;
+
+  const stale = PLAYER_SOURCES.filter((s) => !s.async && !s.tag && sourceHealth.isStale(s.id));
+  if (!stale.length) return;
+
+  // Fire-and-forget: all probes run concurrently in the background
+  stale.forEach(async (src) => {
+    try {
+      const url = src.movieUrl(CANARY_MOVIE_ID);
+      const t0  = Date.now();
+      const res = await probeUrl(url);
+      sourceHealth.recordProbe(src.id, res === "ok", Date.now() - t0);
+    } catch { /* silent */ }
+  });
+}
+
+/**
+ * Report actual playback outcome to the health registry.
+ * Call from WatchPage once the player's state is known:
+ *
+ *   reportSourceOutcome("vidlink",  true);   // video started playing
+ *   reportSourceOutcome("vidsrc_cc", false); // source loaded but no video
+ */
+export function reportSourceOutcome(sourceId, success) {
+  sourceHealth.reportPlayOutcome(sourceId, success);
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// RETRY QUEUE
+// Health-score aware fallback ordering.
+// Circuit-open sources deferred to end, never permanently excluded.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export function buildRetryQueue(type, preferredId) {
+  const sorted = sourceHealth.sortedIds(type);
+  if (!preferredId || !sorted.includes(preferredId)) return sorted;
+  const idx = sorted.indexOf(preferredId);
+  return [...sorted.slice(idx), ...sorted.slice(0, idx)];
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
 // WORKING SOURCE FINDER
+// ─────────────────────────────────────────────────────────────────────────────
+// Health-aware probe ordering:
+//   • Preferred source → 0 ms delay (always first)
+//   • Top 3 by health score → 0 ms delay (race immediately)
+//   • Mid-tier → 150 ms stagger
+//   • Circuit-open sources → 600 ms stagger (tried last)
+// All probe outcomes update the health registry.
 // ═════════════════════════════════════════════════════════════════════════════
 
 const _sourceCache     = new Map();
@@ -402,19 +560,34 @@ export async function findWorkingSource(type, id, season = null, episode = null,
   const cached   = _sourceCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.sourceId;
 
-  const sources = PLAYER_SOURCES.filter((s) => !s.async);
+  const sortedIds = sourceHealth.sortedIds(type);
+  const order     = preferredId && sortedIds.includes(preferredId)
+    ? [preferredId, ...sortedIds.filter((sid) => sid !== preferredId)]
+    : sortedIds;
 
-  const racePromises = sources.map((src) => {
-    let delay = 0;
-    if (src.id !== preferredId) {
-      delay = src.tier === 1 ? 0 : src.tier === 2 ? 150 : 400;
-    }
+  const sources = order
+    .map((sid) => PLAYER_SOURCES.find((s) => s.id === sid))
+    .filter(Boolean);
+
+  const racePromises = sources.map((src, index) => {
+    const isPreferred   = src.id === preferredId;
+    const isCircuitOpen = sourceHealth.isCircuitOpen(src.id);
+    const delay = isPreferred   ? 0
+                : index < 3     ? 0
+                : isCircuitOpen ? 600
+                : index < 5     ? 150
+                :                 350;
+
     return new Promise((resolve, reject) => {
       setTimeout(async () => {
-        const url    = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, episode);
-        const result = await probeUrl(url);
-        if (result === "ok") resolve(src.id);
-        else reject();
+        try {
+          const url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, episode);
+          const t0  = Date.now();
+          const res = await probeUrl(url);
+          sourceHealth.recordProbe(src.id, res === "ok", Date.now() - t0);
+          if (res === "ok") resolve(src.id);
+          else reject(new Error(src.id));
+        } catch { reject(new Error(src.id)); }
       }, delay);
     });
   });
@@ -622,3 +795,11 @@ export const fetchEpisodeGroup = async (groupId, apiKey) => {
   flushEgCache();
   return data;
 };
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MODULE INIT — auto-prewarm 2 s after import (non-blocking, idempotent)
+// ═════════════════════════════════════════════════════════════════════════════
+if (typeof window !== "undefined") {
+  setTimeout(prewarmSources, 2_000);
+}

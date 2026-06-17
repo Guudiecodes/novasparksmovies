@@ -30,7 +30,6 @@ const DEAD_SOURCES = [
   "embedsu", "cinezo", "smashystream", "vapsrc",
   "twoembed", "vidbinge", "vidupto", "primesrc",
   "vidcorenl",
-  // peachify re-enabled — quality source, ads handled by injected blockers
 ];
 
 const _EMBED_CSS = `
@@ -60,9 +59,7 @@ const _EMBED_JS = `(function(){
 
   /* ── 1. BLOCK ALL POPUPS & EXTERNAL NAVIGATION ──────────────────────────── */
   try{
-    // Block window.open (popup ads, redirect new-tabs)
     window.open=function(){return null;};
-    // Block location-based redirects
     var _loc=window.location;
     try{
       Object.defineProperty(window,'location',{
@@ -72,7 +69,6 @@ const _EMBED_JS = `(function(){
         }
       });
     }catch(e){}
-    // Block external link clicks and _blank targets
     document.addEventListener('click',function(e){
       var el=e.target;
       for(var i=0;i<6;i++){
@@ -88,7 +84,6 @@ const _EMBED_JS = `(function(){
         el=el.parentElement;
       }
     },true);
-    // Block meta-refresh redirects
     document.querySelectorAll('meta[http-equiv="refresh"]').forEach(function(m){m.remove();});
     var _metaObs=new MutationObserver(function(muts){
       muts.forEach(function(m){m.addedNodes.forEach(function(n){
@@ -423,7 +418,6 @@ function EpisodeThumb({ ep, isActive, onPlay }) {
   );
 }
 
-/* ── RefreshIcon inline SVG ─────────────────────────────────────────────────── */
 function RefreshIcon({ spinning }) {
   return (
     <svg
@@ -487,7 +481,6 @@ export default function WatchPage({
 
   const [probeProgress, setProbeProgress] = useState(8);
   const [showLoadBar,   setShowLoadBar]   = useState(false);
-  /* ── Refresh button spin state ── */
   const [refreshSpinning, setRefreshSpinning] = useState(false);
 
   const [related,        setRelated]        = useState([]);
@@ -680,7 +673,6 @@ export default function WatchPage({
 
   const retryFromScratch = useCallback(() => {
     clearTimeout(secondChanceRef.current);
-    /* spin the refresh icon briefly */
     setRefreshSpinning(true);
     setTimeout(() => setRefreshSpinning(false), 900);
     if (isNonEmbedMode) {
@@ -751,8 +743,22 @@ export default function WatchPage({
     onHistory?.({ ...item, media_type: type, season: currentSeason, episode: currentEpisode });
   }, [item?.id]); // eslint-disable-line
 
+  // ── Source finder: Electron skips HTTP probing entirely — webview handles it ──
   useEffect(() => {
     if (!item?.id || isNonEmbedMode) return;
+
+    // Electron validates sources natively through the webview — no probing needed
+    if (isElectron) {
+      if (preFoundSource && !DEAD_SOURCES.includes(preFoundSource)) {
+        if (!isRestrictedForServers || !NEEDS_INTERCEPT.includes(preFoundSource)) {
+          setPlayerSource(preFoundSource);
+          storage.set("playerSource", preFoundSource);
+        }
+      }
+      setAutoSourceStatus("found");
+      return;
+    }
+
     if (preFoundSource) {
       if (isRestrictedForServers && NEEDS_INTERCEPT.includes(preFoundSource)) { /* fall through */ }
       else { setPlayerSource(preFoundSource); setAutoSourceStatus("found"); return; }
@@ -905,6 +911,7 @@ export default function WatchPage({
     return () => clearTimeout(timer);
   }, [isElectron, webviewLoading, embedUrl, isNonEmbedMode]);
 
+  // ── Electron: inject CSS/JS on dom-ready (always, every page load) ────────
   useEffect(() => {
     if (!isElectron || isNonEmbedMode) return;
     const wv = webviewRef.current; if (!wv) return;
@@ -937,84 +944,111 @@ export default function WatchPage({
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [isElectron, embedUrl, isNonEmbedMode]);
 
+  // ── Electron beast: did-finish-load reveals webview, no video-element polling ─
+  // Root cause of the display bug: document.querySelector('video') searches only
+  // the webview's top-level frame. Embed players render the actual <video> inside
+  // a nested cross-origin iframe, so the query always returns null, the polling
+  // loop times out, and tryNextSource() is called even though the video is playing.
+  // Fix: trust did-finish-load + a short tier-based grace period to reveal the
+  // webview. We keep a hard-fail timeout for pages that never load at all, and a
+  // lightweight post-show check to auto-switch on a definitive video error signal.
   useEffect(() => {
     if (!isElectron || isNonEmbedMode) return;
     const wv = webviewRef.current; if (!wv) return;
-    let active = true;
-    clearInterval(pollRef.current); clearTimeout(secondChanceRef.current);
-    const currentSrc = PLAYER_SOURCES.find((s) => s.id === playerSource);
-    const tier = currentSrc?.tier ?? 2;
-    const HARD_TIMEOUT_MS = BEAST_TIMEOUT[`tier${tier}`] ?? BEAST_TIMEOUT.tier2;
-    const ABSOLUTE_CEILING_MS = HARD_TIMEOUT_MS + BEAST_SECOND_CHANCE_MS + 3000;
+
+    // m3u8 path is handled entirely by NovaSparksPlayer — nothing to do here
+    if (m3u8Url) return;
+
+    let active      = true;
+    let showTimer   = null;
+    let failTimer   = null;
+    let postCheckId = null;
+
+    clearInterval(pollRef.current);
+    clearTimeout(secondChanceRef.current);
+
+    const srcDef  = PLAYER_SOURCES.find((s) => s.id === playerSource);
+    const tier    = srcDef?.tier ?? 2;
+    // How long to wait after did-finish-load before revealing the webview
+    const SHOW_MS = tier === 1 ? 900 : tier === 2 ? 1300 : 1900;
+    // Hard deadline — if the page never fires did-finish-load, move on
+    const HARD_MS = 16000;
+
     const markReady = () => {
-      if (!active) return; active = false;
-      clearInterval(pollRef.current); clearTimeout(hardTimeoutId); clearTimeout(absoluteCeilingId); clearTimeout(secondChanceRef.current); // eslint-disable-line
+      if (!active) return;
+      active = false;
+      clearTimeout(showTimer);
+      clearTimeout(failTimer);
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
       setWebviewLoading(false);
+      // Kick autoplay after reveal
       setTimeout(async () => {
-        const wvFinal = webviewRef.current; if (!wvFinal) return;
-        try { await wvFinal.executeJavaScript(_AUTOPLAY_JS); } catch {}
+        try { await webviewRef.current?.executeJavaScript(_AUTOPLAY_JS); } catch {}
       }, 300);
-    };
-    const onFail = () => {
-      if (!active) return; active = false;
-      clearInterval(pollRef.current); clearTimeout(hardTimeoutId); clearTimeout(absoluteCeilingId); clearTimeout(secondChanceRef.current); // eslint-disable-line
-      tryNextSource();
-    };
-    const enterSecondChance = () => {
-      if (!active) return;
-      clearInterval(pollRef.current);
-      secondChanceRef.current = setTimeout(async () => {
-        if (!active) return;
-        const wv2 = webviewRef.current; if (!wv2) { onFail(); return; }
+      // Post-reveal: run up to 5 lightweight checks over 15 s.
+      // If we get 3 consecutive definitive video-error signals, switch source.
+      let failCount = 0;
+      let checkN    = 0;
+      postCheckId = setInterval(async () => {
+        checkN++;
+        if (checkN > 5) { clearInterval(postCheckId); return; }
+        const wv2 = webviewRef.current;
+        if (!wv2) { clearInterval(postCheckId); return; }
         try {
+          // Try the native progress API first (main-process, sees all frames)
           const wcId = wv2.getWebContentsId?.();
-          if (wcId && window.electron?.queryVideoProgress) { const prog = await window.electron.queryVideoProgress(wcId); if (prog && prog.duration > 0) { markReady(); return; } }
-          const r = await wv2.executeJavaScript(`(()=>{const v=document.querySelector('video');if(!v)return{ready:false};return{ready:v.readyState>=2&&v.duration>0&&!isNaN(v.duration)};})()`);
-          if (r?.ready) markReady(); else onFail();
-        } catch { onFail(); }
-      }, BEAST_SECOND_CHANCE_MS);
+          if (wcId && window.electron?.queryVideoProgress) {
+            const prog = await window.electron.queryVideoProgress(wcId);
+            if (prog && prog.duration > 0) { clearInterval(postCheckId); return; } // playing fine
+          }
+          // Fall back to JS in top frame — only useful when video is in top frame
+          const r = await wv2.executeJavaScript(
+            `(()=>{const v=document.querySelector('video');if(!v)return null;` +
+            `return{err:v.networkState===3||!!(v.error&&v.error.code>0),ok:v.readyState>=2&&v.duration>0&&!v.paused};})()`
+          );
+          if (!r) return;            // no <video> in top frame — sub-frame player, leave it
+          if (r.ok)  { clearInterval(postCheckId); return; } // confirmed playing
+          if (r.err) { failCount++; if (failCount >= 3) { clearInterval(postCheckId); tryNextSource(); } }
+        } catch {}
+      }, 3000);
     };
-    const absoluteCeilingId = setTimeout(() => {
-      if (!active) return; active = false;
-      clearInterval(pollRef.current); clearTimeout(secondChanceRef.current);
-      if (m3u8Url) { setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s); return; }
-      tryNextSource();
-    }, ABSOLUTE_CEILING_MS);
-    const runPoll = async () => {
-      if (!active) { clearInterval(pollRef.current); return; }
-      const wv = webviewRef.current; if (!wv) return;
-      if (m3u8Url) { markReady(); return; }
-      try {
-        const wcId = wv.getWebContentsId?.();
-        if (wcId && window.electron?.queryVideoProgress) { const prog = await window.electron.queryVideoProgress(wcId); if (prog && prog.duration > 0) { markReady(); return; } }
-        const r = await wv.executeJavaScript(`(()=>{const v=document.querySelector('video');if(!v)return{ready:false,err:false};return{ready:v.readyState>=2&&v.duration>0&&!isNaN(v.duration),err:v.networkState===3||!!(v.error&&v.error.code>0)};})()`);
-        if (r.ready) { markReady(); return; }
-        if (r.err && r.ready === false) { enterSecondChance(); return; }
-      } catch {}
-    };
-    const onDomReady = async () => {
-      try { await wv.insertCSS(_EMBED_CSS); } catch {}
-      try { await wv.executeJavaScript(_EMBED_JS); } catch {}
-      try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {}
-      runPoll();
-      setTimeout(async () => { try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} }, 600);
-    };
-    runPoll();
-    pollRef.current = setInterval(runPoll, 100);
-    const hardTimeoutId = setTimeout(enterSecondChance, HARD_TIMEOUT_MS);
-    const onLoadFail = (e) => { if (!e.isMainFrame || e.errorCode === -3) return; clearTimeout(hardTimeoutId); enterSecondChance(); }; // eslint-disable-line
-    wv.addEventListener("dom-ready", onDomReady);
-    wv.addEventListener("did-finish-load", async () => { runPoll(); try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} });
-    wv.addEventListener("did-fail-load", onLoadFail);
-    return () => {
-      active = false; clearInterval(pollRef.current); clearTimeout(hardTimeoutId); clearTimeout(absoluteCeilingId); clearTimeout(secondChanceRef.current);
-      try { wv.removeEventListener("dom-ready", onDomReady); } catch {}
-      try { wv.removeEventListener("did-finish-load", () => {}); } catch {}
-      try { wv.removeEventListener("did-fail-load", onLoadFail); } catch {}
-    };
-  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, type, m3u8Url]); // eslint-disable-line
 
+    const onFail = () => {
+      if (!active) return;
+      active = false;
+      clearTimeout(showTimer);
+      clearTimeout(failTimer);
+      clearInterval(postCheckId);
+      tryNextSource();
+    };
+
+    const onFinishLoad = async () => {
+      try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {}
+      clearTimeout(showTimer);
+      showTimer = setTimeout(markReady, SHOW_MS);
+    };
+
+    const onLoadFail = (e) => {
+      if (!e.isMainFrame || e.errorCode === -3) return; // -3 = aborted, ignore
+      clearTimeout(showTimer);
+      onFail();
+    };
+
+    failTimer = setTimeout(onFail, HARD_MS);
+    wv.addEventListener("did-finish-load", onFinishLoad);
+    wv.addEventListener("did-fail-load",   onLoadFail);
+
+    return () => {
+      active = false;
+      clearTimeout(showTimer);
+      clearTimeout(failTimer);
+      clearInterval(postCheckId);
+      try { wv.removeEventListener("did-finish-load", onFinishLoad); } catch {}
+      try { wv.removeEventListener("did-fail-load",   onLoadFail);   } catch {}
+    };
+  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, m3u8Url]); // eslint-disable-line
+
+  // ── Web (non-Electron) iframe beast ───────────────────────────────────────
   useEffect(() => {
     if (isElectron || isNonEmbedMode) return;
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
@@ -1190,7 +1224,6 @@ export default function WatchPage({
     setCurrentEpisode(e);
     setShowNextEp(false);
     setShowSkipIntro(false);
-    /* close any open menus immediately so re-render is clean */
     setShowSeasonMenu(false);
     setShowSourceMenu(false);
   }, []);
@@ -1262,7 +1295,7 @@ export default function WatchPage({
   const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading && !m3u8Url && !nonEmbedStream && !isNonEmbedMode && !userManuallySelectedRef.current;
   const iframeShieldActive = !isElectron && !isNonEmbedMode && !webviewLoading && !pipOpen;
 
-  const probeTotal = Math.max(retryQueueRef.current.length, 1);
+  const probeTotal = Math.max(retryQueueRef.current.length, 1); // eslint-disable-line
 
   const dropdownStyle = {
     position:"fixed", top:menuPos?.top ?? 60, left:menuPos?.left ?? 0,
@@ -1310,7 +1343,6 @@ export default function WatchPage({
         .topbar-pip-btn.active { color:var(--red,#e50914); border-color:rgba(229,9,20,0.35); }
         .topbar-pip-btn svg { width:14px !important; height:14px !important; }
 
-        /* Refresh button */
         .ns-refresh-btn {
           display:flex; align-items:center; gap:6px;
           background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
@@ -1484,7 +1516,6 @@ export default function WatchPage({
             </button>
           )}
 
-          {/* ── Refresh button ────────────────────────────────────────────── */}
           <button
             className={`ns-refresh-btn${refreshSpinning ? " spinning" : ""}`}
             onClick={retryFromScratch}
@@ -1692,8 +1723,6 @@ export default function WatchPage({
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity:0.7 }}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
                 </button>
                 {showSeasonMenu && seasonMenuPos && (
-                  // FIX: data-ns-dropdown prevents the global mousedown handler from
-                  // closing the menu before the season button's onClick fires.
                   <div className="season-dropdown-menu" data-ns-dropdown="1" style={{ top:seasonMenuPos.top, left:seasonMenuPos.left }}>
                     {seasons.map((s) => (
                       <button key={s.season_number} className={currentSeason === s.season_number ? "active" : ""}
