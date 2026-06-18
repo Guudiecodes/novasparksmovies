@@ -36,7 +36,8 @@ const NSAIPage      = lazy(() => import("./pages/NSAIPage"));
 const ReelPage      = lazy(() => import("./pages/Reelpage"));
 
 // ── NEW: Admin panel + Login ─────────────────────────────────────────────────
-const AdminPage = lazy(() => import("./pages/Adminpage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const AdminLoginPage = lazy(() => import("./pages/Adminloginpage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 
 import { checkForUpdates } from "./utils/updates";
@@ -907,6 +908,13 @@ export default function App() {
           </Suspense>
         </div>
 
+     {window.location.pathname === "/admin-login" && (
+  <Suspense fallback={null}>
+    <AdminLoginPage onSuccess={(user) => {
+      window.location.href = "/";
+    }} />
+  </Suspense>
+)}
         {/* ── Login Modal (overlay, any page) ── */}
         {showLogin && (
           <LoginPage
