@@ -75,7 +75,7 @@ export default function App() {
     const name  = localStorage.getItem(NS_PREFIX + "ns_user_name");
     return id ? { id, email, displayName: name } : null;
   });
-  const [showLogin, setShowLogin] = useState(false);
+  const [showLogin, setShowLogin] = useState(!localStorage.getItem("ns_user"));
 
   const handleLogin = useCallback((user) => {
     setUserProfile(user);
