@@ -37,7 +37,7 @@ const ReelPage      = lazy(() => import("./pages/Reelpage"));
 
 // ── NEW: Admin panel + Login ─────────────────────────────────────────────────
 const AdminPage = lazy(() => import("./pages/AdminPage"));
-const AdminLoginPage = lazy(() => import("./pages/Adminloginpage"));
+const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 
 import { checkForUpdates } from "./utils/updates";
