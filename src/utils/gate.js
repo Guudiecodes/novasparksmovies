@@ -15,7 +15,7 @@
 export const OPEN_ACCESS = true; // ← flip to false to re-enable gating
 
 // ── Storage prefix (must match storage.js) ────────────────────────────────────
-const PREFIX = "novasparks_";
+const PREFIX = "streambert_";
 
 // ── Plan rank map ─────────────────────────────────────────────────────────────
 const PLAN_RANK = {

@@ -32,30 +32,30 @@ const SettingsPage  = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const WatchPage     = lazy(() => import("./pages/WatchPage"));
 const PricingPage   = lazy(() => import("./pages/PricingPage"));
-const NSAIPage = lazy(() => import("./pages/NSAIPage"));
+const NSAIPage      = lazy(() => import("./pages/NSAIPage"));
+const ReelPage      = lazy(() => import("./pages/Reelpage"));
 
-
-// ── World Cinema Reel ────────────────────────────────────────────────────────
-const ReelPage = lazy(() => import("./pages/Reelpage"));
+// ── NEW: Admin panel + Login ─────────────────────────────────────────────────
+const AdminPage = lazy(() => import("./pages/Adminpage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
 
 import { checkForUpdates } from "./utils/updates";
-
 import { autoSyncPremium } from "./utils/premium";
 autoSyncPremium();
 
 const NS_PREMIUM_KEY = "ns_premium";
+const NS_PREFIX      = "streambert_";
 
 export default function App() {
   const [apiKey,       setApiKey]       = useState(NS_TMDB_KEY);
   const [apiKeyLoaded, setApiKeyLoaded] = useState(true);
   const [skipped,      setSkipped]      = useState(true);
-
   const [apiKeyStatus, setApiKeyStatus] = useState("ok");
 
-  // ── DEFAULT PAGE: Home ───────────────────────────────────────────────────────
-  const [page,       setPage]       = useState(() => storage.get("startPage") || "home");
-  const [selected,   setSelected]   = useState(null);
-  const [showSearch, setShowSearch] = useState(false);
+  // ── DEFAULT PAGE: Home ────────────────────────────────────────────────────
+  const [page,         setPage]         = useState(() => storage.get("startPage") || "home");
+  const [selected,     setSelected]     = useState(null);
+  const [showSearch,   setShowSearch]   = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
   const [librarySort,  setLibrarySort]  = useState(
     () => storage.get(STORAGE_KEYS.LIBRARY_SORT) || "manual",
@@ -68,23 +68,45 @@ export default function App() {
     setIsPremium(!!storage.get(NS_PREMIUM_KEY));
   }, []);
 
+  // ── User profile (login/signup) ───────────────────────────────────────────
+  const [userProfile, setUserProfile] = useState(() => {
+    const id    = localStorage.getItem(NS_PREFIX + "ns_user_id");
+    const email = localStorage.getItem(NS_PREFIX + "ns_user_email");
+    const name  = localStorage.getItem(NS_PREFIX + "ns_user_name");
+    return id ? { id, email, displayName: name } : null;
+  });
+  const [showLogin, setShowLogin] = useState(false);
+
+  const handleLogin = useCallback((user) => {
+    setUserProfile(user);
+    setShowLogin(false);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem(NS_PREFIX + "ns_user_id");
+    localStorage.removeItem(NS_PREFIX + "ns_user_email");
+    localStorage.removeItem(NS_PREFIX + "ns_user_name");
+    setUserProfile(null);
+  }, []);
+
   const [navStack, setNavStack] = useState([]);
 
-  const [saved,      setSaved]      = useState(() => storage.get("saved")     || {});
+  const [saved,      setSaved]      = useState(() => storage.get("saved")      || {});
   const [savedOrder, setSavedOrder] = useState(() => storage.get("savedOrder") || null);
-  const [progress,   setProgress]   = useState(() => storage.get("progress")  || {});
-  const [history,    setHistory]    = useState(() => storage.get("history")   || []);
-  const [watched,    setWatched]    = useState(() => storage.get("watched")   || {});
-  const [toast,          setToast]          = useState(null);
-  const [updateBanner,   setUpdateBanner]   = useState(null);
-  const [showUpdateModal,setShowUpdateModal] = useState(false);
+  const [progress,   setProgress]   = useState(() => storage.get("progress")   || {});
+  const [history,    setHistory]    = useState(() => storage.get("history")    || []);
+  const [watched,    setWatched]    = useState(() => storage.get("watched")    || {});
+
+  const [toast,           setToast]           = useState(null);
+  const [updateBanner,    setUpdateBanner]    = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [episodeCheckStatus, setEpisodeCheckStatus] = useState(null);
   const episodeDismissTimerRef = useRef(null);
 
-  const [trending,     setTrending]     = useState([]);
-  const [trendingTV,   setTrendingTV]   = useState([]);
-  const [loadingHome,  setLoadingHome]  = useState(false);
-  const [offline,      setOffline]      = useState(() => !navigator.onLine);
+  const [trending,    setTrending]    = useState([]);
+  const [trendingTV,  setTrendingTV]  = useState([]);
+  const [loadingHome, setLoadingHome] = useState(false);
+  const [offline,     setOffline]     = useState(() => !navigator.onLine);
 
   // ── Scheduled backup ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -135,10 +157,10 @@ export default function App() {
       );
       if (!tvSeries.length) return;
 
-      const cache   = storage.get(STORAGE_KEYS.EPISODE_RELEASE_CACHE) || {};
-      const now     = Date.now();
+      const cache     = storage.get(STORAGE_KEYS.EPISODE_RELEASE_CACHE) || {};
+      const now       = Date.now();
       const CACHE_TTL = 12 * 60 * 60 * 1000;
-      const toCheck = tvSeries.filter(
+      const toCheck   = tvSeries.filter(
         (s) => !cache[s.id] || now - (cache[s.id].checkedAt || 0) > CACHE_TTL,
       );
 
@@ -163,9 +185,9 @@ export default function App() {
               const data = await tmdbFetch(`/tv/${series.id}`, apiKey);
               if (cancelled) return;
 
-              const prev   = cache[series.id] || {};
-              const lastEp = data.last_episode_to_air;
-              const lastDate = lastEp?.air_date || null;
+              const prev      = cache[series.id] || {};
+              const lastEp    = data.last_episode_to_air;
+              const lastDate  = lastEp?.air_date || null;
               const isFirstCheck = !prev.checkedAt;
 
               const parseLocalDate = (d) => {
@@ -249,9 +271,9 @@ export default function App() {
   }, [apiKeyLoaded]); // eslint-disable-line
 
   // ── Downloads state ───────────────────────────────────────────────────────
-  const [downloads,        setDownloads]        = useState([]);
-  const [highlightDownload,setHighlightDownload] = useState(null);
-  const [closeConfirm,     setCloseConfirm]      = useState(null);
+  const [downloads,         setDownloads]         = useState([]);
+  const [highlightDownload, setHighlightDownload] = useState(null);
+  const [closeConfirm,      setCloseConfirm]      = useState(null);
 
   // ── Load API key ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -265,9 +287,7 @@ export default function App() {
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    setApiErrorHandlers(() => {}, () => {});
-  }, []);
+  useEffect(() => { setApiErrorHandlers(() => {}, () => {}); }, []);
 
   useEffect(() => {
     if (!apiKey) return;
@@ -483,7 +503,11 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         if (pageRef.current === "downloads") { e.preventDefault(); setDlSearchOpen(true); }
       }
-      if (e.key === "Escape") { setShowSearch(false); setShowShortcuts(false); }
+      if (e.key === "Escape") {
+        setShowSearch(false);
+        setShowShortcuts(false);
+        setShowLogin(false);
+      }
       if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
         const tag = (e.target?.tagName || "").toUpperCase();
         if (tag !== "INPUT" && tag !== "TEXTAREA") { e.preventDefault(); setShowShortcuts((v) => !v); }
@@ -530,8 +554,8 @@ export default function App() {
 
   const toggleSave = useCallback(
     (item) => {
-      const mt  = getMediaType(item);
-      const id  = `${mt}_${item.id}`;
+      const mt         = getMediaType(item);
+      const id         = `${mt}_${item.id}`;
       const currentSaved = savedRef.current;
       const isRemoving   = !!currentSaved[id];
       const next         = { ...currentSaved };
@@ -672,7 +696,6 @@ export default function App() {
     [navigate],
   );
 
-  // ── ReelPage: handle movie selection — goes to MoviePage ─────────────────
   const handleReelSelect = useCallback(
     (item) => {
       const movieItem = { ...item, media_type: "movie" };
@@ -718,6 +741,11 @@ export default function App() {
           onShowShortcuts={() => setShowShortcuts(true)}
           isPremium={isPremium}
           onUpgrade={() => navigate("pricing")}
+          // ── NEW: user auth + admin props ──
+          userProfile={userProfile}
+          onLogin={() => setShowLogin(true)}
+          onLogout={handleLogout}
+          onAdmin={() => navigate("admin")}
         />
 
         <div className="main">
@@ -747,7 +775,6 @@ export default function App() {
               />
             )}
 
-            {/* ── World Cinema Reel ── */}
             {page === "reel" && (
               <ReelPage
                 apiKey={apiKey}
@@ -859,23 +886,35 @@ export default function App() {
               />
             )}
 
+            {page === "nsai" && (
+              <NSAIPage
+                apiKey={apiKey}
+                onWatch={handleWatch}
+                onNavigate={navigate}
+                onSave={toggleSave}
+                savedItems={savedList}
+                watchHistory={history}
+                continueWatching={inProgress}
+                accentColor="var(--red, #e50914)"
+              />
+            )}
 
-{page === "nsai" && (
-  <NSAIPage
-    apiKey={apiKey}
-    onWatch={handleWatch}
-    onNavigate={navigate}
-    onSave={toggleSave}
-    savedItems={savedList}
-    watchHistory={history}
-    continueWatching={inProgress}
-    accentColor="var(--red, #e50914)"
-  />
-)}
-
+            {/* ── Admin Panel ── */}
+            {page === "admin" && (
+              <AdminPage onBack={navigateBack} />
+            )}
 
           </Suspense>
         </div>
+
+        {/* ── Login Modal (overlay, any page) ── */}
+        {showLogin && (
+          <LoginPage
+            onSuccess={handleLogin}
+            onClose={() => setShowLogin(false)}
+            onSkip={() => setShowLogin(false)}
+          />
+        )}
 
         {showSearch && (
           <SearchModal
@@ -899,44 +938,21 @@ export default function App() {
             fontSize: 14, fontWeight: 500, color: "#fff",
           }}>
             <span>🎉 NovaSpark v{updateBanner.latest} is available!</span>
-            <button
-              onClick={() => setShowUpdateModal(true)}
-              style={{
-                color: "#fff", fontWeight: 700,
-                background: "rgba(255,255,255,0.18)",
-                border: "1px solid rgba(255,255,255,0.4)",
-                borderRadius: 6, padding: "4px 12px", fontSize: 13, cursor: "pointer",
-              }}
-            >Install Update</button>
-            <button
-              onClick={() => setUpdateBanner(null)}
-              style={{
-                background: "transparent", border: "none",
-                color: "rgba(255,255,255,0.7)", cursor: "pointer",
-                fontSize: 18, lineHeight: 1, padding: "0 4px",
-              }}
-              aria-label="Dismiss"
-            >×</button>
+            <button onClick={() => setShowUpdateModal(true)} style={{ color: "#fff", fontWeight: 700, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 6, padding: "4px 12px", fontSize: 13, cursor: "pointer" }}>
+              Install Update
+            </button>
+            <button onClick={() => setUpdateBanner(null)} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }} aria-label="Dismiss">×</button>
           </div>
         )}
 
         {showUpdateModal && updateBanner && (
-          <UpdateModal
-            updateInfo={updateBanner}
-            activeDownloads={activeDownloadCount}
-            onClose={() => setShowUpdateModal(false)}
-          />
+          <UpdateModal updateInfo={updateBanner} activeDownloads={activeDownloadCount} onClose={() => setShowUpdateModal(false)} />
         )}
 
         {toast && <div className="toast">{toast}</div>}
 
         {episodeCheckStatus && (
-          <div style={{
-            position: "fixed", bottom: 24, left: "calc(var(--sidebar) + 24px)",
-            zIndex: 500, background: "var(--surface2)", border: "1px solid var(--border)",
-            borderRadius: "var(--radius)", boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-            animation: "slideUp 0.3s ease", minWidth: 260, maxWidth: 400,
-          }}>
+          <div style={{ position: "fixed", bottom: 24, left: "calc(var(--sidebar) + 24px)", zIndex: 500, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", boxShadow: "0 8px 24px rgba(0,0,0,0.5)", animation: "slideUp 0.3s ease", minWidth: 260, maxWidth: 400 }}>
             {episodeCheckStatus === "checking" && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", fontSize: 14, color: "var(--text2)" }}>
                 <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid var(--text3)", borderTopColor: "var(--red)", borderRadius: "50%", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
@@ -955,43 +971,21 @@ export default function App() {
                     <span style={{ color: "var(--red)", fontSize: 15 }}>🎬</span>
                     New episode{episodeCheckStatus.entries.length > 1 ? "s" : ""} available
                   </div>
-                  <button
-                    onClick={() => { clearTimeout(episodeDismissTimerRef.current); setEpisodeCheckStatus(null); }}
-                    style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px" }}
-                    aria-label="Dismiss"
-                  >×</button>
+                  <button onClick={() => { clearTimeout(episodeDismissTimerRef.current); setEpisodeCheckStatus(null); }} style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px" }} aria-label="Dismiss">×</button>
                 </div>
                 <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
                   {episodeCheckStatus.entries.slice(0, 5).map((entry) => (
-                    <li
-                      key={entry.id}
-                      className="episode-check-item"
-                      onClick={() => {
-                        clearTimeout(episodeDismissTimerRef.current);
-                        navigate("tv", { ...entry.seriesItem, season: entry.season ?? 1 });
-                        setEpisodeCheckStatus(null);
-                      }}
-                      style={{
-                        fontSize: 13, color: "var(--text2)", padding: "5px 0", paddingBottom: 7,
-                        borderBottom: "1px solid var(--border)", cursor: "pointer",
-                        display: "flex", justifyContent: "space-between", alignItems: "center",
-                        gap: 8, borderRadius: 4, transition: "color 0.15s",
-                      }}
-                    >
-                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {entry.title}
-                      </span>
+                    <li key={entry.id} className="episode-check-item"
+                      onClick={() => { clearTimeout(episodeDismissTimerRef.current); navigate("tv", { ...entry.seriesItem, season: entry.season ?? 1 }); setEpisodeCheckStatus(null); }}
+                      style={{ fontSize: 13, color: "var(--text2)", padding: "5px 0", paddingBottom: 7, borderBottom: "1px solid var(--border)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderRadius: 4, transition: "color 0.15s" }}>
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.title}</span>
                       {entry.season != null && (
-                        <span style={{ fontSize: 11, color: "var(--text3)", background: "var(--surface3)", borderRadius: 4, padding: "1px 6px", flexShrink: 0 }}>
-                          Season {entry.season}
-                        </span>
+                        <span style={{ fontSize: 11, color: "var(--text3)", background: "var(--surface3)", borderRadius: 4, padding: "1px 6px", flexShrink: 0 }}>Season {entry.season}</span>
                       )}
                     </li>
                   ))}
                   {episodeCheckStatus.entries.length > 5 && (
-                    <li style={{ fontSize: 12, color: "var(--text3)", paddingTop: 2 }}>
-                      +{episodeCheckStatus.entries.length - 5} more
-                    </li>
+                    <li style={{ fontSize: 12, color: "var(--text3)", paddingTop: 2 }}>+{episodeCheckStatus.entries.length - 5} more</li>
                   )}
                 </ul>
               </div>
