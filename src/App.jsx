@@ -15,6 +15,8 @@ import { applyAccentColor } from "./utils/appearance";
 import { collectBackupData } from "./utils/backup";
 import { tmdbFetch, setApiErrorHandlers } from "./utils/api";
 import { clearAppCaches } from "./utils/storage";
+import { checkForUpdates } from "./utils/updates";
+import { autoSyncPremium } from "./utils/premium";
 
 import Sidebar from "./components/Sidebar";
 import SearchModal from "./components/SearchModal";
@@ -35,13 +37,11 @@ const PricingPage   = lazy(() => import("./pages/PricingPage"));
 const NSAIPage      = lazy(() => import("./pages/NSAIPage"));
 const ReelPage      = lazy(() => import("./pages/Reelpage"));
 
-// ── NEW: Admin panel + Login ─────────────────────────────────────────────────
-const AdminPage = lazy(() => import("./pages/AdminPage"));
+// ── Admin panel + Login ──────────────────────────────────────────────────────
+const AdminPage      = lazy(() => import("./pages/AdminPage"));
 const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage"));
-const LoginPage = lazy(() => import("./pages/LoginPage"));
+const LoginPage      = lazy(() => import("./pages/LoginPage"));
 
-import { checkForUpdates } from "./utils/updates";
-import { autoSyncPremium } from "./utils/premium";
 autoSyncPremium();
 
 const NS_PREMIUM_KEY = "ns_premium";
@@ -53,7 +53,6 @@ export default function App() {
   const [skipped,      setSkipped]      = useState(true);
   const [apiKeyStatus, setApiKeyStatus] = useState("ok");
 
-  // ── DEFAULT PAGE: Home ────────────────────────────────────────────────────
   const [page,         setPage]         = useState(() => storage.get("startPage") || "home");
   const [selected,     setSelected]     = useState(null);
   const [showSearch,   setShowSearch]   = useState(false);
@@ -69,7 +68,6 @@ export default function App() {
     setIsPremium(!!storage.get(NS_PREMIUM_KEY));
   }, []);
 
-  // ── User profile (login/signup) ───────────────────────────────────────────
   const [userProfile, setUserProfile] = useState(() => {
     const id    = localStorage.getItem(NS_PREFIX + "ns_user_id");
     const email = localStorage.getItem(NS_PREFIX + "ns_user_email");
@@ -87,7 +85,9 @@ export default function App() {
     localStorage.removeItem(NS_PREFIX + "ns_user_id");
     localStorage.removeItem(NS_PREFIX + "ns_user_email");
     localStorage.removeItem(NS_PREFIX + "ns_user_name");
+    localStorage.removeItem("ns_user");
     setUserProfile(null);
+    setShowLogin(true);
   }, []);
 
   const [navStack, setNavStack] = useState([]);
@@ -109,7 +109,6 @@ export default function App() {
   const [loadingHome, setLoadingHome] = useState(false);
   const [offline,     setOffline]     = useState(() => !navigator.onLine);
 
-  // ── Scheduled backup ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron?.onScheduledBackupRequested) return;
     const handler = window.electron.onScheduledBackupRequested(async () => {
@@ -123,7 +122,6 @@ export default function App() {
     return () => window.electron.offScheduledBackupRequested(handler);
   }, []);
 
-  // ── Post-update cache flush ───────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron?.getAppVersion) return;
     window.electron.getAppVersion().then((version) => {
@@ -133,7 +131,6 @@ export default function App() {
     });
   }, []);
 
-  // ── Startup update check ──────────────────────────────────────────────────
   useEffect(() => {
     if (!storage.get("autoCheckUpdates")) return;
     checkForUpdates()
@@ -141,7 +138,6 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // ── New-episode notification check ───────────────────────────────────────
   useEffect(() => {
     if (!apiKeyLoaded) return;
     const notifyPref = storage.get(STORAGE_KEYS.NOTIFY_NEW_EPISODE);
@@ -271,12 +267,10 @@ export default function App() {
     return () => { cancelled = true; clearTimeout(episodeDismissTimerRef.current); };
   }, [apiKeyLoaded]); // eslint-disable-line
 
-  // ── Downloads state ───────────────────────────────────────────────────────
   const [downloads,         setDownloads]         = useState([]);
   const [highlightDownload, setHighlightDownload] = useState(null);
   const [closeConfirm,      setCloseConfirm]      = useState(null);
 
-  // ── Load API key ──────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     secureStorage.get("apikey").then((val) => {
@@ -298,7 +292,6 @@ export default function App() {
     return () => controller.abort();
   }, [apiKey]);
 
-  // ── Detect platform ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron?.getPlatform) return;
     let mounted = true;
@@ -312,14 +305,12 @@ export default function App() {
     return () => { mounted = false; };
   }, []);
 
-  // ── Close confirmation ────────────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
     const handler = window.electron.onConfirmClose((data) => setCloseConfirm(data));
     return () => window.electron.offConfirmClose(handler);
   }, []);
 
-  // ── Downloads: load + prune on startup ───────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
     let mounted = true;
@@ -347,7 +338,6 @@ export default function App() {
     return () => { mounted = false; };
   }, []);
 
-  // ── Downloads: live progress ──────────────────────────────────────────────
   useEffect(() => {
     if (!window.electron) return;
     const handler = window.electron.onDownloadProgress((update) => {
@@ -394,7 +384,6 @@ export default function App() {
     [downloads],
   );
 
-  // ── Trending fetch ────────────────────────────────────────────────────────
   const fetchTrending = useCallback(() => {
     if (!apiKey) return;
     const cached    = storage.get("trendingCache");
@@ -427,7 +416,6 @@ export default function App() {
     fetchTrending();
   }, [offline, fetchTrending]);
 
-  // ── Appearance / settings sync ────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => setLibrarySort(e.detail);
     window.addEventListener("streambert:library-sort-changed", handler);
@@ -458,7 +446,6 @@ export default function App() {
     };
   }, []);
 
-  // ── Navigation ────────────────────────────────────────────────────────────
   const pageRef     = useRef(page);
   const selectedRef = useRef(selected);
   useEffect(() => { pageRef.current     = page;     }, [page]);
@@ -497,7 +484,6 @@ export default function App() {
     return () => window.removeEventListener("novaspark:upgrade", handler);
   }, [navigate]);
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") { e.preventDefault(); setShowSearch(true); }
@@ -507,7 +493,6 @@ export default function App() {
       if (e.key === "Escape") {
         setShowSearch(false);
         setShowShortcuts(false);
-        setShowLogin(false);
       }
       if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
         const tag = (e.target?.tagName || "").toUpperCase();
@@ -520,7 +505,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [navigateBack]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   const toastTimerRef = useRef(null);
   const showToast = useCallback((msg) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -555,8 +539,8 @@ export default function App() {
 
   const toggleSave = useCallback(
     (item) => {
-      const mt         = getMediaType(item);
-      const id         = `${mt}_${item.id}`;
+      const mt           = getMediaType(item);
+      const id           = `${mt}_${item.id}`;
       const currentSaved = savedRef.current;
       const isRemoving   = !!currentSaved[id];
       const next         = { ...currentSaved };
@@ -742,7 +726,6 @@ export default function App() {
           onShowShortcuts={() => setShowShortcuts(true)}
           isPremium={isPremium}
           onUpgrade={() => navigate("pricing")}
-          // ── NEW: user auth + admin props ──
           userProfile={userProfile}
           onLogin={() => setShowLogin(true)}
           onLogout={handleLogout}
@@ -900,7 +883,6 @@ export default function App() {
               />
             )}
 
-            {/* ── Admin Panel ── */}
             {page === "admin" && (
               <AdminPage onBack={navigateBack} />
             )}
@@ -908,20 +890,20 @@ export default function App() {
           </Suspense>
         </div>
 
-     {window.location.pathname === "/admin-login" && (
-  <Suspense fallback={null}>
-    <AdminLoginPage onSuccess={(user) => {
-      window.location.href = "/";
-    }} />
-  </Suspense>
-)}
-        {/* ── Login Modal (overlay, any page) ── */}
+        {window.location.pathname === "/admin-login" && (
+          <Suspense fallback={null}>
+            <AdminLoginPage onSuccess={() => { window.location.href = "/"; }} />
+          </Suspense>
+        )}
+
         {showLogin && (
-          <LoginPage
-            onSuccess={handleLogin}
-            onClose={() => setShowLogin(false)}
-            onSkip={() => setShowLogin(false)}
-          />
+          <Suspense fallback={null}>
+            <LoginPage
+              onSuccess={handleLogin}
+              onClose={() => setShowLogin(false)}
+              onSkip={() => setShowLogin(false)}
+            />
+          </Suspense>
         )}
 
         {showSearch && (
@@ -1013,4 +995,3 @@ export default function App() {
     </ErrorBoundary>
   );
 }
-

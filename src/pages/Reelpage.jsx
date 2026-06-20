@@ -1,40 +1,7 @@
 /**
  * ReelPage.jsx — NovaSpark Cinema Reels
- *
- * PRODUCTION-HARDENED VERSION — all edge cases resolved:
- *
- * ── SOUND STABILITY ──────────────────────────────────────────────────────────
- *  Root cause: postMessage commands dropped during rapid navigation.
- *  Fix: mutedRef always mirrors current muted state. applyMuteState() called at
- *  t=0, t=350ms, t=800ms on activation. Effect cleanup cancels retries when reel
- *  deactivates — no stale unmute commands fire after another reel takes over.
- *
- * ── YOUTUBE BUTTON ELIMINATION ───────────────────────────────────────────────
- *  Two separate states now control the UI:
- *    videoPlaying — ONLY set true by onStateChange===1 (YouTube confirmed playing).
- *                   Set false when video ends (state=0) so cover reappears before
- *                   the transition to next reel.
- *    spinnerDone  — set by state=1 OR a 7s fallback; just hides the spinner.
- *  Cover (z=5, above iframe at z=2) fades ONLY when active && videoPlaying.
- *  Preload case: playerStateRef tracks YT state even when not active; when reel
- *  activates and playerStateRef===1 (already playing from preload), videoPlaying
- *  and spinnerDone are set immediately → instant seamless playback.
- *
- * ── SCROLL LOCK ──────────────────────────────────────────────────────────────
- *  e.preventDefault() called on ALL touchmove events when a gesture is active
- *  (not just vertical). Kills rubber-band, pull-to-refresh, any native scroll.
- *  Container: overscrollBehavior none, userSelect none, touchAction none.
- *  goTo uses refs — never stale, never double-fires, 420ms lock per swipe.
- *
- * ── PRELOADING ───────────────────────────────────────────────────────────────
- *  idx+1 reel has iframe injected immediately. Video plays muted in background.
- *  On activation cover either fades immediately (already playing) or after
- *  first state=1 message (buffering). Either way: zero YouTube UI visible.
- *
- * ── RESPONSIVENESS ───────────────────────────────────────────────────────────
- *  Full breakpoint set: 360px (tiny), 480px (phone), 768px (tablet),
- *  1024px (large tablet), 1280px (desktop), 1800px (wide).
- *  Landscape mobile: condensed layout, overview hidden.
+ * Visual redesign: YouTube Shorts–style top bar (back · brand · search).
+ * All gesture, player, audio, and scroll logic is unchanged.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -48,47 +15,6 @@ const CLIP_END     = 60;
 const NINETY_DAYS  = 90 * 24 * 60 * 60 * 1000;
 const IS_ELECTRON  = typeof window !== "undefined" && !!window.electronAPI;
 
-// ─── NAV ─────────────────────────────────────────────────────────────────────
-const NAV = [
-  { id: "home",      label: "Home",      path: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" },
-  { id: "search",    label: "Search",    circle: true },
-  { id: "history",   label: "Library",   bookmark: true },
-  { id: "downloads", label: "Downloads", dl: true },
-  { id: "settings",  label: "Settings",  gear: true },
-];
-function NavIcon({ n }) {
-  if (n.circle) return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-  );
-  if (n.bookmark) return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-    </svg>
-  );
-  if (n.dl) return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-    </svg>
-  );
-  if (n.gear) return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-    </svg>
-  );
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d={n.path}/></svg>;
-}
-
-// ─── HAPTICS ──────────────────────────────────────────────────────────────────
-const haptic = {
-  light:   () => { try { navigator.vibrate?.(8);          } catch {} },
-  medium:  () => { try { navigator.vibrate?.(20);         } catch {} },
-  success: () => { try { navigator.vibrate?.([10,50,10]); } catch {} },
-  save:    () => { try { navigator.vibrate?.([15,30,60]); } catch {} },
-};
-
 // ─── DATE UTILS ──────────────────────────────────────────────────────────────
 function getWatchState(reel) {
   if (!reel.release_date) return "watch";
@@ -99,46 +25,27 @@ function getWatchState(reel) {
 }
 function formatReleaseDate(dateStr) {
   if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString("en-US", { month:"long", day:"numeric", year:"numeric" });
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
 // ─── URL BUILDERS ────────────────────────────────────────────────────────────
 function buildYTSrc(videoId) {
   const p = new URLSearchParams({
-    autoplay:       "1",
-    mute:           "1",        // always start muted; we unmute via API
-    controls:       "0",        // no YouTube controls
-    modestbranding: "1",
-    rel:            "0",
-    showinfo:       "0",
-    iv_load_policy: "3",        // no annotations
-    disablekb:      "1",
-    fs:             "0",        // no fullscreen button
-    playsinline:    "1",
-    enablejsapi:    "1",
-    start:          String(START_OFFSET),
-    end:            String(CLIP_END),
-    hl:             "en",
-    cc_lang_pref:   "en",
-    cc_load_policy: "0",        // no captions
-    vq:             "small",
+    autoplay: "1", mute: "1", controls: "0", modestbranding: "1",
+    rel: "0", showinfo: "0", iv_load_policy: "3", disablekb: "1",
+    fs: "0", playsinline: "1", enablejsapi: "1",
+    start: String(START_OFFSET), end: String(CLIP_END),
+    hl: "en", cc_lang_pref: "en", cc_load_policy: "0", vq: "small",
   });
   return `https://www.youtube.com/embed/${videoId}?${p}`;
 }
-function backdropUrl(path, size = "w780") {
-  return path ? `${TMDB_IMG}/${size}${path}` : null;
-}
-function posterUrl(path, size = "w342") {
-  return path ? `${TMDB_IMG}/${size}${path}` : null;
-}
-function ytMsg(iframe, obj) {
-  try { iframe?.contentWindow?.postMessage(JSON.stringify(obj), "*"); } catch {}
-}
+function backdropUrl(path, size = "w780") { return path ? `${TMDB_IMG}/${size}${path}` : null; }
+function posterUrl(path,   size = "w342") { return path ? `${TMDB_IMG}/${size}${path}` : null; }
+function ytMsg(iframe, obj) { try { iframe?.contentWindow?.postMessage(JSON.stringify(obj), "*"); } catch {} }
 
 // ─── SHUFFLE ─────────────────────────────────────────────────────────────────
 function seededShuffle(arr, seed) {
-  const a = [...arr];
-  let s = seed >>> 0;
+  const a = [...arr]; let s = seed >>> 0;
   for (let i = a.length - 1; i > 0; i--) {
     s = Math.imul(s ^ (s >>> 15), s | 1);
     s ^= s + Math.imul(s ^ (s >>> 7), s | 61);
@@ -253,7 +160,15 @@ async function fetchReels(apiKey, count=12) {
   return result;
 }
 
-// ─── SHARE ────────────────────────────────────────────────────────────────────
+// ─── HAPTICS ─────────────────────────────────────────────────────────────────
+const haptic = {
+  light:   () => { try { navigator.vibrate?.(8);          } catch {} },
+  medium:  () => { try { navigator.vibrate?.(20);         } catch {} },
+  success: () => { try { navigator.vibrate?.([10,50,10]); } catch {} },
+  save:    () => { try { navigator.vibrate?.([15,30,60]); } catch {} },
+};
+
+// ─── SHARE ───────────────────────────────────────────────────────────────────
 async function shareReel(reel) {
   const url  = reel.tmdb_id ? `${SHARE_BASE}/reel?v=${reel.tmdb_id}` : SHARE_BASE;
   const text = reel.overview ? `${reel.title} — ${reel.overview.slice(0,100).trim()}...` : reel.title;
@@ -265,7 +180,6 @@ async function shareReel(reel) {
 }
 
 // ─── PROGRESS BAR ─────────────────────────────────────────────────────────────
-// Fixed 30-second window. onComplete is the ultimate fallback advance trigger.
 function ProgressBar({ active, onComplete }) {
   const [pct, setPct] = useState(0);
   const rafRef        = useRef(null);
@@ -291,55 +205,36 @@ function ProgressBar({ active, onComplete }) {
   }, [active]); // eslint-disable-line
 
   return (
-    <div style={{ position:"absolute", bottom:0, left:0, right:0, height:2, background:"rgba(255,255,255,0.06)", zIndex:40 }}>
+    <div style={{ position:"absolute", bottom:0, left:0, right:0, height:2, background:"rgba(255,255,255,0.06)", zIndex:40, pointerEvents:"none" }}>
       <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#00e5cc,#00b4ff,#a78bfa)", transition:"width 0.1s linear", borderRadius:"0 1px 1px 0" }}/>
     </div>
   );
 }
 
-// ─── WEB PLAYER ───────────────────────────────────────────────────────────────
-/**
- * videoPlaying: set TRUE only when YouTube fires onStateChange===1.
- *              set FALSE when video ends (state===0) — cover reappears cleanly.
- * spinnerDone:  set TRUE by state=1 OR 7-second fallback. Controls spinner only.
- * Cover (z=5): fades to 0 ONLY when active && videoPlaying. Iframe is at z=2.
- *             This means no YouTube UI — thumbnail, play button, logo — EVER visible.
- * Mute: mutedRef always current. applyMuteState() fires at t=0, 350ms, 800ms.
- *       Effect cleanup cancels pending retries when reel deactivates — this is
- *       the definitive fix for sound being lost on fast scroll.
- */
+// ─── WEB YT PLAYER ───────────────────────────────────────────────────────────
 function WebYTPlayer({ videoId, active, muted, onBlocked, backdrop, poster, preload }) {
-  const iframeRef                             = useRef(null);
-  const [iframeInjected, setIframeInjected]   = useState(false);
-  const [loaded,         setLoaded]           = useState(false);
-  const [videoPlaying,   setVideoPlaying]     = useState(false);
-  const [spinnerDone,    setSpinnerDone]      = useState(false);
+  const iframeRef                           = useRef(null);
+  const [iframeInjected, setIframeInjected] = useState(false);
+  const [loaded,         setLoaded]         = useState(false);
+  const [videoPlaying,   setVideoPlaying]   = useState(false);
+  const [spinnerDone,    setSpinnerDone]    = useState(false);
 
-  // Always-current refs — no stale closure issues
   const activeRef      = useRef(active);
   const mutedRef       = useRef(muted);
   const blockedRef     = useRef(false);
-  const playerStateRef = useRef(-1); // -1=unstarted, 1=playing, 2=paused, 0=ended
+  const playerStateRef = useRef(-1);
 
   useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => { mutedRef.current  = muted;  }, [muted]);
 
-  // ── Inject iframe when active or preloading ────────────────────────────
-  useEffect(() => {
-    if (active || preload) setIframeInjected(true);
-  }, [active, preload]);
+  useEffect(() => { if (active || preload) setIframeInjected(true); }, [active, preload]);
 
-  // ── Reset on video change ──────────────────────────────────────────────
   useEffect(() => {
-    setLoaded(false);
-    setVideoPlaying(false);
-    setSpinnerDone(false);
-    blockedRef.current  = false;
-    playerStateRef.current = -1;
+    setLoaded(false); setVideoPlaying(false); setSpinnerDone(false);
+    blockedRef.current = false; playerStateRef.current = -1;
     if (!active && !preload) setIframeInjected(false);
   }, [videoId]); // eslint-disable-line
 
-  // ── Stable mute applicator — uses refs, safe in async callbacks ────────
   const applyMuteState = useCallback(() => {
     const ifr = iframeRef.current;
     if (!ifr) return;
@@ -351,25 +246,18 @@ function WebYTPlayer({ videoId, active, muted, onBlocked, backdrop, poster, prel
     }
   }, []);
 
-  // ── YouTube message handler ────────────────────────────────────────────
   useEffect(() => {
     const fn = (e) => {
       if (!e.data) return;
       try {
         const d = typeof e.data==="string" ? JSON.parse(e.data) : e.data;
-        // Normalise state from both event formats
         let state;
-        if (d?.event === "onStateChange")  state = d.info;
-        if (d?.event === "infoDelivery")   state = d?.info?.playerState;
+        if (d?.event === "onStateChange") state = d.info;
+        if (d?.event === "infoDelivery")  state = d?.info?.playerState;
         if (state !== undefined && state !== null) playerStateRef.current = state;
-
-        if (state === 1) { // playing
-          if (activeRef.current) { setVideoPlaying(true); setSpinnerDone(true); }
-        }
-        if (state === 0 && activeRef.current && !blockedRef.current) { // ended
-          blockedRef.current = true;
-          setVideoPlaying(false); // cover reappears before reel transitions away
-          onBlocked?.();
+        if (state === 1) { if (activeRef.current) { setVideoPlaying(true); setSpinnerDone(true); } }
+        if (state === 0 && activeRef.current && !blockedRef.current) {
+          blockedRef.current = true; setVideoPlaying(false); onBlocked?.();
         }
         if (d?.event === "onError" && activeRef.current && !blockedRef.current) {
           blockedRef.current = true; onBlocked?.();
@@ -380,7 +268,6 @@ function WebYTPlayer({ videoId, active, muted, onBlocked, backdrop, poster, prel
     return () => window.removeEventListener("message", fn);
   }, [onBlocked]);
 
-  // ── Wire up YT IFrame API after load ──────────────────────────────────
   useEffect(() => {
     if (!loaded || !iframeRef.current) return;
     const ifr = iframeRef.current;
@@ -389,39 +276,22 @@ function WebYTPlayer({ videoId, active, muted, onBlocked, backdrop, poster, prel
     ytMsg(ifr, { event:"command", func:"addEventListener", args:["onError"] });
   }, [loaded]);
 
-  // ── Play / pause + mute (with retries) ────────────────────────────────
-  // CRITICAL: return value is the cleanup function.
-  // When reel deactivates, cleanup cancels pending mute retries instantly.
-  // This is what prevents the "sound lost on fast scroll" bug.
   useEffect(() => {
     if (!loaded || !iframeRef.current) return;
     const ifr = iframeRef.current;
-
     if (active) {
       ytMsg(ifr, { event:"command", func:"playVideo", args:[] });
-
-      // If preloaded and already playing, surface immediately
-      if (playerStateRef.current === 1) {
-        setVideoPlaying(true);
-        setSpinnerDone(true);
-      }
-
-      // Apply mute now + two retries (postMessages can be dropped under load)
+      if (playerStateRef.current === 1) { setVideoPlaying(true); setSpinnerDone(true); }
       applyMuteState();
       const t1 = setTimeout(applyMuteState, 350);
       const t2 = setTimeout(applyMuteState, 800);
-
-      // CLEANUP cancels retries when this reel deactivates
       return () => { clearTimeout(t1); clearTimeout(t2); };
     } else {
-      // Deactivating: pause and force-mute
       ytMsg(ifr, { event:"command", func:"pauseVideo", args:[] });
       ytMsg(ifr, { event:"command", func:"mute",       args:[] });
-      // Don't reset videoPlaying — cover visibility is driven by active=false anyway
     }
   }, [active, loaded, applyMuteState]); // eslint-disable-line
 
-  // ── Live mute toggle sync ──────────────────────────────────────────────
   useEffect(() => {
     if (!loaded || !iframeRef.current || !active) return;
     applyMuteState();
@@ -429,45 +299,26 @@ function WebYTPlayer({ videoId, active, muted, onBlocked, backdrop, poster, prel
     return () => clearTimeout(t);
   }, [muted, loaded, applyMuteState]); // eslint-disable-line
 
-  // ── Spinner fallback: hide after 7s regardless of YT state ────────────
   useEffect(() => {
     if (!active || !loaded) return;
     const t = setTimeout(() => setSpinnerDone(true), 7000);
     return () => clearTimeout(t);
   }, [active, loaded, videoId]); // eslint-disable-line
 
-  const bgImage     = backdropUrl(backdrop, "w1280") || posterUrl(poster, "w780");
-  const coverVisible = !(active && videoPlaying); // cover hidden ONLY when confirmed playing
+  const bgImage      = backdropUrl(backdrop, "w1280") || posterUrl(poster, "w780");
+  const coverVisible = !(active && videoPlaying);
 
   return (
     <div style={{ position:"absolute", inset:0, background:"#000", overflow:"hidden" }}>
-
-      {/* ── YouTube iframe — oversized to push control bar out of frame ── */}
       {iframeInjected && (
         <iframe
-          key={videoId}
-          ref={iframeRef}
-          src={buildYTSrc(videoId)}
-          allow="autoplay; encrypted-media"
-          allowFullScreen={false}
-          frameBorder="0"
-          scrolling="no"
-          title="reel"
+          key={videoId} ref={iframeRef} src={buildYTSrc(videoId)}
+          allow="autoplay; encrypted-media" allowFullScreen={false}
+          frameBorder="0" scrolling="no" title="reel"
           onLoad={() => setLoaded(true)}
-          style={{
-            position:"absolute", top:"-22%", left:"-12%",
-            width:"124%", height:"144%",
-            border:"none", pointerEvents:"none", display:"block",
-            zIndex:2,
-          }}
+          style={{ position:"absolute", top:"-22%", left:"-12%", width:"124%", height:"144%", border:"none", pointerEvents:"none", display:"block", zIndex:2 }}
         />
       )}
-
-      {/* ── COVER LAYER (z=5, above iframe at z=2) ──────────────────────
-          Completely hides YouTube until videoPlaying===true.
-          backgroundColor is the hard fallback if backdrop image fails to load.
-          The cover fades out with a 0.45s ease — fast enough to feel snappy,
-          slow enough to feel cinematic. ─────────────────────────────── */}
       <div style={{
         position:"absolute", inset:0, zIndex:5,
         backgroundColor:"#0a0a12",
@@ -475,27 +326,17 @@ function WebYTPlayer({ videoId, active, muted, onBlocked, backdrop, poster, prel
         backgroundSize:"cover", backgroundPosition:"center",
         filter: bgImage ? "brightness(0.5) saturate(1.1)" : undefined,
         opacity: coverVisible ? 1 : 0,
-        transition:"opacity 0.45s ease",
-        pointerEvents:"none",
-        willChange:"opacity",
+        transition:"opacity 0.45s ease", pointerEvents:"none", willChange:"opacity",
       }}/>
-
-      {/* ── Cinematic vignette (z=6, always above cover) ─────────────── */}
       <div style={{
         position:"absolute", inset:0, zIndex:6, pointerEvents:"none",
         background:`
           linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, transparent 22%),
-          linear-gradient(to top,    rgba(0,0,0,1) 0%, rgba(0,0,0,0.8) 15%,
-                                     rgba(0,0,0,0.1) 45%, transparent 65%)
+          linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.8) 15%, rgba(0,0,0,0.1) 45%, transparent 65%)
         `,
       }}/>
-
-      {/* ── Loading spinner ── */}
       {active && !spinnerDone && (
-        <div style={{
-          position:"absolute", inset:0, zIndex:25, pointerEvents:"none",
-          display:"flex", alignItems:"center", justifyContent:"center",
-        }}>
+        <div style={{ position:"absolute", inset:0, zIndex:25, pointerEvents:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>
           <div style={{ position:"relative", width:52, height:52 }}>
             <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.06)"}}/>
             <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:"#00e5cc", animation:"spin 0.8s linear infinite"}}/>
@@ -509,12 +350,12 @@ function WebYTPlayer({ videoId, active, muted, onBlocked, backdrop, poster, prel
 
 // ─── ELECTRON PLAYER ─────────────────────────────────────────────────────────
 function ElectronVideoPlayer({ videoId, active, muted, onBlocked, backdrop, poster, preload }) {
-  const videoRef                            = useRef(null);
-  const [streamUrl,  setStreamUrl]          = useState(null);
-  const [videoPlaying, setVideoPlaying]     = useState(false);
-  const [spinnerDone,  setSpinnerDone]      = useState(false);
-  const [fetching,   setFetching]           = useState(false);
-  const [fetchError, setFetchError]         = useState(false);
+  const videoRef                          = useRef(null);
+  const [streamUrl,  setStreamUrl]        = useState(null);
+  const [videoPlaying, setVideoPlaying]   = useState(false);
+  const [spinnerDone,  setSpinnerDone]    = useState(false);
+  const [fetching,   setFetching]         = useState(false);
+  const [fetchError, setFetchError]       = useState(false);
   const activeRef  = useRef(active);
   const videoIdRef = useRef(videoId);
   const blockedRef = useRef(false);
@@ -564,15 +405,7 @@ function ElectronVideoPlayer({ videoId, active, muted, onBlocked, backdrop, post
           style={{ position:"absolute", top:"-22%", left:"-12%", width:"124%", height:"144%", objectFit:"cover", zIndex:2, pointerEvents:"none" }}
         />
       )}
-      <div style={{
-        position:"absolute", inset:0, zIndex:5,
-        backgroundColor:"#0a0a12",
-        backgroundImage:bgImage?`url(${bgImage})`:undefined,
-        backgroundSize:"cover", backgroundPosition:"center",
-        filter:bgImage?"brightness(0.5)":undefined,
-        opacity: (active&&videoPlaying)?0:1, transition:"opacity 0.45s ease",
-        pointerEvents:"none",
-      }}/>
+      <div style={{ position:"absolute", inset:0, zIndex:5, backgroundColor:"#0a0a12", backgroundImage:bgImage?`url(${bgImage})`:undefined, backgroundSize:"cover", backgroundPosition:"center", filter:bgImage?"brightness(0.5)":undefined, opacity:(active&&videoPlaying)?0:1, transition:"opacity 0.45s ease", pointerEvents:"none" }}/>
       <div style={{ position:"absolute", inset:0, zIndex:6, pointerEvents:"none", background:`linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, transparent 22%),linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.8) 15%, rgba(0,0,0,0.1) 45%, transparent 65%)` }}/>
       {(fetching||(!spinnerDone&&active&&!fetchError)) && (
         <div style={{ position:"absolute", inset:0, zIndex:25, pointerEvents:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -626,14 +459,14 @@ function ActionBtn({ children, label, active, count, onClick }) {
       onPointerDown={stopAll} onPointerUp={stopAll} onPointerMove={stopAll} onPointerCancel={stopAll}
       onTouchStart={stopAll}  onTouchEnd={stopAll}  onTouchMove={stopAll}   onTouchCancel={stopAll}
       onClick={handle}
-      style={{ all:"unset", display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer", WebkitTapHighlightColor:"transparent", userSelect:"none", touchAction:"none" }}
+      style={{ all:"unset", display:"flex", flexDirection:"column", alignItems:"center", gap:6, cursor:"pointer", WebkitTapHighlightColor:"transparent", userSelect:"none", touchAction:"none" }}
     >
-      <div style={{ width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", color:active?"#00e5cc":"rgba(255,255,255,0.92)", transform:pop?"scale(0.62)":"scale(1)", transition:"transform 0.15s cubic-bezier(0.34,1.56,0.64,1), color 0.18s", filter:active?"drop-shadow(0 0 6px rgba(0,229,204,0.7))":"drop-shadow(0 2px 6px rgba(0,0,0,0.9))" }}>
+      <div style={{ width:48, height:48, display:"flex", alignItems:"center", justifyContent:"center", color:active?"#00e5cc":"rgba(255,255,255,0.92)", transform:pop?"scale(0.60)":"scale(1)", transition:"transform 0.15s cubic-bezier(0.34,1.56,0.64,1), color 0.18s", filter:active?"drop-shadow(0 0 8px rgba(0,229,204,0.7))":"drop-shadow(0 2px 8px rgba(0,0,0,0.9))" }}>
         {children}
       </div>
-      {(label||count!==undefined)&&(
-        <span style={{ fontSize:9, fontWeight:700, letterSpacing:1.2, textTransform:"uppercase", color:active?"#00e5cc":"rgba(255,255,255,0.45)", fontFamily:"'DM Mono',monospace", lineHeight:1, transition:"color 0.18s", textShadow:"0 1px 6px rgba(0,0,0,0.95)" }}>
-          {count!==undefined?count:label}
+      {(label||count!==undefined) && (
+        <span style={{ fontSize:10, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:active?"#00e5cc":"rgba(255,255,255,0.4)", fontFamily:"'DM Mono',monospace", lineHeight:1, transition:"color 0.18s", textShadow:"0 1px 6px rgba(0,0,0,0.95)" }}>
+          {count!==undefined ? count : label}
         </span>
       )}
     </button>
@@ -654,10 +487,10 @@ function WatchButton({ reel, onClick }) {
   return (
     <button
       onPointerDown={e=>{ e.stopPropagation(); if(state!=="coming_soon") e.currentTarget.style.transform="scale(0.94)"; }}
-      onPointerUp={e   =>{ e.currentTarget.style.transform="scale(1)"; }}
+      onPointerUp={e=>{ e.currentTarget.style.transform="scale(1)"; }}
       onPointerLeave={e=>{ e.currentTarget.style.transform="scale(1)"; }}
-      onTouchStart={e  =>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}
-      onTouchMove={e   =>e.stopPropagation()} onTouchCancel={e=>e.stopPropagation()}
+      onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}
+      onTouchMove={e=>e.stopPropagation()} onTouchCancel={e=>e.stopPropagation()}
       onClick={e=>{ e.stopPropagation(); if(state!=="coming_soon") onClick(reel,state); }}
       style={{ all:"unset", pointerEvents:"auto", display:"inline-flex", alignItems:"center", gap:7, borderRadius:10, padding:"11px 20px", fontSize:11, fontWeight:800, fontFamily:"'DM Sans',sans-serif", letterSpacing:0.7, textTransform:"uppercase", WebkitTapHighlightColor:"transparent", transition:"box-shadow 0.2s,transform 0.1s", whiteSpace:"nowrap", touchAction:"manipulation", ...cfg.style }}
     >
@@ -673,7 +506,7 @@ function InfoOverlay({ reel, visible, onClose }) {
     <div
       style={{ position:"absolute", inset:0, zIndex:70, background:"rgba(0,0,0,0.88)", backdropFilter:"blur(20px)", display:"flex", flexDirection:"column", justifyContent:"flex-end", padding:"0 24px 80px", animation:"slide-up-full 0.35s cubic-bezier(0.22,1,0.36,1) both" }}
       onTouchStart={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()}
-      onTouchEnd={e=>e.stopPropagation()}   onClick={e=>{ e.stopPropagation(); onClose(); }}
+      onTouchEnd={e=>e.stopPropagation()} onClick={e=>{ e.stopPropagation(); onClose(); }}
     >
       <div onClick={e=>e.stopPropagation()}>
         <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
@@ -748,7 +581,7 @@ function ReelCard({ reel, active, muted, preload, onToggleMute, onWatch, onSave,
         </div>
       )}
 
-      {/* Action rail — data-gesture-stop tells container to not start a gesture here */}
+      {/* Action rail */}
       <div className="rc-rail" data-gesture-stop
         onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()}
         onPointerMove={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}
@@ -756,27 +589,27 @@ function ReelCard({ reel, active, muted, preload, onToggleMute, onWatch, onSave,
         onTouchCancel={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}
       >
         <ActionBtn count={fmt(likeCount)} active={liked} onClick={()=>{ haptic.medium(); setLiked(v=>{if(!v)setLikeCount(c=>c+1);return !v;}); }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill={liked?"#ff4060":"none"} stroke={liked?"#ff4060":"rgba(255,255,255,0.92)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill={liked?"#ff4060":"none"} stroke={liked?"#ff4060":"rgba(255,255,255,0.92)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
           </svg>
         </ActionBtn>
         <ActionBtn label={saved?"Saved":"Save"} active={saved} onClick={()=>{ haptic.save(); onSave(reel); }}>
           {saved
-            ?<svg width="22" height="22" viewBox="0 0 24 24" fill="#00e5cc"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
-            :<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.7" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            ?<svg width="24" height="24" viewBox="0 0 24 24" fill="#00e5cc"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+            :<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.7" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
           }
         </ActionBtn>
         <ActionBtn label={shareState?"Copied":"Share"} active={!!shareState} onClick={handleShare}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.7" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.7" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         </ActionBtn>
-        <ActionBtn label={muted?"Sound Off":"Sound"} active={!muted} onClick={()=>{ haptic.light(); onToggleMute(); }}>
+        <ActionBtn label={muted?"Muted":"Sound"} active={!muted} onClick={()=>{ haptic.light(); onToggleMute(); }}>
           {muted
-            ?<svg width="22" height="22" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
-            :<svg width="22" height="22" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            ?<svg width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+            :<svg width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
           }
         </ActionBtn>
         <ActionBtn label="Info" active={showInfo} onClick={()=>{ haptic.light(); setShowInfo(true); }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         </ActionBtn>
       </div>
 
@@ -807,7 +640,7 @@ function ReelCard({ reel, active, muted, preload, onToggleMute, onWatch, onSave,
   );
 }
 
-// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+// ─── MAIN REEL PAGE ───────────────────────────────────────────────────────────
 export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNavigate, onSearch }) {
   const [reels,         setReels]         = useState([]);
   const [loading,       setLoading]       = useState(true);
@@ -819,20 +652,18 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
   const [saveFlash,     setSaveFlash]     = useState(false);
   const [swipeState,    setSwipeState]    = useState({ dir:null, opacity:0 });
 
-  // ── Stable refs ───────────────────────────────────────────────────────────
-  const containerRef      = useRef(null);
-  const idxRef            = useRef(0);
-  const reelsRef          = useRef([]);
-  const savedRef          = useRef(savedItems);
-  const canNavRef         = useRef(true);
-  const wheelLockRef      = useRef(false);
-  const hasInteractedRef  = useRef(false);
+  const containerRef     = useRef(null);
+  const idxRef           = useRef(0);
+  const reelsRef         = useRef([]);
+  const savedRef         = useRef(savedItems);
+  const canNavRef        = useRef(true);
+  const wheelLockRef     = useRef(false);
+  const hasInteractedRef = useRef(false);
 
-  useEffect(() => { idxRef.current  = idx;        }, [idx]);
-  useEffect(() => { reelsRef.current = reels;     }, [reels]);
+  useEffect(() => { idxRef.current   = idx;        }, [idx]);
+  useEffect(() => { reelsRef.current = reels;      }, [reels]);
   useEffect(() => { savedRef.current = savedItems; }, [savedItems]);
 
-  // ── goTo: stable, uses refs, strict one-at-a-time lock ────────────────────
   const goTo = useCallback((n) => {
     if (!canNavRef.current) return;
     const len = reelsRef.current.length;
@@ -882,7 +713,7 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
 
   const handleBlocked = useCallback(() => goTo(idxRef.current + 1), [goTo]);
 
-  // ── Load reels ────────────────────────────────────────────────────────────
+  // Load reels
   useEffect(() => {
     if (!apiKey) return;
     let dead = false;
@@ -901,7 +732,7 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
       .catch(()=>setMoreLoad(false));
   }, [idx, reels.length, moreLoad]); // eslint-disable-line
 
-  // ── Keyboard ─────────────────────────────────────────────────────────────
+  // Keyboard
   useEffect(() => {
     const h = (e) => {
       if (e.key==="ArrowDown"||e.key==="j"){ haptic.light(); goTo(idxRef.current+1); }
@@ -912,7 +743,7 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
     return ()=>window.removeEventListener("keydown", h);
   }, [goTo]);
 
-  // ── Wheel: strict single-step lock ────────────────────────────────────────
+  // Mouse wheel
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -928,53 +759,38 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
     return ()=>el.removeEventListener("wheel", onWheel);
   }, [goTo]);
 
-  // ── Touch: unified gesture system ─────────────────────────────────────────
-  // e.preventDefault() on ALL touchmove when active → kills rubber-band,
-  // pull-to-refresh, overscroll, and native scroll completely.
+  // Touch gestures
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-
-    // Single gesture tracker — not a state (no re-render needed)
     const g = { active:false, x0:0, y0:0, x1:0, y1:0, dir:null };
-
     const onStart = (e) => {
       handleFirstInteraction();
-      // Don't begin gesture if user tapped an interactive element
       if (e.target.closest("button,a,[data-gesture-stop]")) return;
-      if (e.touches.length !== 1) return; // ignore multi-touch
+      if (e.touches.length !== 1) return;
       const t = e.touches[0];
       g.active=true; g.dir=null;
       g.x0=g.x1=t.clientX; g.y0=g.y1=t.clientY;
     };
-
     const onMove = (e) => {
       if (!g.active) return;
-      // ALWAYS prevent native browser handling during our gesture
       e.preventDefault();
-
       const t = e.touches[0];
       g.x1=t.clientX; g.y1=t.clientY;
       const dx=g.x1-g.x0, dy=g.y1-g.y0;
-
-      // Lock direction on first ≥10px movement
       if (!g.dir && (Math.abs(dx)>10||Math.abs(dy)>10)) {
         g.dir = Math.abs(dy)>=Math.abs(dx)?"v":"h";
       }
-
       if (g.dir==="h") {
         const norm = Math.min(Math.abs(dx)/120, 1)*0.95;
         setSwipeState({ dir:dx>0?"right":"left", opacity:norm });
       }
     };
-
     const onEnd = () => {
       if (!g.active) return;
       g.active=false;
       setSwipeState({ dir:null, opacity:0 });
-
       const dx=g.x1-g.x0, dy=g.y1-g.y0;
-
       if (g.dir==="v" && Math.abs(dy)>50) {
         haptic.light();
         goTo(idxRef.current+(dy<0?1:-1));
@@ -991,12 +807,10 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
       }
       g.dir=null;
     };
-
     el.addEventListener("touchstart",  onStart, { passive:true  });
-    el.addEventListener("touchmove",   onMove,  { passive:false }); // must be non-passive for preventDefault
+    el.addEventListener("touchmove",   onMove,  { passive:false });
     el.addEventListener("touchend",    onEnd,   { passive:true  });
     el.addEventListener("touchcancel", onEnd,   { passive:true  });
-
     return ()=>{
       el.removeEventListener("touchstart",  onStart);
       el.removeEventListener("touchmove",   onMove);
@@ -1022,105 +836,149 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
         @keyframes hint-fade     { 0%{opacity:0;} 15%{opacity:1;} 75%{opacity:1;} 100%{opacity:0;} }
         @keyframes flash         { 0%{opacity:0;} 15%{opacity:1;} 70%{opacity:0.6;} 100%{opacity:0;} }
 
-        .rp-nav-btn {
-          all:unset; display:flex; align-items:center; gap:5px; cursor:pointer;
-          padding:4px 12px; border-radius:8px; font-size:11px; font-weight:600;
-          font-family:'DM Sans',sans-serif; letter-spacing:0.3px;
-          color:rgba(255,255,255,0.4); transition:color 0.15s,background 0.15s;
-          white-space:nowrap; -webkit-tap-highlight-color:transparent;
-          touch-action:manipulation;
+        /* ── YouTube Shorts–style top bar ─────────────────────── */
+        .rp-top-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 16px 40px;
         }
-        .rp-nav-btn:hover  { color:#fff; background:rgba(255,255,255,0.07); }
-        .rp-nav-btn:active { transform:scale(0.91); }
+        .rp-top-icon-btn {
+          all: unset;
+          width: 40px; height: 40px;
+          border-radius: 50%;
+          background: rgba(0,0,0,0.38);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          border: 1px solid rgba(255,255,255,0.1);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer;
+          transition: background 0.2s, transform 0.15s;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+          flex-shrink: 0;
+        }
+        .rp-top-icon-btn:hover  { background: rgba(255,255,255,0.18); }
+        .rp-top-icon-btn:active { transform: scale(0.88); }
 
-        /* Action rail */
+        .rp-top-brand {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          pointer-events: none;
+          user-select: none;
+        }
+        .rp-top-brand-text {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 22px;
+          letter-spacing: 3px;
+          color: rgba(255,255,255,0.95);
+          line-height: 1;
+        }
+        .rp-top-brand-ns { color: #00b4a6; }
+        .rp-top-badge {
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 1px;
+          background: linear-gradient(135deg, #f5a623, #e74c3c);
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-family: 'DM Sans', sans-serif;
+          color: #fff;
+          line-height: 1.6;
+        }
+
+        /* ── Action rail ──────────────────────────────────────── */
         .rc-rail {
-          position:absolute; right:14px; bottom:110px; z-index:30;
-          display:flex; flex-direction:column; align-items:center; gap:20px;
-          touch-action:none;
+          position: absolute;
+          right: 14px;
+          bottom: 110px;
+          z-index: 30;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 22px;
+          touch-action: none;
         }
 
-        /* Bottom info block */
+        /* ── Bottom info ──────────────────────────────────────── */
         .rc-bottom {
-          position:absolute; bottom:0; left:0; right:78px; z-index:30;
-          padding:0 14px 86px 20px; pointer-events:none; box-sizing:border-box;
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 80px;
+          z-index: 30;
+          padding: 0 14px 90px 20px;
+          pointer-events: none;
+          box-sizing: border-box;
         }
-        .rc-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:9px; }
-        .rc-tag  { background:rgba(255,255,255,0.07); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.09); border-radius:30px; padding:3px 11px; font-size:9px; font-weight:700; color:rgba(255,255,255,0.7); letter-spacing:1px; font-family:'DM Mono',monospace; text-transform:uppercase; }
+        .rc-meta   { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px; }
+        .rc-tag    { background:rgba(255,255,255,0.07); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.09); border-radius:30px; padding:3px 11px; font-size:9px; font-weight:700; color:rgba(255,255,255,0.7); letter-spacing:1px; font-family:'DM Mono',monospace; text-transform:uppercase; }
         .rc-rating { background:rgba(241,196,15,0.07); border:1px solid rgba(241,196,15,0.22); border-radius:30px; padding:3px 10px; font-size:9px; font-weight:700; color:#f1c40f; font-family:'DM Mono',monospace; display:inline-flex; align-items:center; }
-        .rc-title    { margin:0 0 9px; font-family:'Bebas Neue',sans-serif; font-size:clamp(28px,7vw,52px); font-weight:400; letter-spacing:1.5px; line-height:0.95; color:#fff; text-shadow:0 2px 28px rgba(0,0,0,0.95),0 0 2px rgba(0,0,0,0.9); word-break:break-word; }
-        .rc-overview { margin:0 0 12px; font-family:'DM Sans',sans-serif; font-size:12px; line-height:1.6; color:rgba(255,255,255,0.48); text-shadow:0 1px 8px rgba(0,0,0,0.95); pointer-events:none; max-width:310px; }
+        .rc-title  { margin:0 0 10px; font-family:'Bebas Neue',sans-serif; font-size:clamp(28px,7vw,54px); font-weight:400; letter-spacing:1.5px; line-height:0.95; color:#fff; text-shadow:0 2px 28px rgba(0,0,0,0.95),0 0 2px rgba(0,0,0,0.9); word-break:break-word; }
+        .rc-overview { margin:0 0 14px; font-family:'DM Sans',sans-serif; font-size:12px; line-height:1.65; color:rgba(255,255,255,0.48); text-shadow:0 1px 8px rgba(0,0,0,0.95); pointer-events:none; max-width:320px; }
 
-        /* Responsive — mobile */
+        /* ── Responsive ───────────────────────────────────────── */
         @media (max-width:480px) {
-          .rc-rail     { right:10px; bottom:130px; gap:14px; }
-          .rc-bottom   { padding-bottom:88px; padding-left:14px; right:64px; }
-          .rc-title    { font-size:clamp(22px,8vw,34px); }
-          .rc-overview { font-size:11px; }
+          .rc-rail    { right:10px; bottom:130px; gap:18px; }
+          .rc-bottom  { padding-bottom:96px; padding-left:14px; right:66px; }
+          .rc-title   { font-size:clamp(22px,8vw,34px); }
+          .rp-top-bar { padding: 12px 12px 36px; }
+          .rp-top-icon-btn { width:36px; height:36px; }
+          .rp-top-brand-text { font-size:18px; letter-spacing:2.5px; }
         }
-        /* Responsive — tablet */
         @media (min-width:768px) and (max-width:1023px) {
-          .rc-rail     { right:20px; bottom:120px; gap:22px; }
-          .rc-bottom   { padding-left:32px; padding-bottom:72px; right:90px; }
-          .rc-title    { font-size:clamp(28px,5.5vw,50px); }
+          .rc-rail    { right:20px; bottom:120px; gap:24px; }
+          .rc-bottom  { padding-left:32px; padding-bottom:72px; right:96px; }
+          .rp-top-bar { padding: 16px 20px 48px; }
         }
-        /* Responsive — desktop */
         @media (min-width:1024px) {
-          .rc-rail     { right:24px; bottom:130px; gap:24px; }
-          .rc-bottom   { padding-left:40px; padding-bottom:60px; right:104px; }
+          .rc-rail    { right:28px; bottom:130px; gap:26px; }
+          .rc-bottom  { padding-left:40px; padding-bottom:60px; right:110px; }
+          .rp-top-brand-text { font-size:24px; }
         }
         @media (min-width:1440px) {
-          .rc-rail     { right:36px; }
-          .rc-bottom   { padding-left:56px; }
+          .rc-rail    { right:42px; }
+          .rc-bottom  { padding-left:56px; }
         }
-        @media (min-width:1800px) {
-          .rc-rail     { right:52px; }
-          .rc-bottom   { padding-left:72px; }
-        }
-        /* Landscape mobile — condensed */
         @media (orientation:landscape) and (max-height:500px) {
-          .rc-rail     { right:10px; bottom:60px; gap:12px; }
-          .rc-bottom   { padding-bottom:50px; right:64px; }
-          .rc-title    { font-size:clamp(18px,5vh,28px); margin-bottom:6px; }
+          .rc-rail    { right:10px; bottom:60px; gap:14px; }
+          .rc-bottom  { padding-bottom:50px; right:68px; }
+          .rc-title   { font-size:clamp(18px,5vh,28px); margin-bottom:6px; }
           .rc-overview { display:none; }
+          .rp-top-bar { padding: 8px 12px 30px; }
         }
       `}</style>
 
-      {/* ── Outer container — the ONE gesture/scroll target ── */}
+      {/* ── Outer container ── */}
       <div
         ref={containerRef}
         style={{
           position:"fixed", top:0, bottom:0,
           left:"var(--sidebar,0px)", right:0,
           background:"#000", overflow:"hidden",
-          // Aggressive scroll prevention for all platforms
-          touchAction:"none",
-          overscrollBehavior:"none",
+          touchAction:"none", overscrollBehavior:"none",
           WebkitOverflowScrolling:"none",
-          userSelect:"none",
-          WebkitUserSelect:"none",
+          userSelect:"none", WebkitUserSelect:"none",
           fontFamily:"'DM Sans','Helvetica Neue',sans-serif",
           zIndex:10,
         }}
         onClick={handleFirstInteraction}
       >
-
         {/* Loading shimmer */}
         {loading && (
           <div style={{ position:"absolute", inset:0, zIndex:5, background:"linear-gradient(120deg,#090909 25%,#131313 50%,#090909 75%)", backgroundSize:"400% 400%", animation:"shimmer 1.8s ease infinite", display:"flex", alignItems:"center", justifyContent:"center" }}>
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
               <div style={{ position:"relative", width:46, height:46 }}>
-                <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.04)" }}/>
-                <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:"#00e5cc", animation:"spin 0.8s linear infinite" }}/>
+                <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.04)"}}/>
+                <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:"#00e5cc", animation:"spin 0.8s linear infinite"}}/>
               </div>
-              <span style={{ fontFamily:"'DM Mono',monospace", fontSize:9, letterSpacing:3.5, color:"rgba(255,255,255,0.15)", textTransform:"uppercase" }}>
-                Curating Reels
-              </span>
+              <span style={{ fontFamily:"'DM Mono',monospace", fontSize:9, letterSpacing:3.5, color:"rgba(255,255,255,0.15)", textTransform:"uppercase" }}>Curating Reels</span>
             </div>
           </div>
         )}
 
-        {/* ── REEL DECK — CSS transform, no native scroll ── */}
+        {/* Reel deck */}
         {!loading && reels.map((reel, i) => {
           if (!shouldRender(i)) return null;
           return (
@@ -1135,13 +993,9 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
               }}
             >
               <ReelCard
-                reel={reel}
-                active={i===idx}
-                muted={muted}
-                preload={i===idx+1}
+                reel={reel} active={i===idx} muted={muted} preload={i===idx+1}
                 onToggleMute={()=>setMuted(m=>!m)}
-                onWatch={handleWatch}
-                onSave={handleSave}
+                onWatch={handleWatch} onSave={handleSave}
                 saved={isSavedFn(reel)}
                 onBlocked={i===idx ? handleBlocked : undefined}
                 swipeDir={i===idx ? swipeState.dir : null}
@@ -1165,23 +1019,50 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
           </div>
         )}
 
-        {/* More loading indicator */}
+        {/* More loading */}
         {moreLoad && (
           <div style={{ position:"absolute", bottom:24, left:"50%", transform:"translateX(-50%)", zIndex:50, pointerEvents:"none" }}>
-            <div style={{ width:20, height:20, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.06)", borderTopColor:"#00e5cc", animation:"spin 0.8s linear infinite" }}/>
+            <div style={{ width:20, height:20, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.06)", borderTopColor:"#00e5cc", animation:"spin 0.8s linear infinite"}}/>
           </div>
         )}
 
-        {/* Top nav */}
-        <div style={{ position:"absolute", top:0, left:0, right:0, zIndex:50, background:"linear-gradient(to bottom,rgba(0,0,0,0.82) 0%,rgba(0,0,0,0.2) 60%,transparent 100%)", pointerEvents:"none" }}>
-          <div style={{ display:"flex", alignItems:"center", padding:"12px 16px 22px", gap:2, overflowX:"auto", scrollbarWidth:"none", pointerEvents:"auto", WebkitOverflowScrolling:"touch" }}>
-            {NAV.map(n=>(
-              <button key={n.id} className="rp-nav-btn" onClick={()=>handleNav(n.id)}>
-                <NavIcon n={n}/>{n.label}
-              </button>
-            ))}
+        {/* ── YouTube Shorts–style top bar ── */}
+        <div style={{
+          position:"absolute", top:0, left:0, right:0, zIndex:50,
+          background:"linear-gradient(to bottom, rgba(0,0,0,0.80) 0%, rgba(0,0,0,0.22) 55%, transparent 100%)",
+          pointerEvents:"none",
+        }}>
+          <div className="rp-top-bar" style={{ pointerEvents:"auto" }}>
+            {/* Back to home */}
+            <button className="rp-top-icon-btn" onClick={() => handleNav("home")} aria-label="Home">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+
+            {/* NS SHORTS branding */}
+            <div className="rp-top-brand">
+              <span className="rp-top-brand-text">
+                <span className="rp-top-brand-ns">NS</span> SHORTS
+              </span>
+              <span className="rp-top-badge">WORLD</span>
+            </div>
+
+            {/* Search */}
+            <button className="rp-top-icon-btn" onClick={() => handleNav("search")} aria-label="Search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </button>
           </div>
         </div>
+
+        {/* Reel counter */}
+        {!loading && reels.length>0 && (
+          <div style={{ position:"absolute", top:18, right:18, zIndex:51, fontFamily:"'DM Mono',monospace", fontSize:9, letterSpacing:1.8, color:"rgba(255,255,255,0.22)", textTransform:"uppercase", pointerEvents:"none" }}>
+            {idx+1} / {reels.length}
+          </div>
+        )}
 
         {/* First-interaction hints */}
         {!hasInteracted && !loading && reels.length>0 && (
@@ -1191,26 +1072,19 @@ export default function ReelPage({ apiKey, onSelect, onSave, savedItems=[], onNa
               <span style={{ fontSize:10.5, color:"rgba(255,255,255,0.5)", fontFamily:"'DM Sans',sans-serif", whiteSpace:"nowrap", letterSpacing:0.3 }}>Tap anywhere for sound</span>
             </div>
             <div style={{ position:"absolute", bottom:130, left:"50%", transform:"translateX(-50%)", zIndex:59, pointerEvents:"none", animation:"hint-fade 4s ease 2s both" }}>
-              <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)", fontFamily:"'DM Mono',monospace", letterSpacing:1.5, textTransform:"uppercase", whiteSpace:"nowrap" }}>
-                Swipe right to save · Double-tap to like · Hold for details
+              <span style={{ fontSize:10, color:"rgba(255,255,255,0.28)", fontFamily:"'DM Mono',monospace", letterSpacing:1.5, textTransform:"uppercase", whiteSpace:"nowrap" }}>
+                Swipe ↑↓ to browse · → to save · Double-tap to like
               </span>
             </div>
           </>
         )}
 
-        {/* Reel counter */}
-        {!loading && reels.length>0 && (
-          <div style={{ position:"absolute", top:18, right:18, zIndex:51, fontFamily:"'DM Mono',monospace", fontSize:9, letterSpacing:1.8, color:"rgba(255,255,255,0.22)", textTransform:"uppercase", pointerEvents:"none" }}>
-            {idx+1} / {reels.length}
-          </div>
-        )}
-
-        {/* Save/notify toast */}
+        {/* Save / notify toast */}
         {saveToast && (
           <div style={{ position:"absolute", top:80, left:"50%", transform:"translateX(-50%)", zIndex:75, pointerEvents:"none", background:"rgba(0,0,0,0.72)", backdropFilter:"blur(16px)", border:"1px solid rgba(0,229,204,0.25)", borderRadius:12, padding:"10px 20px", whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:8, animation:"fade-in 0.25s ease both" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="#00e5cc"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
             <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, letterSpacing:1, color:"#00e5cc", textTransform:"uppercase" }}>
-              {saveToast.startsWith("Notify:")?saveToast:"Saved to Watchlist"}
+              {saveToast.startsWith("Notify:")? saveToast : "Saved to Watchlist"}
             </span>
           </div>
         )}

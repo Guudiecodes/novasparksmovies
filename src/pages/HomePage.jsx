@@ -8,7 +8,7 @@ import { storage } from "../utils/storage";
 import { loadHomeLayout, loadHomeViewMode } from "../utils/homeLayout";
 import MediaCard from "../components/MediaCard";
 
-// ── Social Icons (real brand logos) ─────────────────────────────────────────
+// ── Social Icons ─────────────────────────────────────────────────────────────
 function DiscordIcon({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -41,6 +41,129 @@ function TikTokIcon({ size = 18 }) {
 const HERO_COUNT    = 5;
 const HERO_INTERVAL = 7000;
 
+// ── Nav Categories for Hero Nav ───────────────────────────────────────────────
+const NAV_CATEGORIES = [
+  { id: "home", label: "Home", items: null },
+  {
+    id: "movies",
+    label: "Movies",
+    items: [
+      { label: "Popular Movies",  scroll: "popular-movies" },
+      { label: "Now Playing",     scroll: "now-playing"    },
+      { label: "Action",          scroll: "action"         },
+      { label: "Comedy",          scroll: "comedy"         },
+      { label: "Horror",          scroll: "horror"         },
+      { label: "Sci-Fi",          scroll: "scifi"          },
+      { label: "Coming Soon",     scroll: "upcoming"       },
+    ],
+  },
+  {
+    id: "tv",
+    label: "TV Shows",
+    items: [
+      { label: "Popular Series",  scroll: "popular-tv"    },
+      { label: "Airing Today",    scroll: "airing-today"  },
+      { label: "Anime",           scroll: "anime"         },
+      { label: "Top Rated",       scroll: "top-rated"     },
+    ],
+  },
+  {
+    id: "trending",
+    label: "New & Popular",
+    items: [
+      { label: "Trending Movies", scroll: "trending-movies" },
+      { label: "Trending Series", scroll: "trending-tv"     },
+      { label: "Top Rated",       scroll: "top-rated"       },
+      { label: "Coming Soon",     scroll: "upcoming"        },
+    ],
+  },
+];
+
+// ── Hero Nav Bar ──────────────────────────────────────────────────────────────
+function HeroNavBar({ onNavigate }) {
+  const [activeMenu, setActiveMenu] = useState(null);
+  const leaveTimer = useRef(null);
+
+  const handleEnter = useCallback((id) => {
+    clearTimeout(leaveTimer.current);
+    setActiveMenu(id);
+  }, []);
+
+  const handleLeave = useCallback(() => {
+    leaveTimer.current = setTimeout(() => setActiveMenu(null), 220);
+  }, []);
+
+  const scrollToSection = useCallback((scrollId) => {
+    const el = document.getElementById(`ns-section-${scrollId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    setActiveMenu(null);
+  }, []);
+
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+
+  return (
+    <nav className="ns-hero-nav" onMouseLeave={handleLeave}>
+      <div className="ns-hero-nav-inner">
+        {NAV_CATEGORIES.map((cat) => (
+          <div
+            key={cat.id}
+            className="ns-hero-nav-item"
+            onMouseEnter={() => cat.items && handleEnter(cat.id)}
+          >
+            <button
+              className={`ns-hero-nav-btn${activeMenu === cat.id ? " ns-hero-nav-btn--open" : ""}`}
+              onClick={() => {
+                if (!cat.items) {
+                  if (cat.id === "home") {
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  } else {
+                    onNavigate?.(cat.id);
+                  }
+                } else {
+                  setActiveMenu(activeMenu === cat.id ? null : cat.id);
+                }
+              }}
+            >
+              {cat.label}
+              {cat.items && (
+                <svg
+                  className={`ns-hero-nav-chevron${activeMenu === cat.id ? " ns-hero-nav-chevron--open" : ""}`}
+                  width="11" height="11" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              )}
+            </button>
+            {cat.items && activeMenu === cat.id && (
+              <div
+                className="ns-hero-nav-drop"
+                onMouseEnter={() => clearTimeout(leaveTimer.current)}
+                onMouseLeave={handleLeave}
+              >
+                {cat.items.map((item) => (
+                  <button
+                    key={item.scroll}
+                    className="ns-hero-nav-drop-item"
+                    onClick={() => scrollToSection(item.scroll)}
+                  >
+                    <span className="ns-hero-nav-drop-dot" />
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 function getRecentHistoryItem(history) {
   if (!history || history.length === 0) return null;
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -51,12 +174,12 @@ function getRecentHistoryItem(history) {
 
 // ── Social slide notification ─────────────────────────────────────────────────
 function SocialSlideNoti() {
-  const [visible, setVisible] = useState(false);
+  const [visible,   setVisible]   = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     if (dismissed) return;
-    const t = setTimeout(() => setVisible(true), 1800);
+    const t    = setTimeout(() => setVisible(true),  1800);
     const hide = setTimeout(() => setVisible(false), 12000);
     return () => { clearTimeout(t); clearTimeout(hide); };
   }, [dismissed]);
@@ -64,15 +187,15 @@ function SocialSlideNoti() {
   if (dismissed) return null;
 
   return (
-    <div className={`ns-social-noti ${visible ? 'ns-social-noti--visible' : ''}`}>
+    <div className={`ns-social-noti ${visible ? "ns-social-noti--visible" : ""}`}>
       <button className="ns-social-noti-close" onClick={() => { setDismissed(true); setVisible(false); }} aria-label="Close">×</button>
       <div className="ns-social-noti-inner">
         <div className="ns-social-noti-label">Join our community</div>
         <div className="ns-social-noti-icons">
-          <a href="https://discord.gg/6UyqP9Qr" target="_blank" rel="noopener noreferrer" aria-label="Discord" title="Discord"><DiscordIcon size={16} /></a>
-          <a href="#" target="_blank" rel="noopener noreferrer" aria-label="X" title="X"><XIcon size={16} /></a>
-          <a href="https://www.facebook.com/Novasparksmovies" target="_blank" rel="noopener noreferrer" aria-label="Facebook" title="Facebook"><FacebookIcon size={16} /></a>
-          <a href="https://www.tiktok.com/@novaspark4k" target="_blank" rel="noopener noreferrer" aria-label="TikTok" title="TikTok"><TikTokIcon size={16} /></a>
+          <a href="https://discord.gg/6UyqP9Qr" target="_blank" rel="noopener noreferrer" aria-label="Discord"><DiscordIcon size={16} /></a>
+          <a href="#" target="_blank" rel="noopener noreferrer" aria-label="X"><XIcon size={16} /></a>
+          <a href="https://www.facebook.com/Novasparksmovies" target="_blank" rel="noopener noreferrer" aria-label="Facebook"><FacebookIcon size={16} /></a>
+          <a href="https://www.tiktok.com/@novaspark4k" target="_blank" rel="noopener noreferrer" aria-label="TikTok"><TikTokIcon size={16} /></a>
         </div>
       </div>
     </div>
@@ -81,6 +204,7 @@ function SocialSlideNoti() {
 
 // ── Infinite scroll row ───────────────────────────────────────────────────────
 const InfiniteRow = memo(function InfiniteRow({
+  id,
   title,
   titleHighlight,
   items,
@@ -108,7 +232,7 @@ const InfiniteRow = memo(function InfiniteRow({
   if (!items || items.length === 0) return null;
 
   return (
-    <div className="ns-row-section">
+    <div className="ns-row-section" id={id}>
       <div className="ns-row-title">
         {title}
         {titleHighlight && (
@@ -186,6 +310,7 @@ export default function HomePage({
   onMarkUnwatched,
   history,
   apiKey,
+  onNavigate, // optional — for HeroNavBar page-level navigation
 }) {
   const [heroIdx,    setHeroIdx]    = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
@@ -386,14 +511,16 @@ export default function HomePage({
     <div className="fade-in ns-home-page">
       <SocialSlideNoti />
       <style>{`
-        /* ── Hero ────────────────────────────────────────────── */
+        /* ══════════════════════════════════════════════════
+           HERO
+        ══════════════════════════════════════════════════ */
         .ns-home-hero {
           position: relative;
           width: 100%;
           min-height: 80vh;
           display: flex;
           align-items: flex-end;
-          overflow: hidden;
+          overflow: visible;
           background: none;
         }
         .ns-home-hero-bg {
@@ -402,39 +529,60 @@ export default function HomePage({
           background-size: cover;
           background-position: center 20%;
           background-repeat: no-repeat;
-          transition: opacity 0.35s ease, transform 8s ease;
+          transition: opacity 0.35s ease;
         }
         .ns-home-hero-bg.is-fading {
           opacity: 0;
         }
+
+        /* ── Netflix-style smooth gradient blend ── */
         // .ns-home-hero-grad {
         //   position: absolute;
         //   inset: 0;
-        //   background: linear-gradient(
-        //     to bottom,
-        //     rgba(10,10,10,0.7) 60%,
-        //     rgba(10,10,10,0.7) 60%,
-        //     rgba(10,10,10,0.7) 60%,
-        //     var(--bg, #0a0a0a) 100%
-        //   );
+        //   background:
+        //     linear-gradient(
+        //       to bottom,
+        //       rgba(4,8,13,0.82) 0%,
+        //       rgba(4,8,13,0.18) 20%,
+        //       transparent 44%,
+        //       rgba(4,8,13,0.55) 68%,
+        //       var(--bg, #04080d) 100%
+        //     ),
+        //     linear-gradient(
+        //       105deg,
+        //       rgba(4,8,13,0.75) 0%,
+        //       rgba(4,8,13,0.22) 35%,
+        //       transparent 62%
+        //     );
+        //   pointer-events: none;
+        //   z-index: 1;
         // }
+
+        /* ── Bottom fade — seamless blend into content ── */
         .ns-home-hero-bottom-fade {
           position: absolute;
-          bottom: 0;
+          bottom: -2px;
           left: 0;
           right: 0;
-          height: 120px;
-          background: none;
+          height: 58%;
+          background: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(4,8,13,0.38) 30%,
+            rgba(4,8,13,0.80) 62%,
+            var(--bg, #04080d) 100%
+          );
           pointer-events: none;
           z-index: 2;
         }
+
         .ns-home-hero-content {
           position: relative;
           z-index: 3;
           width: 100%;
           max-width: 1200px;
           margin: 0 auto;
-          padding: 0 28px 48px;
+          padding: 0 28px 52px;
           display: flex;
           flex-direction: column;
           gap: 10px;
@@ -444,7 +592,7 @@ export default function HomePage({
           font-weight: 700;
           letter-spacing: 2.5px;
           text-transform: uppercase;
-          color: white;
+          color: var(--amber);
         }
         .ns-home-hero-title {
           font-size: clamp(28px, 5vw, 52px);
@@ -454,6 +602,7 @@ export default function HomePage({
           margin: 0;
           max-width: 700px;
           letter-spacing: -0.5px;
+          text-shadow: 0 2px 20px rgba(0,0,0,0.6);
         }
         .ns-home-hero-meta {
           display: flex;
@@ -466,7 +615,7 @@ export default function HomePage({
           display: flex;
           align-items: center;
           gap: 5px;
-          color: #f5c518;
+          color: var(--amber);
           font-weight: 700;
           font-size: 14px;
         }
@@ -480,6 +629,7 @@ export default function HomePage({
           -webkit-line-clamp: 3;
           -webkit-box-orient: vertical;
           overflow: hidden;
+          text-shadow: 0 1px 8px rgba(0,0,0,0.6);
         }
         .ns-home-hero-actions {
           display: flex;
@@ -489,50 +639,167 @@ export default function HomePage({
         }
         .ns-home-hero-dots {
           position: absolute;
-          bottom: 18px;
+          bottom: 22px;
           right: 28px;
           z-index: 4;
           display: flex;
-          gap: 8px;
+          gap: 7px;
+          align-items: center;
         }
         .ns-home-hero-dot {
-          width: 8px;
-          height: 8px;
+          width: 7px;
+          height: 7px;
           border-radius: 50%;
           border: none;
           padding: 0;
-          background: rgba(255,255,255,0.25);
+          background: rgba(255,255,255,0.22);
           cursor: pointer;
-          transition: background 0.25s ease, transform 0.25s ease;
+          transition: all 0.25s ease;
         }
         .ns-home-hero-dot:hover {
           background: rgba(255,255,255,0.5);
         }
         .ns-home-hero-dot.active {
-          background: var(--red, #fff);
-          transform: scale(1.15);
+          background: var(--amber);
+          width: 22px;
+          border-radius: 3px;
+          box-shadow: 0 0 8px rgba(245,166,35,0.55);
         }
 
-        /* ── Page spacing ────────────────────────────────────── */
+        /* ══════════════════════════════════════════════════
+           HERO NAV BAR
+        ══════════════════════════════════════════════════ */
+        .ns-hero-nav {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 9;
+          padding: 22px 28px 80px;
+          pointer-events: none;
+        }
+        .ns-hero-nav-inner {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          pointer-events: auto;
+        }
+        .ns-hero-nav-item {
+          position: relative;
+        }
+        .ns-hero-nav-btn {
+          background: none;
+          border: none;
+          color: rgba(255,255,255,0.78);
+          font-family: var(--font-body);
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          padding: 7px 13px;
+          border-radius: 7px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          transition: color 0.18s, background 0.18s;
+          letter-spacing: 0.1px;
+          white-space: nowrap;
+        }
+        .ns-hero-nav-btn:hover,
+        .ns-hero-nav-btn--open {
+          color: #fff;
+          background: rgba(255,255,255,0.1);
+        }
+        .ns-hero-nav-chevron {
+          transition: transform 0.2s ease;
+          opacity: 0.7;
+          flex-shrink: 0;
+        }
+        .ns-hero-nav-chevron--open {
+          transform: rotate(180deg);
+        }
+        .ns-hero-nav-drop {
+          position: absolute;
+          top: calc(100% + 8px);
+          left: 0;
+          min-width: 210px;
+          background: rgba(5,12,20,0.97);
+          border: 1px solid rgba(0,180,166,0.18);
+          border-radius: 12px;
+          padding: 6px;
+          box-shadow:
+            0 20px 60px rgba(0,0,0,0.88),
+            0 0 0 1px rgba(0,180,166,0.04),
+            0 0 40px rgba(0,180,166,0.05);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          animation: ns-drop-in 0.16s cubic-bezier(0.34,1.56,0.64,1);
+          z-index: 100;
+        }
+        @keyframes ns-drop-in {
+          from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+          to   { opacity: 1; transform: translateY(0)     scale(1);    }
+        }
+        .ns-hero-nav-drop-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 9px 13px;
+          border-radius: 8px;
+          background: none;
+          border: none;
+          color: rgba(255,255,255,0.62);
+          font-family: var(--font-body);
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          text-align: left;
+          transition: background 0.14s, color 0.14s, padding-left 0.14s;
+          letter-spacing: 0.1px;
+        }
+        .ns-hero-nav-drop-item:hover {
+          background: rgba(0,180,166,0.1);
+          color: var(--red);
+          padding-left: 17px;
+        }
+        .ns-hero-nav-drop-dot {
+          width: 4px;
+          height: 4px;
+          border-radius: 50%;
+          background: var(--red);
+          opacity: 0;
+          transition: opacity 0.14s;
+          flex-shrink: 0;
+        }
+        .ns-hero-nav-drop-item:hover .ns-hero-nav-drop-dot {
+          opacity: 1;
+        }
+
+        /* ══════════════════════════════════════════════════
+           PAGE SPACING
+        ══════════════════════════════════════════════════ */
         .ns-home-page {
           padding-bottom: max(80px, env(safe-area-inset-bottom, 80px));
         }
 
-        /* ── Social notification ───────────────────────────── */
+        /* ══════════════════════════════════════════════════
+           SOCIAL NOTIFICATION
+        ══════════════════════════════════════════════════ */
         .ns-social-noti {
           position: fixed;
           bottom: 24px;
           right: 24px;
           z-index: 9999;
-          background: none;
-          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(5,12,20,0.92);
+          border: 1px solid rgba(0,180,166,0.15);
           border-radius: 14px;
           padding: 14px 18px;
-          backdrop-filter: blur(16px);
-          box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,180,166,0.06);
           opacity: 0;
           transform: translateX(200px);
-          transition: transform 0.5s ease, opacity 0.5s ease;
+          transition: transform 0.5s cubic-bezier(0.22,1,0.36,1), opacity 0.4s ease;
         }
         .ns-social-noti--visible {
           opacity: 1;
@@ -568,7 +835,7 @@ export default function HomePage({
         }
         .ns-social-noti-icons a:hover {
           background: rgba(255,255,255,0.12);
-          border-color: rgba(255,255,255,0.18);
+          border-color: rgba(0,180,166,0.3);
           color: #fff;
           transform: scale(1.1);
         }
@@ -580,7 +847,7 @@ export default function HomePage({
           height: 24px;
           border-radius: 50%;
           border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(24,24,28,0.95);
+          background: rgba(5,12,20,0.95);
           color: rgba(255,255,255,0.5);
           font-size: 16px;
           line-height: 1;
@@ -591,272 +858,166 @@ export default function HomePage({
           transition: all 0.2s;
         }
         .ns-social-noti-close:hover {
-          background: rgba(229,9,20,0.15);
-          color: var(--red, #e50914);
-          border-color: rgba(229,9,20,0.3);
+          background: rgba(0,180,166,0.15);
+          color: var(--red);
+          border-color: rgba(0,180,166,0.3);
         }
 
-        /* ── Footer ──────────────────────────────────────────── */
-        .ns-home-footer {
+        /* ══════════════════════════════════════════════════
+           NETFLIX-STYLE FOOTER
+        ══════════════════════════════════════════════════ */
+        .ns-footer-v2 {
           margin-top: 80px;
-          padding: 56px 28px 28px;
-          border-top: 1px solid rgba(255,255,255,0.06);
-          background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(10,10,10,0.6) 20%, rgba(8,8,8,0.95) 100%);
+          padding: 64px 48px 52px;
+          border-top: 1px solid rgba(255,255,255,0.04);
           position: relative;
-          min-height: 320px;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
+          overflow: hidden;
         }
-        .ns-home-footer::before {
-          content: "";
+        .ns-footer-v2::before {
+          content: '';
           position: absolute;
           top: 0;
           left: 50%;
           transform: translateX(-50%);
-          width: 120px;
-          height: 2px;
-          background: linear-gradient(90deg, transparent, var(--red, #e50914), transparent);
-          opacity: 0.6;
+          width: 240px;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, var(--red), var(--amber), transparent);
+          opacity: 0.45;
         }
-        .ns-footer-inner {
-          max-width: 1200px;
-          width: 100%;
+        .ns-fv2-inner {
+          max-width: 1100px;
           margin: 0 auto;
-          display: grid;
-          grid-template-columns: 1fr 1.6fr 1fr;
-          gap: 48px;
-          align-items: start;
         }
-        .ns-footer-brand-col {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .ns-footer-brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        .ns-footer-logo {
-          font-size: 22px;
-          font-weight: 900;
-          color: var(--red, #e50914);
-          letter-spacing: -0.3px;
-          text-shadow: 0 0 30px rgba(229,9,20,0.3);
-        }
-        .ns-footer-year {
-          font-size: 11px;
-          font-weight: 700;
-          color: rgba(255,255,255,0.4);
-          background: rgba(255,255,255,0.06);
-          padding: 3px 10px;
-          border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.08);
-          letter-spacing: 1px;
-        }
-        .ns-footer-tagline {
-          font-size: 12.5px;
-          color: rgba(255,255,255,0.35);
-          margin: 0;
-          line-height: 1.5;
-          font-weight: 500;
-        }
-        .ns-footer-disclaimer-col {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .ns-footer-disclaimer {
-          font-size: 12px;
-          line-height: 1.7;
-          color: rgba(255,255,255,0.3);
-          margin: 0;
-        }
-        .ns-footer-links-col {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-          align-items: flex-end;
-        }
-        .ns-footer-social {
+        .ns-fv2-social {
           display: flex;
           gap: 10px;
+          margin-bottom: 40px;
         }
-        .ns-footer-social-link {
-          width: 38px;
-          height: 38px;
+        .ns-fv2-social-link {
+          width: 42px;
+          height: 42px;
           border-radius: 10px;
-          background: rgba(255,255,255,0.05);
+          background: rgba(255,255,255,0.04);
           border: 1px solid rgba(255,255,255,0.08);
           display: flex;
           align-items: center;
           justify-content: center;
-          color: rgba(255,255,255,0.55);
-          transition: all 0.25s ease;
+          color: rgba(255,255,255,0.45);
           text-decoration: none;
-        }
-        .ns-footer-social-link:hover {
-          background: rgba(255,255,255,0.1);
-          border-color: rgba(255,255,255,0.18);
-          color: #fff;
-          transform: translateY(-3px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
-        .ns-footer-social--discord:hover { color: #5865F2; background: rgba(88,101,242,0.12); border-color: rgba(88,101,242,0.25); box-shadow: 0 4px 12px rgba(88,101,242,0.2); }
-        .ns-footer-social--x:hover { color: #fff; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
-        .ns-footer-social--facebook:hover { color: #1877F2; background: rgba(24,119,242,0.12); border-color: rgba(24,119,242,0.25); box-shadow: 0 4px 12px rgba(24,119,242,0.2); }
-        .ns-footer-social--tiktok:hover { color: #fff; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
-        .ns-footer-links {
-          display: flex;
-          gap: 20px;
-          font-size: 12px;
-          font-weight: 600;
-          color: rgba(255,255,255,0.4);
-        }
-        .ns-footer-links span {
-          cursor: pointer;
-          transition: color 0.2s;
+          transition: all 0.22s ease;
           position: relative;
+          overflow: hidden;
         }
-        .ns-footer-links span::after {
-          content: "";
+        .ns-fv2-social-link::after {
+          content: '';
           position: absolute;
-          bottom: -4px;
-          left: 0;
-          width: 0;
-          height: 1.5px;
-          background: none;
-          transition: width 0.3s ease;
+          inset: 0;
+          opacity: 0;
+          transition: opacity 0.22s;
         }
-        .ns-footer-links span:hover {
-          color: rgba(255,255,255,0.85);
+        .ns-fv2-social-link:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+          color: #fff;
         }
-        .ns-footer-links span:hover::after {
-          width: 100%;
+        .ns-fv2-discord:hover  { background: rgba(88,101,242,0.15);  border-color: rgba(88,101,242,0.35);  color: #7289da; box-shadow: 0 6px 18px rgba(88,101,242,0.22); }
+        .ns-fv2-x:hover        { background: rgba(255,255,255,0.1);   border-color: rgba(255,255,255,0.2);  color: #fff; }
+        .ns-fv2-fb:hover       { background: rgba(24,119,242,0.15);   border-color: rgba(24,119,242,0.35);  color: #1877F2; box-shadow: 0 6px 18px rgba(24,119,242,0.22); }
+        .ns-fv2-tt:hover       { background: rgba(255,255,255,0.08);  border-color: rgba(255,255,255,0.15); color: #fff; }
+
+        .ns-fv2-links {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+          margin-bottom: 40px;
         }
-        .ns-footer-bottom {
-          max-width: 1200px;
-          width: 100%;
-          margin: 32px auto 0;
+        .ns-fv2-col {
+          display: flex;
+          flex-direction: column;
+          gap: 11px;
+        }
+        .ns-fv2-link {
+          font-size: 12.5px;
+          color: rgba(255,255,255,0.35);
+          text-decoration: none;
+          cursor: pointer;
+          transition: color 0.18s;
+          letter-spacing: 0.1px;
+          line-height: 1.4;
+        }
+        .ns-fv2-link:hover {
+          color: rgba(255,255,255,0.75);
+          text-decoration: underline;
+          text-underline-offset: 3px;
+        }
+        .ns-fv2-disclaimer {
+          font-size: 12px;
+          color: rgba(255,255,255,0.2);
+          line-height: 1.75;
+          margin-bottom: 28px;
+          max-width: 680px;
+        }
+        .ns-fv2-bottom {
+          display: flex;
+          align-items: center;
+          gap: 18px;
+          flex-wrap: wrap;
           padding-top: 20px;
           border-top: 1px solid rgba(255,255,255,0.04);
-          text-align: center;
+        }
+        .ns-fv2-brand {
+          font-family: var(--font-display);
+          font-size: 18px;
+          letter-spacing: 2.5px;
+          color: var(--red);
+          opacity: 0.55;
+        }
+        .ns-fv2-copy {
           font-size: 11px;
-          color: rgba(255,255,255,0.25);
+          color: rgba(255,255,255,0.18);
           letter-spacing: 0.3px;
         }
 
-        /* ── Responsive ──────────────────────────────────────── */
+        /* ══════════════════════════════════════════════════
+           RESPONSIVE
+        ══════════════════════════════════════════════════ */
         @media (max-width: 860px) {
-          .ns-home-hero {
-            min-height: 65vh;
-          }
-          .ns-home-hero-content {
-            padding: 0 18px 40px;
-          }
-          .ns-home-hero-title {
-            font-size: clamp(22px, 6vw, 32px);
-          }
-          .ns-home-hero-overview {
-            font-size: 13px;
-            -webkit-line-clamp: 2;
-            max-width: 100%;
-          }
-          .ns-home-hero-actions .btn {
-            padding: 9px 16px;
-            font-size: 13px;
-          }
-          .ns-home-hero-dots {
-            right: 18px;
-          }
-          .ns-home-footer {
-            min-height: unset;
-            padding: 40px 18px 24px;
-            margin-top: 56px;
-          }
-          .ns-footer-inner {
-            grid-template-columns: 1fr;
-            gap: 28px;
-            text-align: center;
-          }
-          .ns-footer-links-col {
-            align-items: center;
-          }
-          .ns-footer-social {
-            justify-content: center;
-          }
-          .ns-footer-bottom {
-            margin-top: 24px;
-          }
+          .ns-home-hero { min-height: 65vh; }
+          .ns-home-hero-content { padding: 0 18px 44px; }
+          .ns-home-hero-title { font-size: clamp(22px, 6vw, 32px); }
+          .ns-home-hero-overview { font-size: 13px; -webkit-line-clamp: 2; max-width: 100%; }
+          .ns-home-hero-actions .btn { padding: 9px 16px; font-size: 13px; }
+          .ns-home-hero-dots { right: 18px; }
+          .ns-hero-nav { padding: 16px 18px 60px; }
+          .ns-hero-nav-btn { font-size: 13px; padding: 6px 10px; }
+          .ns-footer-v2 { padding: 48px 18px 40px; margin-top: 56px; }
+          .ns-fv2-links { grid-template-columns: repeat(2, 1fr); gap: 12px; }
         }
         @media (max-width: 540px) {
-          .ns-home-hero {
-            min-height: 60vh;
-          }
-          .ns-home-hero-content {
-            padding: 0 14px 36px;
-            gap: 8px;
-          }
-          .ns-home-hero-title {
-            font-size: 22px;
-            line-height: 1.1;
-          }
-          .ns-home-hero-overview {
-            display: none;
-          }
-          .ns-home-hero-actions {
-            gap: 8px;
-          }
-          .ns-home-hero-actions .btn {
-            flex: 1 1 auto;
-            min-width: 100px;
-            justify-content: center;
-            padding: 10px 12px;
-          }
-          .ns-home-hero-dots {
-            bottom: 12px;
-            right: 14px;
-            gap: 6px;
-          }
-          .ns-home-hero-dot {
-            width: 6px;
-            height: 6px;
-          }
-          .ns-home-footer {
-            padding: 32px 14px 20px;
-            margin-top: 40px;
-          }
-          .ns-footer-logo {
-            font-size: 18px;
-          }
-          .ns-footer-disclaimer {
-            font-size: 11px;
-          }
-          .ns-social-noti {
-            right: 14px;
-            bottom: 14px;
-            padding: 12px 14px;
-          }
-          .ns-social-noti-label {
-            font-size: 11px;
-          }
+          .ns-home-hero { min-height: 60vh; }
+          .ns-home-hero-content { padding: 0 14px 36px; gap: 8px; }
+          .ns-home-hero-title { font-size: 22px; line-height: 1.1; }
+          .ns-home-hero-overview { display: none; }
+          .ns-home-hero-actions { gap: 8px; }
+          .ns-home-hero-actions .btn { flex: 1 1 auto; min-width: 100px; justify-content: center; padding: 10px 12px; }
+          .ns-home-hero-dots { bottom: 12px; right: 14px; gap: 5px; }
+          .ns-home-hero-dot { width: 5px; height: 5px; }
+          .ns-home-hero-dot.active { width: 16px; }
+          .ns-hero-nav { display: none; }
+          .ns-footer-v2 { padding: 36px 14px 32px; margin-top: 40px; }
+          .ns-fv2-links { grid-template-columns: 1fr 1fr; gap: 10px; }
+          .ns-fv2-social-link { width: 38px; height: 38px; }
+          .ns-social-noti { right: 14px; bottom: 14px; padding: 12px 14px; }
+          .ns-social-noti-label { font-size: 11px; }
         }
         @media (max-width: 380px) {
-          .ns-home-hero-content {
-            padding: 0 12px 32px;
-          }
-          .ns-home-hero-title {
-            font-size: 20px;
-          }
-          .ns-home-hero-actions .btn {
-            min-width: 80px;
-            font-size: 12px;
-            padding: 8px 10px;
-          }
+          .ns-home-hero-content { padding: 0 12px 32px; }
+          .ns-home-hero-title { font-size: 20px; }
+          .ns-home-hero-actions .btn { min-width: 80px; font-size: 12px; padding: 8px 10px; }
         }
       `}</style>
 
+      {/* ── Offline ── */}
       {offline && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16, color: "var(--text2)" }}>
           <div style={{ fontSize: 48 }}>📡</div>
@@ -868,7 +1029,7 @@ export default function HomePage({
 
       {!offline && loading && <div className="loader"><div className="spinner" /></div>}
 
-      {/* ── Cinematic hero ── */}
+      {/* ── Cinematic hero with nav overlay ── */}
       {!loading && hero && (
         <div
           className="ns-home-hero"
@@ -876,16 +1037,22 @@ export default function HomePage({
           onMouseLeave={() => setHeroPaused(false)}
         >
           <div
-            className={`ns-home-hero-bg${heroFading ? ' is-fading' : ''}`}
+            className={`ns-home-hero-bg${heroFading ? " is-fading" : ""}`}
             key={heroIdx}
-            style={{
-              backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})`,
-            }}
+            style={{ backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})` }}
           />
+          {/* Gradient layers — smooth Netflix blend */}
           <div className="ns-home-hero-grad" />
           <div className="ns-home-hero-bottom-fade" />
+
+          {/* Category nav overlay */}
+          <HeroNavBar onNavigate={onNavigate} />
+
+          {/* Hero content */}
           <div className="ns-home-hero-content">
-            <div className="ns-home-hero-type">Trending&nbsp;·&nbsp;{hero.media_type === "tv" ? "Series" : "Movie"}</div>
+            <div className="ns-home-hero-type">
+              Trending&nbsp;·&nbsp;{hero.media_type === "tv" ? "Series" : "Movie"}
+            </div>
             <h1 className="ns-home-hero-title">{hero.title || hero.name}</h1>
             <div className="ns-home-hero-meta">
               <span className="ns-home-hero-rating"><StarIcon /> {hero.vote_average?.toFixed(1)}</span>
@@ -897,6 +1064,8 @@ export default function HomePage({
               <button className="btn btn-secondary" onClick={() => onSelect(hero)}>More Info</button>
             </div>
           </div>
+
+          {/* Slide dots */}
           {heroItems.length > 1 && (
             <div className="ns-home-hero-dots">
               {heroItems.map((_, i) => (
@@ -940,29 +1109,35 @@ export default function HomePage({
       )}
 
       {/* ── Trending carousels ── */}
-      {trendingMovieItems.length > 0 && (
-        <TrendingCarousel key="trendingMovies" items={trendingMovieItems} title="Trending Movies" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
-      )}
-      {trendingTVItems.length > 0 && (
-        <TrendingCarousel key="trendingTV" items={trendingTVItems} title="Trending Series" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
-      )}
+      <div id="ns-section-trending-movies">
+        {trendingMovieItems.length > 0 && (
+          <TrendingCarousel key="trendingMovies" items={trendingMovieItems} title="Trending Movies" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
+        )}
+      </div>
+      <div id="ns-section-trending-tv">
+        {trendingTVItems.length > 0 && (
+          <TrendingCarousel key="trendingTV" items={trendingTVItems} title="Trending Series" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
+        )}
+      </div>
 
       {/* ── Infinite scroll rows ── */}
-      <InfiniteRow title="Popular Movies"  items={popularMovies}  onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularMoviesMore}  loadingMore={popularMoviesLoad}  onLoadMore={loadMorePopularMovies} />
-      <InfiniteRow title="Popular Series"  items={popularTV}      onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularTVMore}      loadingMore={popularTVLoad}      onLoadMore={loadMorePopularTV} />
-      <InfiniteRow title="Now Playing"     items={nowPlaying}     onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={nowPlayingMore}     loadingMore={nowPlayingLoad}     onLoadMore={loadMoreNowPlaying} />
-      <InfiniteRow title="Airing Today"    items={airingToday}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={airingTodayMore}    loadingMore={airingTodayLoad}    onLoadMore={loadMoreAiringToday} />
+      <InfiniteRow id="ns-section-popular-movies" title="Popular Movies"  items={popularMovies}  onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularMoviesMore}  loadingMore={popularMoviesLoad}  onLoadMore={loadMorePopularMovies} />
+      <InfiniteRow id="ns-section-popular-tv"     title="Popular Series"  items={popularTV}      onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularTVMore}      loadingMore={popularTVLoad}      onLoadMore={loadMorePopularTV} />
+      <InfiniteRow id="ns-section-now-playing"    title="Now Playing"     items={nowPlaying}     onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={nowPlayingMore}     loadingMore={nowPlayingLoad}     onLoadMore={loadMoreNowPlaying} />
+      <InfiniteRow id="ns-section-airing-today"   title="Airing Today"    items={airingToday}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={airingTodayMore}    loadingMore={airingTodayLoad}    onLoadMore={loadMoreAiringToday} />
 
-      {topRatedItems.length > 0 && (
-        <TrendingCarousel key="topRated" items={topRatedItems} title="Top Rated" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
-      )}
+      <div id="ns-section-top-rated">
+        {topRatedItems.length > 0 && (
+          <TrendingCarousel key="topRated" items={topRatedItems} title="Top Rated" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
+        )}
+      </div>
 
-      <InfiniteRow title="Coming Soon"     items={upcomingMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={upcomingMoviesMore} loadingMore={upcomingMoviesLoad} onLoadMore={loadMoreUpcoming} />
-      <InfiniteRow title="Action"       items={actionMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={actionMoviesMore}   loadingMore={actionMoviesLoad}   onLoadMore={loadMoreAction} />
-      <InfiniteRow title="Comedy"       items={comedyMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={comedyMoviesMore}   loadingMore={comedyMoviesLoad}   onLoadMore={loadMoreComedy} />
-      <InfiniteRow title="Horror"       items={horrorMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={horrorMoviesMore}   loadingMore={horrorMoviesLoad}   onLoadMore={loadMoreHorror} />
-      <InfiniteRow title="Sci-Fi"       items={scifiMovies}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={scifiMoviesMore}    loadingMore={scifiMoviesLoad}    onLoadMore={loadMoreScifi} />
-      <InfiniteRow title="Anime"        items={animeTV}        onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={animeTVMore}        loadingMore={animeTVLoad}        onLoadMore={loadMoreAnime} />
+      <InfiniteRow id="ns-section-upcoming"       title="Coming Soon"     items={upcomingMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={upcomingMoviesMore} loadingMore={upcomingMoviesLoad} onLoadMore={loadMoreUpcoming} />
+      <InfiniteRow id="ns-section-action"         title="Action"          items={actionMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={actionMoviesMore}   loadingMore={actionMoviesLoad}   onLoadMore={loadMoreAction} />
+      <InfiniteRow id="ns-section-comedy"         title="Comedy"          items={comedyMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={comedyMoviesMore}   loadingMore={comedyMoviesLoad}   onLoadMore={loadMoreComedy} />
+      <InfiniteRow id="ns-section-horror"         title="Horror"          items={horrorMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={horrorMoviesMore}   loadingMore={horrorMoviesLoad}   onLoadMore={loadMoreHorror} />
+      <InfiniteRow id="ns-section-scifi"          title="Sci-Fi"          items={scifiMovies}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={scifiMoviesMore}    loadingMore={scifiMoviesLoad}    onLoadMore={loadMoreScifi} />
+      <InfiniteRow id="ns-section-anime"          title="Anime"           items={animeTV}        onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={animeTVMore}        loadingMore={animeTVLoad}        onLoadMore={loadMoreAnime} />
 
       {similarItems.length > 0 && similarSource && (
         <InfiniteRow
@@ -975,42 +1150,71 @@ export default function HomePage({
         />
       )}
 
-      {/* ── Footer ── */}
-      <footer className="ns-home-footer">
-        <div className="ns-footer-inner">
-          <div className="ns-footer-brand-col">
-            <div className="ns-footer-brand">
-              <span className="ns-footer-logo">NovaSpark</span>
-              <span className="ns-footer-year">2026</span>
-            </div>
-            <p className="ns-footer-tagline">Stream without limits.</p>
+      {/* ══════════════════════════════════════════════════
+          NETFLIX-STYLE FOOTER
+      ══════════════════════════════════════════════════ */}
+      <footer className="ns-footer-v2">
+        <div className="ns-fv2-inner">
+          {/* Social links */}
+          <div className="ns-fv2-social">
+            <a href="https://discord.gg/6UyqP9Qr" target="_blank" rel="noopener noreferrer"
+               className="ns-fv2-social-link ns-fv2-discord" aria-label="Discord" title="Discord">
+              <DiscordIcon size={18} />
+            </a>
+            <a href="#" target="_blank" rel="noopener noreferrer"
+               className="ns-fv2-social-link ns-fv2-x" aria-label="X" title="X">
+              <XIcon size={18} />
+            </a>
+            <a href="https://www.facebook.com/Novasparksmovies" target="_blank" rel="noopener noreferrer"
+               className="ns-fv2-social-link ns-fv2-fb" aria-label="Facebook" title="Facebook">
+              <FacebookIcon size={18} />
+            </a>
+            <a href="https://www.tiktok.com/@novaspark4k" target="_blank" rel="noopener noreferrer"
+               className="ns-fv2-social-link ns-fv2-tt" aria-label="TikTok" title="TikTok">
+              <TikTokIcon size={18} />
+            </a>
           </div>
 
-          <div className="ns-footer-disclaimer-col">
-            <p className="ns-footer-disclaimer">
-              NovaSpark does not host or store any media content. Stream quality and availability may vary by region.
-            </p>
-            <p className="ns-footer-disclaimer">
-               You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.
-            </p>
+          {/* Links grid — Netflix style */}
+          <div className="ns-fv2-links">
+            <div className="ns-fv2-col">
+              <span className="ns-fv2-link">Help Center</span>
+              <span className="ns-fv2-link">Account</span>
+              <span className="ns-fv2-link">Media Center</span>
+              <span className="ns-fv2-link">Investor Relations</span>
+            </div>
+            <div className="ns-fv2-col">
+              <span className="ns-fv2-link">Careers</span>
+              <span className="ns-fv2-link">Shop</span>
+              <span className="ns-fv2-link">Redeem Gift Cards</span>
+              <span className="ns-fv2-link">Buy Gift Cards</span>
+            </div>
+            <div className="ns-fv2-col">
+              <span className="ns-fv2-link">Terms of Use</span>
+              <span className="ns-fv2-link">Privacy</span>
+              <span className="ns-fv2-link">Legal Notices</span>
+              <span className="ns-fv2-link">Cookie Preferences</span>
+            </div>
+            <div className="ns-fv2-col">
+              <span className="ns-fv2-link">Contact Us</span>
+              <span className="ns-fv2-link">Speed Test</span>
+              <span className="ns-fv2-link">Ad Choices</span>
+              <span className="ns-fv2-link">Only on NovaSpark</span>
+            </div>
           </div>
 
-          <div className="ns-footer-links-col">
-            <div className="ns-footer-social">
-              <a href="https://discord.gg/9BWtjg9c9E" target="_blank" rel="noopener noreferrer" className="ns-footer-social-link ns-footer-social--discord" aria-label="Discord" title="Discord"><DiscordIcon size={18} /></a>
-              <a href="#" target="_blank" rel="noopener noreferrer" className="ns-footer-social-link ns-footer-social--x" aria-label="X" title="X"><XIcon size={18} /></a>
-              <a href="#" target="_blank" rel="noopener noreferrer" className="ns-footer-social-link ns-footer-social--facebook" aria-label="Facebook" title="Facebook"><FacebookIcon size={18} /></a>
-              <a href="#" target="_blank" rel="noopener noreferrer" className="ns-footer-social-link ns-footer-social--tiktok" aria-label="TikTok" title="TikTok"><TikTokIcon size={18} /></a>
-            </div>
-            <div className="ns-footer-links">
-              <span>Privacy</span>
-              <span>Terms</span>
-              <span>Contact</span>
-            </div>
+          {/* Disclaimer */}
+          <p className="ns-fv2-disclaimer">
+            NovaSpark does not host or store any media content. All content is sourced from third-party providers.
+            Stream quality and availability may vary by region. You must be of legal viewing age in your jurisdiction.
+            We are not responsible for third-party content or advertisements.
+          </p>
+
+          {/* Bottom bar */}
+          <div className="ns-fv2-bottom">
+            <span className="ns-fv2-brand">NovaSpark</span>
+            <span className="ns-fv2-copy">© 2026 NovaSpark. All rights reserved.</span>
           </div>
-        </div>
-        <div className="ns-footer-bottom">
-          <span>© 2026 NovaSpark. All rights reserved.</span>
         </div>
       </footer>
     </div>
