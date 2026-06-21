@@ -1435,6 +1435,16 @@ export default function WatchPage({
             </span>
           )}
 
+              <button
+            className={`ns-refresh-btn${refreshSpinning ? " spinning" : ""}`}
+            onClick={retryFromScratch}
+            title="Refresh player"
+          >
+            <RefreshIcon spinning={refreshSpinning} />
+            <span>Refresh</span>
+          </button>
+
+
           <button
             className={`adfree-btn ${isNonEmbedMode ? "on" : "off"}`}
             onClick={() => {
@@ -1516,15 +1526,7 @@ export default function WatchPage({
             </button>
           )}
 
-          <button
-            className={`ns-refresh-btn${refreshSpinning ? " spinning" : ""}`}
-            onClick={retryFromScratch}
-            title="Refresh player"
-          >
-            <RefreshIcon spinning={refreshSpinning} />
-            <span>Refresh</span>
-          </button>
-
+      
           <DataMeterWidget
             isPlaying={!webviewLoading && !pipOpen}
             isActuallyPlaying={isActuallyPlaying && !webviewLoading && !pipOpen}
