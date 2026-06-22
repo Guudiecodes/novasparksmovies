@@ -409,12 +409,7 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
           {/* Center: NS Shorts branding */}
           <div style={{display:"flex",alignItems:"center",gap:10,position:"absolute",left:"50%",transform:"translateX(-50%)"}}>
-            <div style={{width:26,height:26,borderRadius:"50%",background:"#00b4a6",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
-            </div>
-            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:21,letterSpacing:2.5,color:"#fff"}}>
-              <span style={{color:"#00b4a6"}}>NS</span> Shorts
-            </span>
+        
             <span style={{fontSize:9,fontWeight:800,letterSpacing:1,background:"linear-gradient(135deg,#f5a623,#e74c3c)",borderRadius:4,padding:"2px 6px",color:"#fff",fontFamily:"'DM Sans',sans-serif"}}>WORLD</span>
           </div>
 
