@@ -1,10 +1,14 @@
 /**
  * ReelPage.jsx — NovaSpark Shorts
  * Desktop: Pixel-accurate YouTube Shorts layout — portrait card, circular action rail, nav arrow
- * Mobile:  Full-screen vertical swipe (TikTok/YT Shorts mobile)
+ * Mobile:  Full-screen vertical swipe (TikTok/YT Shorts mobile) — rendered via a body portal so it
+ *          always sits above (and fully covers) the app's topbar / sidebar / bottom-nav, regardless
+ *          of how those are mounted. Unmounting this page automatically restores them — no other
+ *          file needs to change.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const TMDB_BASE    = "https://api.themoviedb.org/3";
@@ -321,6 +325,16 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
     setShowInfo(false);
   },[idx]);
 
+  // Lock body scroll while Shorts is mounted (mobile/tablet renders via a body
+  // portal, so this also guarantees nothing behind it can scroll into view)
+  useEffect(()=>{
+    if(desktop)return;
+    const prevOverflow=document.body.style.overflow,prevHeight=document.documentElement.style.overflow;
+    document.body.style.overflow="hidden";
+    document.documentElement.style.overflow="hidden";
+    return()=>{document.body.style.overflow=prevOverflow;document.documentElement.style.overflow=prevHeight;};
+  },[desktop]);
+
   const goTo=useCallback(n=>{if(!canNav.current)return;const len=reelsRef.current.length;if(!len)return;const c=Math.max(0,Math.min(n,len-1));if(c===idxRef.current)return;canNav.current=false;idxRef.current=c;setIdx(c);setTimeout(()=>{canNav.current=true;},420);},[]);
   const firstInteract=useCallback(()=>{if(!hadInteract.current){hadInteract.current=true;setInteracted(true);setMuted(false);}},[]);
   const isSaved=useCallback(r=>{const tid=r?.tmdb_id||r?.tmdbObj?.id;return(savedRef.current||[]).some(s=>String(s.id)===String(tid));},[]);
@@ -464,9 +478,6 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
                 })}
 
                 <ProgressBar active={!loading&&reels.length>0} onComplete={blocked}/>
-
-                {/* Reel counter */}
-                {!loading&&reels.length>0&&<div style={{position:"absolute",top:10,right:10,zIndex:30,background:"rgba(0,0,0,0.5)",borderRadius:20,padding:"3px 9px",fontFamily:"'DM Mono',monospace",fontSize:9,letterSpacing:1.5,color:"rgba(255,255,255,0.5)",pointerEvents:"none"}}>{idx+1} / {reels.length}</div>}
               </div>
             </div>
 
@@ -532,10 +543,16 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // MOBILE — full-screen vertical
+  // MOBILE / TABLET — full-screen vertical, portaled to <body>
+  // Rendering this subtree as a direct child of <body> (instead of wherever
+  // the router mounts the page) guarantees it is a true fixed full-viewport
+  // layer: no ancestor's transform/overflow/stacking context can clip or bury
+  // it, and nothing else (topbar, sidebar, bottom-nav) can render above it.
+  // The instant this component unmounts, the portal node is removed and the
+  // app's normal chrome is back exactly as it was — no flags, no other files.
   // ══════════════════════════════════════════════════════════════════════════
-  return(
-    <div ref={containerRef} onClick={firstInteract} style={{position:"fixed",top:0,bottom:0,left:"var(--sidebar,0px)",right:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:10}}>
+  return createPortal(
+    <div ref={containerRef} onClick={firstInteract} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:2147483647}}>
       <style>{`
         @keyframes ns-spin    { to{transform:rotate(360deg);} }
         @keyframes ns-shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
@@ -593,7 +610,7 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
         );
       })}
 
-      {/* Mobile top bar */}
+      {/* Mobile top bar — this is the ONLY top bar visible while in Shorts */}
       <div style={{position:"absolute",top:0,left:0,right:0,zIndex:50,background:"linear-gradient(to bottom,rgba(0,0,0,0.7) 0%,transparent 100%)",pointerEvents:"none"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 14px 32px",pointerEvents:"auto"}}>
           <button onClick={()=>nav("home")} style={{all:"unset",width:36,height:36,borderRadius:"50%",background:"rgba(0,0,0,0.35)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"rgba(255,255,255,0.9)"}}>
@@ -618,6 +635,7 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
       {/* Toast */}
       {toast&&<div style={{position:"absolute",top:72,left:"50%",transform:"translateX(-50%)",zIndex:75,pointerEvents:"none",background:"rgba(5,5,5,0.88)",border:"1px solid rgba(0,180,166,0.2)",borderRadius:8,padding:"9px 18px",display:"flex",alignItems:"center",gap:8,animation:"ns-fadein 0.2s ease both",whiteSpace:"nowrap"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span style={{fontFamily:"'DM Mono',monospace",fontSize:11,letterSpacing:0.8,color:"#00b4a6",textTransform:"uppercase"}}>{toast}</span></div>}
       {moreLoad&&<div style={{position:"absolute",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:50,pointerEvents:"none"}}><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.06)",borderTopColor:"#00b4a6",animation:"ns-spin 0.8s linear infinite"}}/></div>}
-    </div>
+    </div>,
+    document.body
   );
 }
