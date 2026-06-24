@@ -22,7 +22,8 @@ import { storage }       from "../utils/storage";
 import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } from "../utils/ageRating";
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate       from "../components/PremiumGate";
-import NativeBanner from '../components/NativeBanner';
+import BannerAd from '../components/BannerAd';
+import NativeBanner from '../components/NativeBannerAd';
 import AdsterraAds from '../components/AdsterraAds';
 
 
@@ -614,6 +615,7 @@ export default function MoviePage({
 
   return (
     <div className="ns-movie-page fade-in" style={{ paddingBottom: "max(80px, env(safe-area-inset-bottom, 80px))" }}>
+   <BannerAd />
     <AdsterraAds />
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -1083,7 +1085,7 @@ export default function MoviePage({
             )}
           </>
         )}
-
+<NativeBannerAd />
         {/* ── Keywords / Tags ───────────────────────────────────────── */}
         {keywords.length > 0 && (
           <>
