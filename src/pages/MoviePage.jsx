@@ -23,6 +23,8 @@ import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } 
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate       from "../components/PremiumGate";
 import NativeBanner from '../components/NativeBanner';
+import AdsterraAds from '../components/AdsterraAds';
+
 
 // Place between movie rows:
 <NativeBanner />
@@ -59,6 +61,7 @@ function DisclaimerTicker() {
       userSelect: "none",
     }}>
       <div className="ns-ticker-track">
+        <AdsterraAds />
         <span className="ns-ticker-msg">{msg}</span>
         <span className="ns-ticker-msg">{msg}</span>
       </div>
@@ -611,6 +614,7 @@ export default function MoviePage({
 
   return (
     <div className="ns-movie-page fade-in" style={{ paddingBottom: "max(80px, env(safe-area-inset-bottom, 80px))" }}>
+    <AdsterraAds />
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
