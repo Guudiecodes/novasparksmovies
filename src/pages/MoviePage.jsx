@@ -24,7 +24,6 @@ import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate       from "../components/PremiumGate";
 import BannerAd from '../components/BannerAd';
 import NativeBanner from '../components/NativeBannerAd';
-import AdsterraAds from '../components/AdsterraAds';
 
 
 // Place between movie rows:
@@ -62,7 +61,6 @@ function DisclaimerTicker() {
       userSelect: "none",
     }}>
       <div className="ns-ticker-track">
-        <AdsterraAds />
         <span className="ns-ticker-msg">{msg}</span>
         <span className="ns-ticker-msg">{msg}</span>
       </div>
@@ -616,7 +614,6 @@ export default function MoviePage({
   return (
     <div className="ns-movie-page fade-in" style={{ paddingBottom: "max(80px, env(safe-area-inset-bottom, 80px))" }}>
    <BannerAd />
-    <AdsterraAds />
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
