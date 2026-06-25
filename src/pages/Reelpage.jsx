@@ -5,6 +5,11 @@
  *          always sits above (and fully covers) the app's topbar / sidebar / bottom-nav, regardless
  *          of how those are mounted. Unmounting this page automatically restores them — no other
  *          file needs to change.
+ *
+ * Player / gesture / pool-fetching logic is untouched from the previous version on purpose.
+ * Changes in this pass: removed the Like and Share rail buttons, wired up the "Info" sheet
+ * (it existed but nothing ever opened it), and surfaced the live-viewer count that was already
+ * being generated per reel but never rendered anywhere.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -13,7 +18,6 @@ import { createPortal } from "react-dom";
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const TMDB_BASE    = "https://api.themoviedb.org/3";
 const TMDB_IMG     = "https://image.tmdb.org/t/p";
-const SHARE_BASE   = "https://novasparks-gen.vercel.app";
 const START_OFFSET = 30;
 const CLIP_END     = 60;
 const NINETY_DAYS  = 90 * 24 * 60 * 60 * 1000;
@@ -97,13 +101,6 @@ const hap={
   save: ()=>{try{navigator.vibrate?.([15,30,60]);}catch{}},
 };
 
-// ─── SHARE ───────────────────────────────────────────────────────────────────
-async function doShare(reel){
-  const url=reel.tmdb_id?`${SHARE_BASE}/reel?v=${reel.tmdb_id}`:SHARE_BASE;
-  if(navigator.share){try{await navigator.share({title:reel.title,url});return "shared";}catch(e){if(e.name==="AbortError")return "aborted";}}
-  try{await navigator.clipboard.writeText(url);return "copied";}catch{return "failed";}
-}
-
 // ─── PROGRESS BAR ─────────────────────────────────────────────────────────────
 function ProgressBar({active,onComplete}){
   const [pct,set]=useState(0),raf=useRef(null),t0=useRef(null),done=useRef(false);
@@ -182,6 +179,18 @@ function ElectronPlayer({videoId,active,muted,onBlocked,backdrop,poster,preload}
 }
 const Player = IS_ELECTRON ? ElectronPlayer : WebYTPlayer;
 
+// ─── Live-viewer pill — surfaces the watchingNow figure the pool already
+//     computes per reel (it was being generated and thrown away before) ─────
+function LivePill({count}){
+  if(!count) return null;
+  return(
+    <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px 3px 7px",borderRadius:20,background:"rgba(0,180,166,0.12)",border:"1px solid rgba(0,180,166,0.3)",flexShrink:0}}>
+      <span style={{width:6,height:6,borderRadius:"50%",background:"#00e5cc",animation:"ns-livepulse 1.6s ease-in-out infinite",flexShrink:0}}/>
+      <span style={{fontSize:11,fontWeight:700,color:"#00e5cc",letterSpacing:0.2,whiteSpace:"nowrap"}}>{fmtCount(count)} watching</span>
+    </span>
+  );
+}
+
 // ─── DESKTOP: Circular action button ─────────────────────────────────────────
 function ActionBtn({icon, label, count, active, danger, onClick}){
   const [pop,setPop]=useState(false);
@@ -242,7 +251,7 @@ function MobBtn({children,label,count,active,onClick}){
     <button onPointerDown={stop} onPointerUp={stop} onPointerMove={stop} onPointerCancel={stop} onTouchStart={stop} onTouchEnd={stop} onTouchMove={stop} onTouchCancel={stop}
       onClick={e=>{stop(e);setPop(true);setTimeout(()=>setPop(false),150);onClick();}}
       style={{all:"unset",display:"flex",flexDirection:"column",alignItems:"center",gap:5,cursor:"pointer",WebkitTapHighlightColor:"transparent",userSelect:"none",touchAction:"none"}}>
-      <div style={{width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",color:active?"#00b4a6":"rgba(255,255,255,0.9)",transform:pop?"scale(0.6)":"scale(1)",transition:"transform 0.15s cubic-bezier(0.34,1.56,0.64,1), color 0.15s",filter:active?"drop-shadow(0 0 6px rgba(0,180,166,0.7))":"none"}}>
+      <div style={{width:46,height:46,display:"flex",alignItems:"center",justifyContent:"center",color:active?"#00b4a6":"rgba(255,255,255,0.9)",transform:pop?"scale(0.6)":"scale(1)",transition:"transform 0.15s cubic-bezier(0.34,1.56,0.64,1), color 0.15s"}}>
         {children}
       </div>
       <span style={{fontSize:11,fontWeight:600,color:active?"#00b4a6":"rgba(255,255,255,0.4)",fontFamily:"'DM Mono',monospace",letterSpacing:0.8,textTransform:"uppercase",lineHeight:1}}>
@@ -266,16 +275,17 @@ function SwipeHint({dir,opacity}){
   );
 }
 
-// ─── MOBILE: Info overlay (hold) ─────────────────────────────────────────────
+// ─── MOBILE: Info overlay (Info button / hold) ───────────────────────────────
 function InfoSheet({reel,visible,onClose}){
   if(!visible||!reel) return null;
   return(
     <div style={{position:"absolute",inset:0,zIndex:70,background:"rgba(0,0,0,0.9)",backdropFilter:"blur(16px)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:"0 20px 72px",animation:"ns-slide-up 0.3s cubic-bezier(0.22,1,0.36,1) both"}}
       onClick={e=>{e.stopPropagation();onClose();}}>
       <div onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,alignItems:"center"}}>
           {reel.genres.map(g=><span key={g} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.6)",letterSpacing:0.4}}>{g}</span>)}
           {reel.rating&&<span style={{background:"rgba(241,196,15,0.08)",border:"1px solid rgba(241,196,15,0.2)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#f1c40f"}}>★ {reel.rating}</span>}
+          <LivePill count={reel.watchingNow}/>
         </div>
         <h2 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(30px,7vw,52px)",fontWeight:400,margin:"0 0 10px",color:"#fff",letterSpacing:1.5,lineHeight:0.95}}>{reel.title}</h2>
         {reel.overview&&<p style={{fontFamily:"'DM Sans',sans-serif",fontSize:14,lineHeight:1.65,color:"rgba(255,255,255,0.6)",marginBottom:20,maxWidth:460}}>{reel.overview}</p>}
@@ -301,10 +311,7 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
   const [swipe,     setSwipe]     = useState({dir:null,opacity:0});
   const [interacted,setInteracted]= useState(false);
   // per-reel
-  const [liked,     setLiked]     = useState(false);
-  const [likeN,     setLikeN]     = useState(0);
   const [disliked,  setDisliked]  = useState(false);
-  const [shareS,    setShareS]    = useState(null);
   const [showInfo,  setShowInfo]  = useState(false);
 
   const containerRef=useRef(null),idxRef=useRef(0),reelsRef=useRef([]),savedRef=useRef(savedItems),canNav=useRef(true),wheelLock=useRef(false),hadInteract=useRef(false);
@@ -317,11 +324,7 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
   // Reset per-reel state on idx change
   useEffect(()=>{
-    const r=reelsRef.current[idxRef.current];
-    setLiked(false);
-    setLikeN(r?r.likes:0);
     setDisliked(false);
-    setShareS(null);
     setShowInfo(false);
   },[idx]);
 
@@ -341,14 +344,13 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
   const saveReel=useCallback(r=>{const item=r.tmdbObj?{...r.tmdbObj,media_type:"movie"}:{id:r.tmdb_id,title:r.title,media_type:"movie"};onSave?.(item);setToast("Saved to Watchlist");setTimeout(()=>setToast(null),2000);},[onSave]);
   const watchReel=useCallback((r,st)=>{const item=r.tmdbObj?{...r.tmdbObj,media_type:"movie"}:{id:r.tmdb_id,title:r.title,media_type:"movie"};if(st==="notify"){setToast(`Notify: ${r.title}`);setTimeout(()=>setToast(null),2200);return;}onSelect?.(item);},[onSelect]);
   const blocked=useCallback(()=>goTo(idxRef.current+1),[goTo]);
-  const share=useCallback(async()=>{const r=await doShare(reelsRef.current[idxRef.current]);if(r==="copied"||r==="shared"){setShareS(r);setTimeout(()=>setShareS(null),2000);}},[]);
 
   // Load
   useEffect(()=>{if(!apiKey)return;let dead=false;setLoading(true);fetchReels(apiKey,14).then(d=>{if(!dead){setReels(d);setLoading(false);}}).catch(()=>{if(!dead)setLoading(false);});return()=>{dead=true;};},[apiKey]);
   useEffect(()=>{if(moreLoad||!reels.length||idx<reels.length-4)return;setMoreLoad(true);fetchReels(apiKey,10).then(d=>{setReels(p=>[...p,...d]);setMoreLoad(false);}).catch(()=>setMoreLoad(false));},[idx,reels.length,moreLoad]); // eslint-disable-line
 
   // Keyboard
-  useEffect(()=>{const h=e=>{if(e.key==="ArrowDown"||e.key==="j")goTo(idxRef.current+1);if(e.key==="ArrowUp"||e.key==="k")goTo(idxRef.current-1);if(e.key==="m")setMuted(v=>!v);};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[goTo]);
+  useEffect(()=>{const h=e=>{if(e.key==="ArrowDown"||e.key==="j")goTo(idxRef.current+1);if(e.key==="ArrowUp"||e.key==="k")goTo(idxRef.current-1);if(e.key==="m")setMuted(v=>!v);if(e.key==="i")setShowInfo(v=>!v);};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[goTo]);
 
   // Wheel
   useEffect(()=>{const el=containerRef.current;if(!el)return;const fn=e=>{e.preventDefault();if(wheelLock.current||Math.abs(e.deltaY)<20)return;wheelLock.current=true;hap.light();goTo(idxRef.current+(e.deltaY>0?1:-1));setTimeout(()=>{wheelLock.current=false;},650);};el.addEventListener("wheel",fn,{passive:false});return()=>el.removeEventListener("wheel",fn);},[goTo]);
@@ -391,10 +393,11 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
     return(
       <div ref={containerRef} style={{position:"fixed",top:0,bottom:0,left:"var(--sidebar,54px)",right:0,background:"#0f0f0f",display:"flex",flexDirection:"column",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",overflow:"hidden"}}>
         <style>{`
-          @keyframes ns-spin    { to{transform:rotate(360deg);} }
-          @keyframes ns-shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
-          @keyframes ns-fadein  { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
-          @keyframes ns-slide-up{ from{transform:translateY(100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
+          @keyframes ns-spin     { to{transform:rotate(360deg);} }
+          @keyframes ns-shimmer  { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+          @keyframes ns-fadein   { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
+          @keyframes ns-slide-up { from{transform:translateY(100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
+          @keyframes ns-livepulse{ 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.6);} }
           .ns-ab-circle{ transition: background 0.15s !important; }
         `}</style>
 
@@ -409,7 +412,7 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
           {/* Center: NS Shorts branding */}
           <div style={{display:"flex",alignItems:"center",gap:10,position:"absolute",left:"50%",transform:"translateX(-50%)"}}>
-        
+            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:19,letterSpacing:2.5,color:"#fff"}}><span style={{color:"#00b4a6"}}>NS</span> Shorts</span>
             <span style={{fontSize:9,fontWeight:800,letterSpacing:1,background:"linear-gradient(135deg,#f5a623,#e74c3c)",borderRadius:4,padding:"2px 6px",color:"#fff",fontFamily:"'DM Sans',sans-serif"}}>WORLD</span>
           </div>
 
@@ -438,7 +441,6 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
             {/* VIDEO CARD */}
             <div style={{flexShrink:0,display:"flex",flexDirection:"column"}}>
-              {/* Card */}
               <div style={{position:"relative",height:`min(calc(100vh - ${HEADER_H}px - 32px), 720px)`,aspectRatio:"9/16",borderRadius:12,overflow:"hidden",background:"#000",flexShrink:0}} key="card">
                 {loading&&spinner}
 
@@ -461,10 +463,11 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
                           </div>
                           {/* Description */}
                           {cur.overview&&<p style={{fontSize:12,color:"rgba(255,255,255,0.65)",lineHeight:1.45,margin:"0 0 7px",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{cur.overview}</p>}
-                          {/* Genre hashtags */}
-                          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {/* Genre hashtags + rating + live viewers */}
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                             {cur.genres.map(g=><span key={g} style={{fontSize:12,fontWeight:600,color:"#00b4a6",letterSpacing:0.1}}>#{g.toLowerCase().replace(/ /g,"-")}</span>)}
                             {cur.rating&&<span style={{fontSize:12,fontWeight:600,color:"rgba(241,196,15,0.85)"}}>★{cur.rating}</span>}
+                            <LivePill count={cur.watchingNow}/>
                           </div>
                         </div>
                       )}
@@ -476,32 +479,23 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
               </div>
             </div>
 
-            {/* ACTION RAIL — right of video, bottom-aligned */}
+            {/* ACTION RAIL — right of video, bottom-aligned. Just the essentials:
+                Save, Dislike, Details — nothing here exists to pad the rail out. */}
             <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20,paddingBottom:16,flexShrink:0}}>
-              {/* Like */}
-              <ActionBtn active={liked} count={likeN} label="Like"
-                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill={liked?"#00b4a6":"none"} stroke={liked?"#00b4a6":"rgba(255,255,255,0.87)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>}
-                onClick={()=>{hap.light();setLiked(v=>{setLikeN(c=>v?c-1:c+1);return !v;});}}
-              />
-              {/* Dislike */}
-              <ActionBtn danger={disliked} label="Dislike"
-                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill={disliked?"#f44":"none"} stroke={disliked?"#f44":"rgba(255,255,255,0.87)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>}
-                onClick={()=>{hap.light();setDisliked(v=>{if(v)return false;setLiked(false);return true;});}}
-              />
               {/* Save / Bookmark */}
               <ActionBtn active={curSaved} label={curSaved?"Saved":"Save"}
                 icon={curSaved?<svg width="22" height="22" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.87)" strokeWidth="1.8" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>}
                 onClick={()=>{hap.save();if(cur)saveReel(cur);}}
               />
-              {/* Share */}
-              <ActionBtn active={!!shareS} label={shareS?"Copied":"Share"}
-                icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.87)" strokeWidth="1.8" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>}
-                onClick={share}
+              {/* Dislike */}
+              <ActionBtn danger={disliked} label="Dislike"
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill={disliked?"#f44":"none"} stroke={disliked?"#f44":"rgba(255,255,255,0.87)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>}
+                onClick={()=>{hap.light();setDisliked(v=>!v);}}
               />
-              {/* More / Details */}
-              <ActionBtn label="More"
+              {/* Details */}
+              <ActionBtn active={showInfo} label="Details"
                 icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.87)" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>}
-                onClick={()=>cur&&onSelect?.({...cur.tmdbObj,media_type:"movie"})}
+                onClick={()=>setShowInfo(v=>!v)}
               />
               {/* Next video thumbnail — YouTube shows this */}
               {nextReel&&(
@@ -526,6 +520,9 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
           </div>{/* end group */}
 
+          {/* Details sheet (desktop) */}
+          {cur&&<InfoSheet reel={cur} visible={showInfo} onClose={()=>setShowInfo(false)}/>}
+
           {/* Empty state */}
           {!loading&&!reels.length&&<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,background:"#0f0f0f"}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,letterSpacing:2,color:"rgba(255,255,255,0.15)"}}>No Shorts</span></div>}
         </div>
@@ -549,14 +546,15 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
   return createPortal(
     <div ref={containerRef} onClick={firstInteract} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:2147483647}}>
       <style>{`
-        @keyframes ns-spin    { to{transform:rotate(360deg);} }
-        @keyframes ns-shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
-        @keyframes ns-fadein  { from{opacity:0;} to{opacity:1;} }
-        @keyframes ns-slide-up{ from{transform:translateY(100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
-        @keyframes ns-hintfade{ 0%{opacity:0;} 15%{opacity:1;} 75%{opacity:1;} 100%{opacity:0;} }
-        @keyframes ns-flash   { 0%{opacity:0;} 15%{opacity:1;} 70%{opacity:.5;} 100%{opacity:0;} }
-        .ns-mob-rail { position:absolute; right:10px; bottom:100px; z-index:30; display:flex; flex-direction:column; align-items:center; gap:18px; touch-action:none; }
-        .ns-mob-info { position:absolute; bottom:0; left:0; right:72px; z-index:30; padding:0 14px 82px 16px; pointer-events:none; box-sizing:border-box; }
+        @keyframes ns-spin     { to{transform:rotate(360deg);} }
+        @keyframes ns-shimmer  { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+        @keyframes ns-fadein   { from{opacity:0;} to{opacity:1;} }
+        @keyframes ns-slide-up { from{transform:translateY(100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
+        @keyframes ns-hintfade { 0%{opacity:0;} 15%{opacity:1;} 75%{opacity:1;} 100%{opacity:0;} }
+        @keyframes ns-flash    { 0%{opacity:0;} 15%{opacity:1;} 70%{opacity:.5;} 100%{opacity:0;} }
+        @keyframes ns-livepulse{ 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.6);} }
+        .ns-mob-rail { position:absolute; right:8px; bottom:104px; z-index:30; display:flex; flex-direction:column; align-items:center; gap:14px; touch-action:none; }
+        .ns-mob-info { position:absolute; bottom:0; left:0; right:68px; z-index:30; padding:0 14px 82px 16px; pointer-events:none; box-sizing:border-box; }
       `}</style>
 
       {loading&&spinner}
@@ -571,27 +569,30 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
             <SwipeHint dir={isA?swipe.dir:null} opacity={isA?swipe.opacity:0}/>
             {isA&&saveFlash&&<div style={{position:"absolute",inset:0,zIndex:66,pointerEvents:"none",background:"rgba(0,180,166,0.08)",animation:"ns-flash 0.6s ease both"}}/>}
 
-            {/* Mobile action rail */}
+            {/* Mobile action rail — Save, Dislike, Mute, Info. Compact, off to the
+                side, so nothing here sits over the poster art or the title/synopsis. */}
             <div className="ns-mob-rail" data-ns onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onPointerMove={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
-              <MobBtn active={isA&&liked} count={isA?likeN:r.likes} onClick={()=>{if(isA){hap.light();setLiked(v=>{setLikeN(c=>v?c-1:c+1);return !v;});}}}>
-                <svg width="26" height="26" viewBox="0 0 24 24" fill={isA&&liked?"#00b4a6":"none"} stroke={isA&&liked?"#00b4a6":"rgba(255,255,255,0.9)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-              </MobBtn>
               <MobBtn active={rSaved} label={rSaved?"Saved":"Save"} onClick={()=>{hap.save();saveReel(r);}}>
                 {rSaved?<svg width="24" height="24" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="1.8" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>}
               </MobBtn>
-              <MobBtn active={isA&&!!shareS} label={isA&&shareS?"Copied":"Share"} onClick={isA?share:()=>{}}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="1.8" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              <MobBtn active={isA&&disliked} label="Dislike" onClick={()=>{if(isA){hap.light();setDisliked(v=>!v);}}}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill={isA&&disliked?"#f44":"none"} stroke={isA&&disliked?"#f44":"rgba(255,255,255,0.9)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>
               </MobBtn>
               <MobBtn active={false} label="Mute" onClick={()=>{hap.light();setMuted(m=>!m);if(!interacted){setInteracted(true);hadInteract.current=true;}}}>
                 {muted?<svg width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>}
               </MobBtn>
+              <MobBtn active={isA&&showInfo} label="Info" onClick={()=>{if(isA){hap.light();setShowInfo(v=>!v);}}}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isA&&showInfo?"#00b4a6":"rgba(255,255,255,0.9)"} strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              </MobBtn>
             </div>
 
-            {/* Mobile bottom info */}
+            {/* Mobile bottom info — clamped lines, right padding clears the rail,
+                so text never sits over the action buttons or runs off-screen. */}
             <div className="ns-mob-info">
-              <div style={{display:"flex",gap:5,marginBottom:7,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:5,marginBottom:7,flexWrap:"wrap",alignItems:"center"}}>
                 {r.genres.map(g=><span key={g} style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"3px 9px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.65)",letterSpacing:0.8,textTransform:"uppercase",fontFamily:"'DM Mono',monospace"}}>{g}</span>)}
                 {r.rating&&<span style={{background:"rgba(241,196,15,0.07)",border:"1px solid rgba(241,196,15,0.2)",borderRadius:20,padding:"3px 8px",fontSize:9,fontWeight:700,color:"#f1c40f",fontFamily:"'DM Mono',monospace"}}>★ {r.rating}</span>}
+                <LivePill count={r.watchingNow}/>
               </div>
               <h2 style={{margin:"0 0 7px",fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(24px,7vw,44px)",fontWeight:400,letterSpacing:1.5,lineHeight:0.95,color:"#fff",textShadow:"0 2px 20px rgba(0,0,0,0.9)",wordBreak:"break-word",animation:isA?"ns-fadein 0.4s ease both":"none"}}>{r.title}</h2>
               {r.overview&&<p style={{margin:"0 0 10px",fontFamily:"'DM Sans',sans-serif",fontSize:12,lineHeight:1.55,color:"rgba(255,255,255,0.5)",textShadow:"0 1px 6px rgba(0,0,0,0.9)",pointerEvents:"none",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{r.overview}</p>}
