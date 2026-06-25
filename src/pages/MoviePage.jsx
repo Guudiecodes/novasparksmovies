@@ -22,12 +22,9 @@ import { storage }       from "../utils/storage";
 import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } from "../utils/ageRating";
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate       from "../components/PremiumGate";
-import BannerAd from '../components/BannerAd';
-import NativeBanner from '../components/NativeBannerAd';
 
 
 // Place between movie rows:
-<NativeBanner />
 const _EMBED_CSS = `
 [class*="loading"i],[class*="loader"i],[class*="fetching"i],[class*="preload"i],
 [id*="loading"i],[id*="loader"i],[id*="fetching"i],
@@ -613,7 +610,6 @@ export default function MoviePage({
 
   return (
     <div className="ns-movie-page fade-in" style={{ paddingBottom: "max(80px, env(safe-area-inset-bottom, 80px))" }}>
-   <BannerAd />
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1082,7 +1078,6 @@ export default function MoviePage({
             )}
           </>
         )}
-<NativeBannerAd />
         {/* ── Keywords / Tags ───────────────────────────────────────── */}
         {keywords.length > 0 && (
           <>
