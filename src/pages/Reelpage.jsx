@@ -6,10 +6,10 @@
  *          of how those are mounted. Unmounting this page automatically restores them — no other
  *          file needs to change.
  *
- * Player / gesture / pool-fetching logic is untouched from the previous version on purpose.
- * Changes in this pass: removed the Like and Share rail buttons, wired up the "Info" sheet
- * (it existed but nothing ever opened it), and surfaced the live-viewer count that was already
- * being generated per reel but never rendered anywhere.
+ * This pass: removed Dislike, shrank the mobile caption block so it no longer sits over most of
+ * the screen, added tap-to-pause / double-tap-to-save gestures with visual feedback, defaulted
+ * playback to unmuted (mute is now opt-in, not opt-out), hardened the pool shuffle, and added a
+ * one-time gesture tutorial for new users. Player/pool/gesture-nav internals are otherwise untouched.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -23,6 +23,8 @@ const CLIP_END     = 60;
 const NINETY_DAYS  = 90 * 24 * 60 * 60 * 1000;
 const IS_ELECTRON  = typeof window !== "undefined" && !!window.electronAPI;
 const HEADER_H     = 56;   // px — matches YouTube header height
+const TAP_MS       = 320;  // double-tap window
+const TAP_PX       = 40;   // double-tap position tolerance
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
 function fmtCount(n) {
@@ -49,9 +51,25 @@ function buildYTSrc(id) {
 }
 function imgSrc(path, size="w342") { return path ? `${TMDB_IMG}/${size}${path}` : null; }
 function ytMsg(ifr, obj) { try { ifr?.contentWindow?.postMessage(JSON.stringify(obj),"*"); } catch {} }
+
+// Mulberry32 — small, fast, well-tested PRNG. Used (instead of the previous
+// ad-hoc bit-mixing) so the Fisher-Yates shuffle below is verifiably uniform.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 function shuffle(arr, seed) {
-  const a=[...arr]; let s=seed>>>0;
-  for(let i=a.length-1;i>0;i--){s=Math.imul(s^(s>>>15),s|1);s^=s+Math.imul(s^(s>>>7),s|61);[a[i],a[(s>>>0)%(i+1)]]=[a[(s>>>0)%(i+1)],a[i]];}
+  const rng = mulberry32(seed);
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
   return a;
 }
 
@@ -59,6 +77,7 @@ function shuffle(arr, seed) {
 const _seen=new Set(),_seenM=new Set(),_pool=[];
 let _fetch=false;
 const _SEED=Date.now(),_pg=[1,1,1,1,1];
+let _shuffleCalls=0;
 const SOURCES=[
   (k,p)=>`${TMDB_BASE}/trending/movie/week?api_key=${k}&page=${p}&language=en-US`,
   (k,p)=>`${TMDB_BASE}/movie/popular?api_key=${k}&page=${p}&language=en-US`,
@@ -85,7 +104,10 @@ async function fillPool(key) {
       for(const r of s){if(r.status!=="fulfilled")continue;const{m,v}=r.value;const ytId=bestTrailer(v);if(!ytId||_seen.has(ytId))continue;items.push({id:ytId,youtubeId:ytId,tmdb_id:m.id,title:m.title||m.original_title||"Untitled",overview:m.overview||"",genres:(m.genre_ids||[]).slice(0,2).map(id=>GENRES[id]).filter(Boolean),rating:m.vote_average?+m.vote_average.toFixed(1):null,release_date:m.release_date||null,backdrop:m.backdrop_path||null,poster:m.poster_path||null,tmdbObj:m,watchingNow:100+((m.id*137)%1800),likes:Math.floor(5000+Math.random()*95000),_score:(m.vote_average||5)*Math.log((m.vote_count||1)+1)});}
     }
     if(!items.length)return;
-    _pool.push(...shuffle(items,_SEED^(_pool.length*2654435761)).sort((a,b)=>b._score-a._score));
+    // Each call gets its own fresh PRNG stream (seed advances by call count, not
+    // by pool length) so back-to-back fills never reshuffle with the same sequence.
+    _shuffleCalls++;
+    _pool.push(...shuffle(items,_SEED^Math.imul(_shuffleCalls,2654435761)).sort((a,b)=>b._score-a._score));
   } finally{_fetch=false;}
 }
 async function fetchReels(key,n=12){
@@ -101,17 +123,66 @@ const hap={
   save: ()=>{try{navigator.vibrate?.([15,30,60]);}catch{}},
 };
 
-// ─── PROGRESS BAR ─────────────────────────────────────────────────────────────
-function ProgressBar({active,onComplete}){
-  const [pct,set]=useState(0),raf=useRef(null),t0=useRef(null),done=useRef(false);
+// ─── Live-viewer pill — surfaces the watchingNow figure the pool already
+//     computes per reel (it was being generated and thrown away before) ─────
+function LivePill({count}){
+  if(!count) return null;
+  return(
+    <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px 3px 7px",borderRadius:20,background:"rgba(0,180,166,0.12)",border:"1px solid rgba(0,180,166,0.3)",flexShrink:0}}>
+      <span style={{width:6,height:6,borderRadius:"50%",background:"#00e5cc",animation:"ns-livepulse 1.6s ease-in-out infinite",flexShrink:0}}/>
+      <span style={{fontSize:11,fontWeight:700,color:"#00e5cc",letterSpacing:0.2,whiteSpace:"nowrap"}}>{fmtCount(count)} watching</span>
+    </span>
+  );
+}
+
+// ─── Center play/pause feedback — a persistent dim icon while paused, and a
+//     brief "ping" when resuming. Purely visual: pointerEvents:none always. ──
+function PauseFlash({state}){
+  if(!state) return null;
+  const isPause = state.type==="pause";
+  return(
+    <div key={state.key} style={{position:"absolute",inset:0,zIndex:24,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+      <div style={{width:60,height:60,borderRadius:"50%",background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",animation: state.persistent ? "ns-pause-in 0.22s ease both" : "ns-flash-ping 0.55s ease both"}}>
+        {isPause
+          ? <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          : <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>}
+      </div>
+    </div>
+  );
+}
+// ─── Double-tap save burst — appears at the exact tap point, Instagram-style ─
+function BurstPing({x,y}){
+  return(
+    <div style={{position:"absolute",left:x,top:y,transform:"translate(-50%,-50%)",zIndex:65,pointerEvents:"none",animation:"ns-burst-ping 0.6s ease both"}}>
+      <svg width="68" height="68" viewBox="0 0 24 24" fill="#00e5cc"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+    </div>
+  );
+}
+
+// ─── PROGRESS BAR — now pause-aware: freezes exactly where it was instead of
+//     ticking on regardless, and resumes from the same point. ───────────────
+function ProgressBar({active,paused,onComplete}){
+  const [pct,set]=useState(0);
+  const raf=useRef(null),elapsed=useRef(0),started=useRef(null),done=useRef(false);
   useEffect(()=>{
     cancelAnimationFrame(raf.current);
-    if(!active){set(0);done.current=false;return;}
-    done.current=false;t0.current=performance.now();
-    const tick=now=>{const n=Math.min(((now-t0.current)/30000)*100,100);set(n);if(n>=100){if(!done.current){done.current=true;onComplete?.();}}else raf.current=requestAnimationFrame(tick);};
+    if(!active){ set(0); elapsed.current=0; started.current=null; done.current=false; return; }
+    if(paused){ started.current=null; return; } // frozen — keep last pct on screen
+    done.current=false;
+    started.current=performance.now();
+    const tick=now=>{
+      const e=elapsed.current+(now-started.current);
+      const n=Math.min((e/30000)*100,100);
+      set(n);
+      if(n>=100){ if(!done.current){done.current=true;onComplete?.();} return; }
+      raf.current=requestAnimationFrame(tick);
+    };
     raf.current=requestAnimationFrame(tick);
-    return()=>cancelAnimationFrame(raf.current);
-  },[active]); // eslint-disable-line
+    return()=>{
+      cancelAnimationFrame(raf.current);
+      if(started.current!=null){ elapsed.current+=performance.now()-started.current; started.current=null; }
+    };
+  },[active,paused]); // eslint-disable-line
   return(
     <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:"rgba(255,255,255,0.12)",zIndex:30,pointerEvents:"none"}}>
       <div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#00b4a6,#00d4ff)",transition:"width 0.12s linear"}}/>
@@ -120,7 +191,7 @@ function ProgressBar({active,onComplete}){
 }
 
 // ─── YT PLAYER ───────────────────────────────────────────────────────────────
-function WebYTPlayer({videoId,active,muted,onBlocked,backdrop,poster,preload}){
+function WebYTPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,preload}){
   const ifrRef=useRef(null);
   const [injected,setInjected]=useState(false);
   const [loaded,setLoaded]=useState(false);
@@ -143,6 +214,13 @@ function WebYTPlayer({videoId,active,muted,onBlocked,backdrop,poster,preload}){
     ytMsg(f,{event:"command",func:"pauseVideo",args:[]});ytMsg(f,{event:"command",func:"mute",args:[]});
   },[active,loaded,applyMute]); // eslint-disable-line
   useEffect(()=>{if(!loaded||!ifrRef.current||!active)return;applyMute();const t=setTimeout(applyMute,350);return()=>clearTimeout(t);},[muted,loaded,applyMute]); // eslint-disable-line
+  // Manual pause/play — independent of the active-transition effect above, so
+  // toggling it never disturbs preload/mute/cover behaviour.
+  useEffect(()=>{
+    if(!loaded||!ifrRef.current||!active)return;
+    const f=ifrRef.current;
+    ytMsg(f,{event:"command",func:paused?"pauseVideo":"playVideo",args:[]});
+  },[paused,active,loaded]);
   useEffect(()=>{if(!active||!loaded)return;const t=setTimeout(()=>setSpinDone(true),7000);return()=>clearTimeout(t);},[active,loaded,videoId]); // eslint-disable-line
   const bg=imgSrc(backdrop,"w1280")||imgSrc(poster,"w780");
   const showCover=!(active&&playing);
@@ -158,7 +236,7 @@ function WebYTPlayer({videoId,active,muted,onBlocked,backdrop,poster,preload}){
     </div>
   );
 }
-function ElectronPlayer({videoId,active,muted,onBlocked,backdrop,poster,preload}){
+function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,preload}){
   const vRef=useRef(null);
   const [url,setUrl]=useState(null),[playing,setPlaying]=useState(false),[spinDone,setSpinDone]=useState(false),[fetching,setFetching]=useState(false),[err,setErr]=useState(false);
   const aRef=useRef(active),idRef=useRef(videoId),blocked=useRef(false);
@@ -167,6 +245,11 @@ function ElectronPlayer({videoId,active,muted,onBlocked,backdrop,poster,preload}
   useEffect(()=>{if((!active&&!preload)||url||fetching||err)return;if(!window.electronAPI?.getTrailerStream){setErr(true);return;}setFetching(true);const cid=videoId;window.electronAPI.getTrailerStream(videoId).then(r=>{if(idRef.current!==cid)return;r?.url?setUrl(r.url):(setErr(true),aRef.current&&!blocked.current&&(blocked.current=true,setTimeout(()=>onBlocked?.(),3000)));}).catch(()=>{if(idRef.current!==cid)return;setErr(true);aRef.current&&!blocked.current&&(blocked.current=true,setTimeout(()=>onBlocked?.(),3000));}).finally(()=>{if(idRef.current===cid)setFetching(false);});},[active,preload,videoId]); // eslint-disable-line
   useEffect(()=>{const v=vRef.current;if(!v||!url)return;active?v.play().catch(()=>{}):(v.pause(),v.muted=true);},[active,url]);
   useEffect(()=>{if(vRef.current)vRef.current.muted=muted;},[muted]);
+  // Manual pause/play, independent of the active-transition effect above.
+  useEffect(()=>{
+    const v=vRef.current;if(!v||!url||!active)return;
+    if(paused)v.pause();else v.play().catch(()=>{});
+  },[paused,active,url]);
   const bg=imgSrc(backdrop,"w1280")||imgSrc(poster,"w780");
   return(
     <div style={{position:"absolute",inset:0,background:"#000",overflow:"hidden"}}>
@@ -178,18 +261,6 @@ function ElectronPlayer({videoId,active,muted,onBlocked,backdrop,poster,preload}
   );
 }
 const Player = IS_ELECTRON ? ElectronPlayer : WebYTPlayer;
-
-// ─── Live-viewer pill — surfaces the watchingNow figure the pool already
-//     computes per reel (it was being generated and thrown away before) ─────
-function LivePill({count}){
-  if(!count) return null;
-  return(
-    <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px 3px 7px",borderRadius:20,background:"rgba(0,180,166,0.12)",border:"1px solid rgba(0,180,166,0.3)",flexShrink:0}}>
-      <span style={{width:6,height:6,borderRadius:"50%",background:"#00e5cc",animation:"ns-livepulse 1.6s ease-in-out infinite",flexShrink:0}}/>
-      <span style={{fontSize:11,fontWeight:700,color:"#00e5cc",letterSpacing:0.2,whiteSpace:"nowrap"}}>{fmtCount(count)} watching</span>
-    </span>
-  );
-}
 
 // ─── DESKTOP: Circular action button ─────────────────────────────────────────
 function ActionBtn({icon, label, count, active, danger, onClick}){
@@ -233,7 +304,7 @@ function WatchBtn({reel,onClick}){
     </span>
   );
   return(
-    <button onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={()=>onClick(reel,st)}
+    <button onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={e=>{e.stopPropagation();onClick(reel,st);}}
       style={{all:"unset",display:"inline-flex",alignItems:"center",gap:7,padding:"8px 18px",borderRadius:6,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:700,letterSpacing:0.3,transition:"all 0.15s",background:st==="notify"?"rgba(167,139,250,0.14)":"rgba(0,180,166,0.18)",color:st==="notify"?"#a78bfa":"#00e5cc",border:`1.5px solid ${st==="notify"?"rgba(167,139,250,0.35)":"rgba(0,229,204,0.35)"}`,transform:hov?"scale(1.03)":"scale(1)"}}>
       {st==="notify"
         ?<><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Notify Me</>
@@ -275,7 +346,23 @@ function SwipeHint({dir,opacity}){
   );
 }
 
-// ─── MOBILE: Info overlay (Info button / hold) ───────────────────────────────
+// ─── Gesture tutorial row (mobile onboarding) ────────────────────────────────
+function GestureRow({icon,text}){
+  const ic={
+    updown:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 8 12 3 17 8"/><polyline points="7 16 12 21 17 16"/></svg>,
+    right:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18"/></svg>,
+    tap:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>,
+    doubletap:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="2" strokeLinecap="round"><circle cx="9" cy="12" r="2.4"/><circle cx="15" cy="12" r="2.4" opacity="0.5"/></svg>,
+  }[icon];
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:9}}>
+      <span style={{flexShrink:0,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center"}}>{ic}</span>
+      <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.78)",fontFamily:"'DM Sans',sans-serif",letterSpacing:0.1,whiteSpace:"nowrap"}}>{text}</span>
+    </div>
+  );
+}
+
+// ─── MOBILE: Info overlay (Info button) ──────────────────────────────────────
 function InfoSheet({reel,visible,onClose}){
   if(!visible||!reel) return null;
   return(
@@ -305,16 +392,18 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
   const [loading,   setLoading]   = useState(true);
   const [moreLoad,  setMoreLoad]  = useState(false);
   const [idx,       setIdx]       = useState(0);
-  const [muted,     setMuted]     = useState(true);
+  const [muted,     setMuted]     = useState(false);   // unmuted by default — mute is opt-in
   const [toast,     setToast]     = useState(null);
   const [saveFlash, setSaveFlash] = useState(false);
   const [swipe,     setSwipe]     = useState({dir:null,opacity:0});
   const [interacted,setInteracted]= useState(false);
   // per-reel
-  const [disliked,  setDisliked]  = useState(false);
   const [showInfo,  setShowInfo]  = useState(false);
+  const [paused,    setPaused]    = useState(false);
+  const [flash,     setFlash]     = useState(null);   // transient resume ping
+  const [burst,     setBurst]     = useState(null);   // double-tap save ping {x,y,key}
 
-  const containerRef=useRef(null),idxRef=useRef(0),reelsRef=useRef([]),savedRef=useRef(savedItems),canNav=useRef(true),wheelLock=useRef(false),hadInteract=useRef(false);
+  const containerRef=useRef(null),idxRef=useRef(0),reelsRef=useRef([]),savedRef=useRef(savedItems),canNav=useRef(true),wheelLock=useRef(false),hadInteract=useRef(false),lastTap=useRef({t:0,x:0,y:0});
   const [desktop,setDesktop]=useState(()=>window.innerWidth>800);
 
   useEffect(()=>{const mq=window.matchMedia("(min-width:801px)");const h=e=>setDesktop(e.matches);mq.addEventListener("change",h);return()=>mq.removeEventListener("change",h);},[]);
@@ -324,8 +413,9 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
   // Reset per-reel state on idx change
   useEffect(()=>{
-    setDisliked(false);
     setShowInfo(false);
+    setPaused(false);
+    setFlash(null);
   },[idx]);
 
   // Lock body scroll while Shorts is mounted (mobile/tablet renders via a body
@@ -338,8 +428,27 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
     return()=>{document.body.style.overflow=prevOverflow;document.documentElement.style.overflow=prevHeight;};
   },[desktop]);
 
-  const goTo=useCallback(n=>{if(!canNav.current)return;const len=reelsRef.current.length;if(!len)return;const c=Math.max(0,Math.min(n,len-1));if(c===idxRef.current)return;canNav.current=false;idxRef.current=c;setIdx(c);setTimeout(()=>{canNav.current=true;},420);},[]);
-  const firstInteract=useCallback(()=>{if(!hadInteract.current){hadInteract.current=true;setInteracted(true);setMuted(false);}},[]);
+  const firstInteract=useCallback(()=>{if(!hadInteract.current){hadInteract.current=true;setInteracted(true);}},[]);
+  const goTo=useCallback(n=>{firstInteract();if(!canNav.current)return;const len=reelsRef.current.length;if(!len)return;const c=Math.max(0,Math.min(n,len-1));if(c===idxRef.current)return;canNav.current=false;idxRef.current=c;setIdx(c);setTimeout(()=>{canNav.current=true;},420);},[firstInteract]);
+
+  // Manual pause/play toggle. Independent of nav/mute — works the same on
+  // desktop (click the card) and mobile (tap the screen).
+  const togglePause=useCallback(()=>{
+    firstInteract();
+    setPaused(p=>{
+      const next=!p;
+      hap.light();
+      if(!next){
+        const key=Date.now();
+        setFlash({type:"play",key});
+        setTimeout(()=>setFlash(f=>(f&&f.key===key?null:f)),550);
+      } else {
+        setFlash(null);
+      }
+      return next;
+    });
+  },[firstInteract]);
+
   const isSaved=useCallback(r=>{const tid=r?.tmdb_id||r?.tmdbObj?.id;return(savedRef.current||[]).some(s=>String(s.id)===String(tid));},[]);
   const saveReel=useCallback(r=>{const item=r.tmdbObj?{...r.tmdbObj,media_type:"movie"}:{id:r.tmdb_id,title:r.title,media_type:"movie"};onSave?.(item);setToast("Saved to Watchlist");setTimeout(()=>setToast(null),2000);},[onSave]);
   const watchReel=useCallback((r,st)=>{const item=r.tmdbObj?{...r.tmdbObj,media_type:"movie"}:{id:r.tmdb_id,title:r.title,media_type:"movie"};if(st==="notify"){setToast(`Notify: ${r.title}`);setTimeout(()=>setToast(null),2200);return;}onSelect?.(item);},[onSelect]);
@@ -347,28 +456,65 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
   // Load
   useEffect(()=>{if(!apiKey)return;let dead=false;setLoading(true);fetchReels(apiKey,14).then(d=>{if(!dead){setReels(d);setLoading(false);}}).catch(()=>{if(!dead)setLoading(false);});return()=>{dead=true;};},[apiKey]);
-  useEffect(()=>{if(moreLoad||!reels.length||idx<reels.length-4)return;setMoreLoad(true);fetchReels(apiKey,10).then(d=>{setReels(p=>[...p,...d]);setMoreLoad(false);}).catch(()=>setMoreLoad(false));},[idx,reels.length,moreLoad]); // eslint-disable-line
+  useEffect(()=>{
+    if(moreLoad||!reels.length||idx<reels.length-4)return;
+    setMoreLoad(true);
+    fetchReels(apiKey,10).then(d=>{
+      // Defensive de-dupe: even though the pool already tracks seen ids, this
+      // guarantees a freshly-appended batch can never repeat a movie already
+      // on screen — this is the "reshuffle never repeats" guarantee.
+      setReels(p=>{const have=new Set(p.map(x=>x.tmdb_id));const fresh=d.filter(x=>!have.has(x.tmdb_id));return [...p,...fresh];});
+      setMoreLoad(false);
+    }).catch(()=>setMoreLoad(false));
+  },[idx,reels.length,moreLoad]); // eslint-disable-line
 
   // Keyboard
-  useEffect(()=>{const h=e=>{if(e.key==="ArrowDown"||e.key==="j")goTo(idxRef.current+1);if(e.key==="ArrowUp"||e.key==="k")goTo(idxRef.current-1);if(e.key==="m")setMuted(v=>!v);if(e.key==="i")setShowInfo(v=>!v);};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[goTo]);
+  useEffect(()=>{const h=e=>{if(e.key==="ArrowDown"||e.key==="j")goTo(idxRef.current+1);if(e.key==="ArrowUp"||e.key==="k")goTo(idxRef.current-1);if(e.key==="m")setMuted(v=>!v);if(e.key==="i")setShowInfo(v=>!v);if(e.key===" "){e.preventDefault();togglePause();}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[goTo,togglePause]);
 
   // Wheel
   useEffect(()=>{const el=containerRef.current;if(!el)return;const fn=e=>{e.preventDefault();if(wheelLock.current||Math.abs(e.deltaY)<20)return;wheelLock.current=true;hap.light();goTo(idxRef.current+(e.deltaY>0?1:-1));setTimeout(()=>{wheelLock.current=false;},650);};el.addEventListener("wheel",fn,{passive:false});return()=>el.removeEventListener("wheel",fn);},[goTo]);
 
-  // Mobile touch
+  // Mobile touch: vertical swipe = nav, swipe right = save, swipe left = back,
+  // a plain tap = pause/play, and a quick second tap in the same spot = save
+  // (Instagram-style double-tap), with a burst ping at the tap point.
   useEffect(()=>{
     if(desktop)return;
     const el=containerRef.current;if(!el)return;
     const g={on:false,x0:0,y0:0,x1:0,y1:0,dir:null};
     const start=e=>{firstInteract();if(e.target.closest("button,a,[data-ns]"))return;if(e.touches.length!==1)return;const t=e.touches[0];g.on=true;g.dir=null;g.x0=g.x1=t.clientX;g.y0=g.y1=t.clientY;};
     const move=e=>{if(!g.on)return;e.preventDefault();const t=e.touches[0];g.x1=t.clientX;g.y1=t.clientY;const dx=g.x1-g.x0,dy=g.y1-g.y0;if(!g.dir&&(Math.abs(dx)>10||Math.abs(dy)>10))g.dir=Math.abs(dy)>=Math.abs(dx)?"v":"h";if(g.dir==="h")setSwipe({dir:dx>0?"right":"left",opacity:Math.min(Math.abs(dx)/120,1)*0.95});};
-    const end=()=>{if(!g.on)return;g.on=false;setSwipe({dir:null,opacity:0});const dx=g.x1-g.x0,dy=g.y1-g.y0;if(g.dir==="v"&&Math.abs(dy)>50){hap.light();goTo(idxRef.current+(dy<0?1:-1));}else if(g.dir==="h"&&dx>80){const r=reelsRef.current[idxRef.current];if(r&&!isSaved(r)){hap.save();saveReel(r);setSaveFlash(true);setTimeout(()=>setSaveFlash(false),700);}}else if(g.dir==="h"&&dx<-80){hap.light();goTo(idxRef.current-1);}g.dir=null;};
+    const end=()=>{
+      if(!g.on)return;g.on=false;setSwipe({dir:null,opacity:0});
+      const dx=g.x1-g.x0,dy=g.y1-g.y0;
+      if(g.dir==="v"&&Math.abs(dy)>50){
+        hap.light();goTo(idxRef.current+(dy<0?1:-1));
+      }else if(g.dir==="h"&&dx>80){
+        const r=reelsRef.current[idxRef.current];if(r&&!isSaved(r)){hap.save();saveReel(r);setSaveFlash(true);setTimeout(()=>setSaveFlash(false),700);}
+      }else if(g.dir==="h"&&dx<-80){
+        hap.light();goTo(idxRef.current-1);
+      }else if(g.dir===null){
+        const now=Date.now();const last=lastTap.current;
+        const dist=Math.hypot(g.x1-last.x,g.y1-last.y);
+        if(now-last.t<TAP_MS&&dist<TAP_PX){
+          lastTap.current={t:0,x:0,y:0};
+          const key=now;
+          setBurst({x:g.x1,y:g.y1,key});
+          setTimeout(()=>setBurst(b=>(b&&b.key===key?null:b)),650);
+          const r=reelsRef.current[idxRef.current];
+          if(r){hap.save();saveReel(r);setSaveFlash(true);setTimeout(()=>setSaveFlash(false),700);}
+        }else{
+          lastTap.current={t:now,x:g.x1,y:g.y1};
+          togglePause();
+        }
+      }
+      g.dir=null;
+    };
     el.addEventListener("touchstart",start,{passive:true});
     el.addEventListener("touchmove",move,{passive:false});
     el.addEventListener("touchend",end,{passive:true});
     el.addEventListener("touchcancel",end,{passive:true});
     return()=>{el.removeEventListener("touchstart",start);el.removeEventListener("touchmove",move);el.removeEventListener("touchend",end);el.removeEventListener("touchcancel",end);};
-  },[desktop,goTo,firstInteract,isSaved,saveReel]);
+  },[desktop,goTo,firstInteract,isSaved,saveReel,togglePause]);
 
   const nav=id=>id==="search"?onSearch?.():onNavigate?.(id);
   const visible=i=>i>=idx-1&&i<=idx+2;
@@ -398,6 +544,9 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
           @keyframes ns-fadein   { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
           @keyframes ns-slide-up { from{transform:translateY(100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
           @keyframes ns-livepulse{ 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.6);} }
+          @keyframes ns-flash-ping{ 0%{opacity:0;transform:scale(0.6);} 30%{opacity:1;transform:scale(1.12);} 100%{opacity:0;transform:scale(1.3);} }
+          @keyframes ns-pause-in { from{opacity:0;transform:scale(0.7);} to{opacity:1;transform:scale(1);} }
+          @keyframes ns-hintfade { 0%{opacity:0;} 10%{opacity:1;} 80%{opacity:1;} 100%{opacity:0;} }
           .ns-ab-circle{ transition: background 0.15s !important; }
         `}</style>
 
@@ -420,7 +569,7 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
           <div style={{display:"flex",gap:6}}>
             {[
               {icon:muted?<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>:<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>,
-               active:!muted,action:()=>{setMuted(m=>!m);if(!interacted){setInteracted(true);hadInteract.current=true;}}},
+               active:!muted,action:()=>{setMuted(m=>!m);firstInteract();}},
               {icon:<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
                action:()=>nav("search")},
             ].map((b,i)=>(
@@ -441,7 +590,9 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
 
             {/* VIDEO CARD */}
             <div style={{flexShrink:0,display:"flex",flexDirection:"column"}}>
-              <div style={{position:"relative",height:`min(calc(100vh - ${HEADER_H}px - 32px), 720px)`,aspectRatio:"9/16",borderRadius:12,overflow:"hidden",background:"#000",flexShrink:0}} key="card">
+              <div
+                onClick={e=>{if(e.target.closest("button,a,[data-ns]"))return;togglePause();}}
+                style={{position:"relative",height:`min(calc(100vh - ${HEADER_H}px - 32px), 720px)`,aspectRatio:"9/16",borderRadius:12,overflow:"hidden",background:"#000",flexShrink:0,cursor:"pointer"}} key="card">
                 {loading&&spinner}
 
                 {/* Reel stack — translates vertically within card */}
@@ -449,7 +600,9 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
                   if(!visible(i))return null;
                   return(
                     <div key={`${r.id}-${i}`} style={{position:"absolute",inset:0,transform:`translateY(${(i-idx)*100}%)`,transition:"transform 0.36s cubic-bezier(0.4,0,0.2,1)",willChange:"transform",zIndex:i===idx?2:1}}>
-                      <Player videoId={r.youtubeId} active={i===idx} muted={muted} onBlocked={i===idx?blocked:undefined} backdrop={r.backdrop} poster={r.poster} preload={i===idx+1}/>
+                      <Player videoId={r.youtubeId} active={i===idx} muted={muted} paused={i===idx?paused:false} onBlocked={i===idx?blocked:undefined} backdrop={r.backdrop} poster={r.poster} preload={i===idx+1}/>
+                      {i===idx&&paused&&<PauseFlash state={{type:"pause",key:"persist",persistent:true}}/>}
+                      {i===idx&&flash&&<PauseFlash state={flash}/>}
                       {/* Info overlay inside card — YouTube Shorts style */}
                       {i===idx&&cur&&(
                         <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:20,padding:"80px 14px 14px",pointerEvents:"none",animation:"ns-fadein 0.35s ease both",background:"linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.6) 40%,transparent 75%)"}}>
@@ -475,22 +628,17 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
                   );
                 })}
 
-                <ProgressBar active={!loading&&reels.length>0} onComplete={blocked}/>
+                <ProgressBar active={!loading&&reels.length>0} paused={paused} onComplete={blocked}/>
               </div>
             </div>
 
             {/* ACTION RAIL — right of video, bottom-aligned. Just the essentials:
-                Save, Dislike, Details — nothing here exists to pad the rail out. */}
+                Save and Details — nothing here exists to pad the rail out. */}
             <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20,paddingBottom:16,flexShrink:0}}>
               {/* Save / Bookmark */}
               <ActionBtn active={curSaved} label={curSaved?"Saved":"Save"}
                 icon={curSaved?<svg width="22" height="22" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.87)" strokeWidth="1.8" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>}
                 onClick={()=>{hap.save();if(cur)saveReel(cur);}}
-              />
-              {/* Dislike */}
-              <ActionBtn danger={disliked} label="Dislike"
-                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill={disliked?"#f44":"none"} stroke={disliked?"#f44":"rgba(255,255,255,0.87)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>}
-                onClick={()=>{hap.light();setDisliked(v=>!v);}}
               />
               {/* Details */}
               <ActionBtn active={showInfo} label="Details"
@@ -523,6 +671,13 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
           {/* Details sheet (desktop) */}
           {cur&&<InfoSheet reel={cur} visible={showInfo} onClose={()=>setShowInfo(false)}/>}
 
+          {/* One-time gesture hint */}
+          {!interacted&&!loading&&reels.length>0&&(
+            <div style={{position:"absolute",bottom:18,left:"50%",transform:"translateX(-50%)",zIndex:40,pointerEvents:"none",display:"flex",alignItems:"center",gap:10,background:"rgba(10,10,10,0.85)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"8px 16px",animation:"ns-hintfade 5s ease 1s both",whiteSpace:"nowrap"}}>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.7)",fontFamily:"'DM Sans',sans-serif"}}>Scroll or press ↑ ↓ to browse · Click the video to pause · Space also works</span>
+            </div>
+          )}
+
           {/* Empty state */}
           {!loading&&!reels.length&&<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,background:"#0f0f0f"}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,letterSpacing:2,color:"rgba(255,255,255,0.15)"}}>No Shorts</span></div>}
         </div>
@@ -544,17 +699,20 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
   // app's normal chrome is back exactly as it was — no flags, no other files.
   // ══════════════════════════════════════════════════════════════════════════
   return createPortal(
-    <div ref={containerRef} onClick={firstInteract} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:2147483647}}>
+    <div ref={containerRef} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:2147483647}}>
       <style>{`
-        @keyframes ns-spin     { to{transform:rotate(360deg);} }
-        @keyframes ns-shimmer  { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
-        @keyframes ns-fadein   { from{opacity:0;} to{opacity:1;} }
-        @keyframes ns-slide-up { from{transform:translateY(100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
-        @keyframes ns-hintfade { 0%{opacity:0;} 15%{opacity:1;} 75%{opacity:1;} 100%{opacity:0;} }
-        @keyframes ns-flash    { 0%{opacity:0;} 15%{opacity:1;} 70%{opacity:.5;} 100%{opacity:0;} }
-        @keyframes ns-livepulse{ 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.6);} }
-        .ns-mob-rail { position:absolute; right:8px; bottom:104px; z-index:30; display:flex; flex-direction:column; align-items:center; gap:14px; touch-action:none; }
-        .ns-mob-info { position:absolute; bottom:0; left:0; right:68px; z-index:30; padding:0 14px 82px 16px; pointer-events:none; box-sizing:border-box; }
+        @keyframes ns-spin      { to{transform:rotate(360deg);} }
+        @keyframes ns-shimmer   { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+        @keyframes ns-fadein    { from{opacity:0;} to{opacity:1;} }
+        @keyframes ns-slide-up  { from{transform:translateY(100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
+        @keyframes ns-hintfade  { 0%{opacity:0;} 8%{opacity:1;} 85%{opacity:1;} 100%{opacity:0;} }
+        @keyframes ns-flash     { 0%{opacity:0;} 15%{opacity:1;} 70%{opacity:.5;} 100%{opacity:0;} }
+        @keyframes ns-livepulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.6);} }
+        @keyframes ns-flash-ping{ 0%{opacity:0;transform:scale(0.6);} 30%{opacity:1;transform:scale(1.12);} 100%{opacity:0;transform:scale(1.3);} }
+        @keyframes ns-pause-in  { from{opacity:0;transform:scale(0.7);} to{opacity:1;transform:scale(1);} }
+        @keyframes ns-burst-ping{ 0%{opacity:0;transform:translate(-50%,-50%) scale(0.4);} 25%{opacity:1;transform:translate(-50%,-50%) scale(1.15);} 100%{opacity:0;transform:translate(-50%,-50%) scale(1.3);} }
+        .ns-mob-rail { position:absolute; right:8px; bottom:96px; z-index:30; display:flex; flex-direction:column; align-items:center; gap:16px; touch-action:none; }
+        .ns-mob-info { position:absolute; bottom:0; left:0; right:64px; z-index:30; padding:0 14px 70px 16px; pointer-events:none; box-sizing:border-box; }
       `}</style>
 
       {loading&&spinner}
@@ -564,21 +722,21 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
         const isA=i===idx,rSaved=isSaved(r);
         return(
           <div key={`${r.id}-${i}`} style={{position:"absolute",inset:0,transform:`translateY(${(i-idx)*100}%)`,transition:"transform 0.36s cubic-bezier(0.4,0,0.2,1)",willChange:"transform",zIndex:isA?2:1}}>
-            <Player videoId={r.youtubeId} active={isA} muted={muted} onBlocked={isA?blocked:undefined} backdrop={r.backdrop} poster={r.poster} preload={i===idx+1}/>
-            <ProgressBar active={isA} onComplete={blocked}/>
+            <Player videoId={r.youtubeId} active={isA} muted={muted} paused={isA?paused:false} onBlocked={isA?blocked:undefined} backdrop={r.backdrop} poster={r.poster} preload={i===idx+1}/>
+            <ProgressBar active={isA} paused={isA?paused:false} onComplete={blocked}/>
             <SwipeHint dir={isA?swipe.dir:null} opacity={isA?swipe.opacity:0}/>
             {isA&&saveFlash&&<div style={{position:"absolute",inset:0,zIndex:66,pointerEvents:"none",background:"rgba(0,180,166,0.08)",animation:"ns-flash 0.6s ease both"}}/>}
+            {isA&&paused&&<PauseFlash state={{type:"pause",key:"persist",persistent:true}}/>}
+            {isA&&flash&&<PauseFlash state={flash}/>}
+            {isA&&burst&&<BurstPing x={burst.x} y={burst.y}/>}
 
-            {/* Mobile action rail — Save, Dislike, Mute, Info. Compact, off to the
-                side, so nothing here sits over the poster art or the title/synopsis. */}
+            {/* Mobile action rail — Save, Mute, Info. Three buttons, tucked to
+                the side, so nothing here sits over the poster art or the caption. */}
             <div className="ns-mob-rail" data-ns onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onPointerMove={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
               <MobBtn active={rSaved} label={rSaved?"Saved":"Save"} onClick={()=>{hap.save();saveReel(r);}}>
                 {rSaved?<svg width="24" height="24" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="1.8" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>}
               </MobBtn>
-              <MobBtn active={isA&&disliked} label="Dislike" onClick={()=>{if(isA){hap.light();setDisliked(v=>!v);}}}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill={isA&&disliked?"#f44":"none"} stroke={isA&&disliked?"#f44":"rgba(255,255,255,0.9)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>
-              </MobBtn>
-              <MobBtn active={false} label="Mute" onClick={()=>{hap.light();setMuted(m=>!m);if(!interacted){setInteracted(true);hadInteract.current=true;}}}>
+              <MobBtn active={false} label="Mute" onClick={()=>{hap.light();setMuted(m=>!m);firstInteract();}}>
                 {muted?<svg width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>}
               </MobBtn>
               <MobBtn active={isA&&showInfo} label="Info" onClick={()=>{if(isA){hap.light();setShowInfo(v=>!v);}}}>
@@ -586,16 +744,16 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
               </MobBtn>
             </div>
 
-            {/* Mobile bottom info — clamped lines, right padding clears the rail,
-                so text never sits over the action buttons or runs off-screen. */}
+            {/* Mobile bottom caption — meta pills + a single-line title only.
+                No paragraph of overview text here any more, so most of the
+                frame stays clear; the full synopsis lives one tap away in Info. */}
             <div className="ns-mob-info">
-              <div style={{display:"flex",gap:5,marginBottom:7,flexWrap:"wrap",alignItems:"center"}}>
-                {r.genres.map(g=><span key={g} style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"3px 9px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.65)",letterSpacing:0.8,textTransform:"uppercase",fontFamily:"'DM Mono',monospace"}}>{g}</span>)}
+              <div style={{display:"flex",gap:5,marginBottom:6,flexWrap:"wrap",alignItems:"center"}}>
+                {r.genres.slice(0,2).map(g=><span key={g} style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"3px 9px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.65)",letterSpacing:0.8,textTransform:"uppercase",fontFamily:"'DM Mono',monospace"}}>{g}</span>)}
                 {r.rating&&<span style={{background:"rgba(241,196,15,0.07)",border:"1px solid rgba(241,196,15,0.2)",borderRadius:20,padding:"3px 8px",fontSize:9,fontWeight:700,color:"#f1c40f",fontFamily:"'DM Mono',monospace"}}>★ {r.rating}</span>}
                 <LivePill count={r.watchingNow}/>
               </div>
-              <h2 style={{margin:"0 0 7px",fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(24px,7vw,44px)",fontWeight:400,letterSpacing:1.5,lineHeight:0.95,color:"#fff",textShadow:"0 2px 20px rgba(0,0,0,0.9)",wordBreak:"break-word",animation:isA?"ns-fadein 0.4s ease both":"none"}}>{r.title}</h2>
-              {r.overview&&<p style={{margin:"0 0 10px",fontFamily:"'DM Sans',sans-serif",fontSize:12,lineHeight:1.55,color:"rgba(255,255,255,0.5)",textShadow:"0 1px 6px rgba(0,0,0,0.9)",pointerEvents:"none",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{r.overview}</p>}
+              <h2 style={{margin:"0 0 9px",fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(18px,5.5vw,26px)",fontWeight:400,letterSpacing:1,lineHeight:1.1,color:"#fff",textShadow:"0 2px 16px rgba(0,0,0,0.9)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",animation:isA?"ns-fadein 0.4s ease both":"none"}}>{r.title}</h2>
               <div style={{pointerEvents:"auto"}}>
                 {isA&&<WatchBtn reel={r} onClick={watchReel}/>}
               </div>
@@ -622,11 +780,16 @@ export default function ReelPage({apiKey, onSelect, onSave, savedItems=[], onNav
         </div>
       </div>
 
-      {/* Hint */}
-      {!interacted&&!loading&&reels.length>0&&<div style={{position:"absolute",bottom:140,left:"50%",transform:"translateX(-50%)",zIndex:60,pointerEvents:"none",display:"flex",alignItems:"center",gap:8,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(12px)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:22,padding:"7px 16px",animation:"ns-hintfade 3.5s ease 1.2s both",whiteSpace:"nowrap"}}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="rgba(255,255,255,0.4)"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
-        <span style={{fontSize:10,color:"rgba(255,255,255,0.45)",fontFamily:"'DM Sans',sans-serif"}}>Tap anywhere for sound</span>
-      </div>}
+      {/* One-time gesture tutorial — teaches new users every interaction at a
+          glance, dismisses itself the instant any gesture happens. */}
+      {!interacted&&!loading&&reels.length>0&&(
+        <div style={{position:"absolute",bottom:170,left:"50%",transform:"translateX(-50%)",zIndex:60,pointerEvents:"none",display:"flex",flexDirection:"column",gap:9,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(14px)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"14px 20px",animation:"ns-hintfade 5.5s ease 1s both",minWidth:210}}>
+          <GestureRow icon="updown" text="Swipe up / down to browse"/>
+          <GestureRow icon="right" text="Swipe right to save"/>
+          <GestureRow icon="tap" text="Tap to pause / play"/>
+          <GestureRow icon="doubletap" text="Double-tap for quick save"/>
+        </div>
+      )}
 
       {/* Toast */}
       {toast&&<div style={{position:"absolute",top:72,left:"50%",transform:"translateX(-50%)",zIndex:75,pointerEvents:"none",background:"rgba(5,5,5,0.88)",border:"1px solid rgba(0,180,166,0.2)",borderRadius:8,padding:"9px 18px",display:"flex",alignItems:"center",gap:8,animation:"ns-fadein 0.2s ease both",whiteSpace:"nowrap"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span style={{fontFamily:"'DM Mono',monospace",fontSize:11,letterSpacing:0.8,color:"#00b4a6",textTransform:"uppercase"}}>{toast}</span></div>}
