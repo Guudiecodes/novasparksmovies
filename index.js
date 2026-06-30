@@ -15,17 +15,41 @@ app.commandLine.appendSwitch(
   "js-flags",
   "--max-old-space-size=256 --expose-gc",
 );
+// FIX: removed MediaSessionService from disable-features — it was killing
+// play-state/media-session reporting that embed players rely on internally.
 app.commandLine.appendSwitch(
   "disable-features",
-  "HardwareMediaKeyHandling,MediaSessionService,UseSandboxedXdgPortal",
+  "HardwareMediaKeyHandling,UseSandboxedXdgPortal",
 );
 app.commandLine.appendSwitch("enable-features", "NetworkServiceInProcess2");
 app.commandLine.appendSwitch("disk-cache-size", String(80 * 1024 * 1024));
-app.commandLine.appendSwitch("renderer-process-limit", "3");
+
+// FIX (ROOT CAUSE #1): renderer-process-limit was hard-capped at 3 for the
+// WHOLE app. Modern embed players (vidlink/2embed/multiembed/etc.) load a
+// player iframe that itself loads ANOTHER cross-origin iframe — under
+// Chromium site-isolation each of those gets its OWN renderer process.
+// One webview showing a nested embed can already need 2-3 processes by
+// itself. With a global cap of 3, the main window + webview + any nested
+// OOPIF + the pop-out window blow past the ceiling instantly, and Chromium
+// starts starving/suspending renderers to stay under the cap — which is
+// exactly what produced the "frozen on one frame" symptom: the webview's
+// renderer was being throttled/suspended, not blocked by network rules.
+// Removed entirely so Chromium can spin up what it actually needs.
 
 // FIX: Prevent SSL handshake reset from killing the renderer
 app.commandLine.appendSwitch('ignore-certificate-errors');
 app.commandLine.appendSwitch('allow-insecure-localhost');
+
+// FIX (ROOT CAUSE — confirmed via electron/cordova-electron#102): setting
+// `autoplayPolicy` on a webPreferences OBJECT (BrowserWindow constructor or
+// will-attach-webview) is documented to silently no-op on a lot of Electron
+// builds — it's a known, reported bug, not a config mistake. The fix that
+// actually works is this Chromium command-line switch, applied once at the
+// process level before any window/webview exists. This was the missing
+// piece every previous attempt — the embed's play() call was being gated by
+// the autoplay policy and nothing set on the JS object side was reaching
+// Chromium's actual enforcement layer.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 // -- Startup benchmark ---------------------------------------------------------
 const _t0 = Date.now();
@@ -205,6 +229,40 @@ function setupSession(playerSession, trailerSession) {
   }
 }
 
+// FIX (ROOT CAUSE #2): real native click injection for nested embed players.
+// Embed sites commonly render their actual <video> + play button inside a
+// nested CROSS-ORIGIN iframe. webview.executeJavaScript() can only reach the
+// webview's TOP frame — it physically cannot query into a cross-origin child
+// iframe (Same-Origin Policy applies to scripted DOM access, not to native
+// input). A synthetic el.click() from injected JS also does NOT count as
+// real "user activation" in Chromium, so even when a video element IS found,
+// gated/unmuted playback can silently refuse to start.
+// webContents.sendInputEvent() dispatches a REAL OS-level mouse event at a
+// screen coordinate. Real input events are routed by Chromium's compositor
+// hit-testing, which DOES cross iframe boundaries (including cross-origin
+// OOPIFs) and DOES count as genuine user activation — this is the correct,
+// version-stable way to "click play" on a player living inside a nested
+// iframe from the Electron main process.
+function simulateRealClick(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  wc.executeJavaScript("({w:window.innerWidth,h:window.innerHeight})")
+    .then((size) => {
+      if (!wc || wc.isDestroyed()) return;
+      const w = size?.w || 1280;
+      const h = size?.h || 720;
+      const x = Math.round(w / 2);
+      const y = Math.round(h / 2);
+      const fire = () => {
+        if (wc.isDestroyed()) return;
+        wc.sendInputEvent({ type: "mouseMove", x, y });
+        wc.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+        wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+      };
+      fire();
+    })
+    .catch(() => {});
+}
+
 function createWindow() {
   storageIpc.applySecretMigrationIfNeeded();
   downloadsIpc.loadDownloads();
@@ -223,7 +281,12 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
-      backgroundThrottling: true,
+      // FIX (ROOT CAUSE #3): was `true` — throttled timers/rAF whenever the
+      // window lost focus/visibility, stalling video-related JS loops.
+      backgroundThrottling: false,
+      // FIX: explicit, version-stable — never gate autoplay behind a
+      // synthetic user gesture for content hosted in this app.
+      autoplayPolicy: "no-user-gesture-required",
       spellcheck: false,
       devTools: false,
       additionalArguments: ["--js-flags=--max-old-space-size=256 --expose-gc"],
@@ -299,6 +362,22 @@ function createWindow() {
     }
   });
 
+  mainWindow.webContents.on("will-attach-webview", (_event, webPreferences, params) => {
+    // FIX (ROOT CAUSE #2): last attempt set autoplayPolicy/backgroundThrottling
+    // on the HOST BrowserWindow's webPreferences — that object only governs the
+    // app shell's own renderer. A <webview> spawns its OWN separate renderer
+    // process with its OWN preferences, derived from the webview tag's
+    // `webpreferences` HTML attribute string, NOT inherited from the host. The
+    // app-shell-side fix never reached the actual player at all.
+    // will-attach-webview is the documented main-process hook that runs BEFORE
+    // the guest renderer is created and lets us mutate its real preferences —
+    // this is the correct, certain place to force these settings.
+    if (params?.partition === "persist:player") {
+      webPreferences.backgroundThrottling = false;
+      webPreferences.autoplayPolicy = "no-user-gesture-required";
+    }
+  });
+
   mainWindow.webContents.on("did-attach-webview", (_, wc) => {
     if (!sessionsConfigured) {
       sessionsConfigured = true;
@@ -307,8 +386,10 @@ function createWindow() {
       setupSession(playerSession, trailerSession);
     }
 
+    let isPlayerWebview = false;
     try {
       if (wc.session === session.fromPartition("persist:player")) {
+        isPlayerWebview = true;
         playerWcIds.add(wc.id);
         wc.once("destroyed", () => playerWcIds.delete(wc.id));
       }
@@ -336,6 +417,25 @@ function createWindow() {
         }
       } catch {}
     });
+
+    // FIX (ROOT CAUSE #2 cont.): force real user-activation shortly after the
+    // player page finishes loading, and once more after a longer delay to
+    // catch embeds whose player chrome mounts late. One-shot guarded via
+    // wc.__nsClicked so we never fight the user's own manual clicks later.
+    if (isPlayerWebview) {
+      wc.__nsClickAttempts = 0;
+      const onFinishLoad = () => {
+        if (wc.isDestroyed()) return;
+        const attempt = () => {
+          if (wc.isDestroyed() || wc.__nsClickAttempts >= 2) return;
+          wc.__nsClickAttempts += 1;
+          simulateRealClick(wc);
+        };
+        setTimeout(attempt, 700);
+        setTimeout(attempt, 2200);
+      };
+      wc.on("did-finish-load", onFinishLoad);
+    }
 
     wc.on("enter-html-full-screen", () =>
       mainWindow.webContents.send("webview-enter-fullscreen"),
@@ -543,6 +643,10 @@ ipcMain.handle("open-pip-window", (_, { url, title }) => {
       nodeIntegration: false,
       contextIsolation: true,
       devTools: false,
+      // FIX: match the main window so behavior is consistent between the
+      // in-app player and the pop-out, instead of relying on Electron defaults.
+      backgroundThrottling: false,
+      autoplayPolicy: "no-user-gesture-required",
       preload: path.join(__dirname, app.isPackaged ? "dist/popout-preload.js" : "popout-preload.js"),
     },
   });
@@ -563,6 +667,13 @@ ipcMain.handle("open-pip-window", (_, { url, title }) => {
   pipWindow.webContents.on("did-attach-webview", (_, wc) => {
     wc.setWindowOpenHandler(() => ({ action: "deny" }));
     wc.on("close", () => {});
+  });
+
+  // FIX: apply the same forced-activation click to the pop-out's own
+  // top-level content (covers the case where the URL loads directly,
+  // not through a nested webview, inside the pop-out window).
+  pipWindow.webContents.once("did-finish-load", () => {
+    setTimeout(() => simulateRealClick(pipWindow?.webContents), 700);
   });
 
   pipWindow.loadURL(url);

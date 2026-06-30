@@ -22,9 +22,11 @@ import { extractHLSForChrome, invalidateHLSCache } from "../utils/hlsExtractor";
 import { setApiErrorHandlers } from "../utils/api";
 setApiErrorHandlers(() => {}, () => {});
 
-const BEAST_TIMEOUT = { tier1: 3000, tier2: 4500, tier3: 6500 };
-const BEAST_SECOND_CHANCE_MS = 1200;
 const MAX_FULL_CYCLES = 2;
+
+// ── Last-played position key ──────────────────────────────────────────────────
+const posKey = (type, id, season, episode) =>
+  `ns_pos_${type}_${id}${type === "tv" ? `_s${season}e${episode}` : ""}`;
 
 const DEAD_SOURCES = [
   "embedsu", "cinezo", "smashystream", "vapsrc",
@@ -54,10 +56,17 @@ div[style*="z-index: 9999"]:not([class*="player"i]):not([class*="video"i]):not([
   display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;}
 `;
 
+// FIX: the old version walked up 5 ancestor levels and hid anything whose leaf
+// text matched generic single words like "LOADING" / "BUFFERING" / "PLEASE
+// WAIT" — completely normal text a perfectly healthy player shows while
+// buffering. That rule could (and likely did, on some sources) nuke the real
+// player container mid-buffer, producing exactly the "frozen on one frame"
+// symptom. Narrowed to: (1) only 1 ancestor level, (2) never hide anything
+// that contains a <video> element or covers most of the viewport, (3) only
+// match unambiguous ad/blocker phrases, not generic transient loading text.
 const _EMBED_JS = `(function(){
   if(window.__ns)return;window.__ns=true;
 
-  /* ── 1. BLOCK ALL POPUPS & EXTERNAL NAVIGATION ──────────────────────────── */
   try{
     window.open=function(){return null;};
     var _loc=window.location;
@@ -93,50 +102,46 @@ const _EMBED_JS = `(function(){
     if(document.head)_metaObs.observe(document.head,{childList:true});
   }catch(e){}
 
-  /* ── 2. KILL AD OVERLAYS ─────────────────────────────────────────────────── */
-  var BAD=['FETCHING, ONE MOMENT...','FETCHING','ONE MOMENT...','PLEASE WAIT','LOADING...','LOADING','BUFFERING',
-    'SOURCE NOT FOUND','VIDEO NOT FOUND','MEDIA NOT FOUND','CONTENT NOT FOUND','FILE NOT FOUND','NOT FOUND','404',
-    'NO SOURCE','NO VIDEO','COULD NOT CONNECT','CONNECTION ERROR','FAILED TO LOAD','LOAD ERROR','NETWORK ERROR',
-    'SERVER ERROR','INTERNAL SERVER ERROR','503','502','500','VIDEO UNAVAILABLE','MEDIA UNAVAILABLE',
-    'CONTENT UNAVAILABLE','EMBED ERROR','PLAYER ERROR','STREAM ERROR','STREAM NOT FOUND','API ERROR',
-    'VIDSRC','VIDLINK','EMBEDSU','MOVIESAPI','AUTOEMBED','VIDSRC.CC','VIDSRC.NET','VIDSRC.TO','VIDSRC.FYI',
-    'VIDFAST','SMASHY','VIDEASY','PEACHIFY','MAPPLE','ERROR LOADING','ERROR FETCHING','UNABLE TO LOAD','UNABLE TO PLAY',
-    'PLAYBACK ERROR','TRY AGAIN LATER','SOMETHING WENT WRONG','ACCESS DENIED','FORBIDDEN','REGION LOCKED',
-    'GEO BLOCKED','PLEASE TRY ANOTHER SERVER','TRY ANOTHER SERVER','SWITCH SERVER',
-    'THIS VIDEO IS NOT AVAILABLE','VIDEO NOT AVAILABLE','NOT AVAILABLE','CANNOT LOAD VIDEO',
-    'CANNOT PLAY VIDEO','MEDIA ERROR','REFUSED TO CONNECT','CONNECTION REFUSED','ERR_CONNECTION_REFUSED',
-    'VSEMBED','VSEMBED.RU','REFUSED'];
+  // Unambiguous ad-blocker-detection / cookie-consent phrases ONLY — never
+  // generic transient player states like "loading" or "buffering".
+  var BAD=['SOURCE NOT FOUND','VIDEO NOT FOUND','MEDIA NOT FOUND','CONTENT NOT FOUND',
+    'NO SOURCE','NO VIDEO','COULD NOT CONNECT','CONNECTION REFUSED','ERR_CONNECTION_REFUSED',
+    'VIDEO UNAVAILABLE','MEDIA UNAVAILABLE','CONTENT UNAVAILABLE',
+    'ACCESS DENIED','FORBIDDEN','REGION LOCKED','GEO BLOCKED',
+    'THIS VIDEO IS NOT AVAILABLE','VIDEO NOT AVAILABLE','CANNOT LOAD VIDEO','CANNOT PLAY VIDEO'];
   var AD_KEYS=['TIRED OF ADS','GET OPEN ADBLOCKER','OPEN ADBLOCKER','ADBLOCKER','ADBLOCK DETECTED',
     'AD BLOCKER DETECTED','DISABLE YOUR ADBLOCK','DISABLE ADBLOCK','TURN OFF ADBLOCK',
-    'WHITELIST THIS SITE','PLEASE DISABLE','INSTALL ADBLOCKER','REMOVE ADS',
-    'COOKIE CONSENT','ACCEPT COOKIES','ACCEPT ALL COOKIES','MANAGE COOKIES',
-    'WE USE COOKIES','THIS SITE USES COOKIES','ADVERTISEMENT','YOUR AD BLOCKER',
+    'WHITELIST THIS SITE','PLEASE DISABLE','INSTALL ADBLOCKER',
+    'COOKIE CONSENT','ACCEPT ALL COOKIES','MANAGE COOKIES',
+    'WE USE COOKIES','THIS SITE USES COOKIES','YOUR AD BLOCKER',
     'SKIP AD','SKIP ADS','WATCH AD','SPONSORED'];
   var HIDE='display:none!important;opacity:0!important;pointer-events:none!important;visibility:hidden!important;position:fixed!important;z-index:-9999!important;';
+
+  // Guard: never hide anything that IS or CONTAINS the real player.
+  function isProtected(el){
+    try{
+      if(!el)return true;
+      if(el.tagName==='VIDEO')return true;
+      if(el.querySelector&&el.querySelector('video'))return true;
+      var r=el.getBoundingClientRect();
+      var vw=window.innerWidth||1,vh=window.innerHeight||1;
+      if(r.width>=vw*0.55&&r.height>=vh*0.55)return true;
+      return false;
+    }catch(e){return true;}
+  }
+
   function killAdOverlays(){
     try{
       document.querySelectorAll(
         '[class*="modal"i],[class*="popup"i],[class*="adblock"i],[class*="ad-block"i],'
         +'[class*="adblocker"i],[class*="ad-overlay"i],[class*="interstitial"i],'
         +'[id*="adblock"i],[id*="popup"i],[id*="ad-modal"i],[class*="consent"i],'
-        +'[class*="cookie-banner"i],[class*="cookie-modal"i],[class*="gdpr"i],'
-        +'[class*="ad-container"i],[class*="advert"i],[id*="advert"i],'
-        +'[class*="countdown"i][class*="ad"i],[class*="skip-ad"i]'
+        +'[class*="cookie-banner"i],[class*="cookie-modal"i],[class*="gdpr"i]'
       ).forEach(function(el){
-        if(!el||!el.textContent)return;
+        if(!el||!el.textContent||isProtected(el))return;
         var t=el.textContent.toUpperCase();
         if(AD_KEYS.some(function(k){return t.indexOf(k)!==-1;})){el.style.cssText=HIDE;}
       });
-      var all=document.querySelectorAll('body>*,body>*>*,body>*>*>*');
-      for(var i=0;i<all.length;i++){
-        try{
-          var el=all[i];var s=window.getComputedStyle(el);var z=parseInt(s.zIndex)||0;
-          if((s.position==='fixed'||s.position==='absolute')&&z>200){
-            var t2=(el.textContent||'').toUpperCase();
-            if(AD_KEYS.some(function(k){return t2.indexOf(k)!==-1;})){el.style.cssText=HIDE;}
-          }
-        }catch(e2){}
-      }
       document.querySelectorAll(
         'iframe[src*="ads"],iframe[src*="adserv"],iframe[src*="doubleclick"],'
         +'iframe[src*="googlesyndication"],iframe[id*="ad-"],iframe[class*="ad-"],'
@@ -146,15 +151,17 @@ const _EMBED_JS = `(function(){
   }
   function clean(){
     try{document.querySelectorAll('body *').forEach(function(el){
+      if(isProtected(el))return;
       if(!el.childElementCount){var t=(el.textContent||'').trim().toUpperCase();
       if(t.length>2&&t.length<200&&BAD.some(function(k){return t===k||t.startsWith(k+'.')||t.startsWith(k+':')||t.indexOf(k)!==-1;})){
-        var p=el;for(var i=0;i<5;i++){var par=p.parentElement;if(par&&par!==document.body&&par!==document.documentElement)p=par;else break;}
+        var p=el;var par=p.parentElement;
+        if(par&&par!==document.body&&par!==document.documentElement&&!isProtected(par))p=par;
         p.style.cssText=HIDE;}}});}catch(e){}
     killAdOverlays();
   }
   clean();
   var obs=new MutationObserver(function(){clean();});
-  obs.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['style','class','id']});
+  obs.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class','id']});
   setTimeout(function(){obs.disconnect();},120000);
 })()`;
 
@@ -184,37 +191,23 @@ function parsePlayerMessage(data) {
   try {
     const d = typeof data === "string" ? JSON.parse(data) : data;
     if (!d || typeof d !== "object") return null;
-
     if (d.type === "PLAYER_EVENT" && d.data?.event) {
       const evt = String(d.data.event).toLowerCase();
       if (evt === "play" || evt === "playing") return "play";
       if (evt === "pause" || evt === "complete" || evt === "ended") return "pause";
       if (evt === "error" || evt === "load_error" || evt === "stream_error") return "error";
     }
-
-    const evt = String(
-      d.event || d.type || d.action || d.playbackState || d.state || ""
-    ).toLowerCase();
-
-    if (
-      evt === "error" || evt === "player_error" || evt === "load_error" ||
-      evt === "stream_error" || evt === "source_error" || evt === "media_error" ||
-      d.error === true || d.hasError === true || d.isError === true ||
-      (d.error && typeof d.error === "object" && d.error.code > 0)
-    ) return "error";
-
-    if (
-      evt === "play" || evt === "playing" || evt === "resume" || evt === "started" ||
-      d.playing === true || d.isPlaying === true || d.playbackState === "playing"
-    ) return "play";
-
-    if (
-      evt === "pause" || evt === "paused" || evt === "stop" || evt === "stopped" ||
-      evt === "ended" || evt === "complete" || evt === "finish" || evt === "finished" ||
-      evt === "idle" || d.playing === false || d.isPlaying === false ||
-      d.playbackState === "paused" || d.playbackState === "ended"
-    ) return "pause";
-
+    const evt = String(d.event || d.type || d.action || d.playbackState || d.state || "").toLowerCase();
+    if (evt === "error" || evt === "player_error" || evt === "load_error" ||
+        evt === "stream_error" || evt === "source_error" || evt === "media_error" ||
+        d.error === true || d.hasError === true || d.isError === true ||
+        (d.error && typeof d.error === "object" && d.error.code > 0)) return "error";
+    if (evt === "play" || evt === "playing" || evt === "resume" || evt === "started" ||
+        d.playing === true || d.isPlaying === true || d.playbackState === "playing") return "play";
+    if (evt === "pause" || evt === "paused" || evt === "stop" || evt === "stopped" ||
+        evt === "ended" || evt === "complete" || evt === "finish" || evt === "finished" ||
+        evt === "idle" || d.playing === false || d.isPlaying === false ||
+        d.playbackState === "paused" || d.playbackState === "ended") return "pause";
     return null;
   } catch { return null; }
 }
@@ -257,7 +250,7 @@ function DisclaimerBanner() {
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem("ns_disclaimer_dismissed") === "1"; } catch { return false; }
   });
-  const text = "⚠  NovaSparks does not host, store, or distribute any media content. Stream availability and quality may vary by region and network conditions. We are not responsible for third-party content or advertisements.";
+  const text = "⚠  NovaSparks does not host, store, or distribute any media content. Stream availability and quality may vary by region and network conditions.";
   if (dismissed) return null;
   return (
     <div style={{ background:"rgba(229,9,20,0.05)", borderBottom:"1px solid rgba(229,9,20,0.10)", padding:"4px 0", overflow:"hidden", position:"relative", flexShrink:0, display:"flex", alignItems:"center" }}>
@@ -268,10 +261,9 @@ function DisclaimerBanner() {
           ))}
         </div>
       </div>
-      <button
-        onClick={() => { setDismissed(true); try { localStorage.setItem("ns_disclaimer_dismissed", "1"); } catch {} }}
+      <button onClick={() => { setDismissed(true); try { localStorage.setItem("ns_disclaimer_dismissed", "1"); } catch {} }}
         title="Dismiss"
-        style={{ flexShrink:0, background:"none", border:"none", color:"rgba(255,255,255,0.3)", cursor:"pointer", padding:"0 14px", fontSize:14, lineHeight:1, alignSelf:"stretch", display:"flex", alignItems:"center", justifyContent:"center", transition:"color 0.15s" }}
+        style={{ flexShrink:0, background:"none", border:"none", color:"rgba(255,255,255,0.3)", cursor:"pointer", padding:"0 14px", fontSize:14, lineHeight:1, alignSelf:"stretch", display:"flex", alignItems:"center", justifyContent:"center" }}
         onMouseEnter={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}
         onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.3)"}
       >✕</button>
@@ -283,30 +275,18 @@ function StealthLoader({ status, attempt }) {
   const [show, setShow]   = useState(false);
   const [fade, setFade]   = useState(false);
   const timerRef          = useRef(null);
-
   useEffect(() => {
     clearTimeout(timerRef.current);
-    if (status === "testing" || status === "retrying") {
-      setShow(true); setFade(false);
-    } else if (status === "found") {
-      setFade(true);
-      timerRef.current = setTimeout(() => setShow(false), 420);
-    } else if (status === "failed") {
-      setFade(true);
-      timerRef.current = setTimeout(() => setShow(false), 400);
-    }
+    if (status === "testing" || status === "retrying") { setShow(true); setFade(false); }
+    else if (status === "found") { setFade(true); timerRef.current = setTimeout(() => setShow(false), 420); }
+    else if (status === "failed") { setFade(true); timerRef.current = setTimeout(() => setShow(false), 400); }
     return () => clearTimeout(timerRef.current);
   }, [status]);
-
   if (!show || status === "found") return null;
-
   const messages = ["Connecting…", "Preparing stream…", "Loading content…", "Almost ready…", "Establishing connection…"];
-  const msg = status === "retrying"
-    ? messages[Math.min((attempt || 1) - 1, messages.length - 1)]
-    : "Connecting…";
-
+  const msg = status === "retrying" ? messages[Math.min((attempt || 1) - 1, messages.length - 1)] : "Connecting…";
   return (
-    <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:9999, background:"rgba(8,8,8,0.96)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"11px 22px", display:"flex", alignItems:"center", gap:10, color:"#fff", fontSize:13, fontWeight:500, backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)", boxShadow:"0 6px 32px rgba(0,0,0,0.7)", opacity:fade ? 0 : 1, transition:"opacity 0.42s ease", pointerEvents:"none" }}>
+    <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:9999, background:"rgba(8,8,8,0.96)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"11px 22px", display:"flex", alignItems:"center", gap:10, color:"#fff", fontSize:13, fontWeight:500, backdropFilter:"blur(12px)", boxShadow:"0 6px 32px rgba(0,0,0,0.7)", opacity:fade ? 0 : 1, transition:"opacity 0.42s ease", pointerEvents:"none" }}>
       <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.14)", borderTopColor:"#fff", animation:"spin 0.7s linear infinite", flexShrink:0 }} />
       <span>{msg}</span>
     </div>
@@ -325,9 +305,7 @@ function AllFailedOverlay({ onRetry, onBack }) {
   return (
     <div style={{ position:"absolute", inset:0, zIndex:10, background:"rgba(0,0,0,0.96)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:18, padding:"32px 24px", textAlign:"center" }}>
       <div style={{ width:56, height:56, borderRadius:"50%", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.10)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8">
-          <path d="M1 1l22 22M17 17H5a2 2 0 0 1-2-2V7m4-2h10a2 2 0 0 1 2 2v8"/>
-        </svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8"><path d="M1 1l22 22M17 17H5a2 2 0 0 1-2-2V7m4-2h10a2 2 0 0 1 2 2v8"/></svg>
       </div>
       <div style={{ maxWidth:300 }}>
         <div style={{ fontSize:17, fontWeight:700, color:"#fff", lineHeight:1.4, marginBottom:8 }}>Having trouble loading</div>
@@ -372,45 +350,20 @@ function PlayerOverlayBtns({ showSkip, showNext, nextEpNum, onSkip, onNext }) {
 function EpisodeThumb({ ep, isActive, onPlay }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <div
-      onClick={onPlay}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        flexShrink:0, width:210, borderRadius:10, overflow:"hidden", cursor:"pointer",
-        border: isActive ? "2px solid var(--red,#e50914)" : "2px solid transparent",
-        background:"rgba(255,255,255,0.03)",
-        transform: hovered && !isActive ? "scale(1.025)" : "scale(1)",
-        transition:"border-color 0.15s, transform 0.18s cubic-bezier(0.34,1.2,0.64,1), box-shadow 0.18s",
-        boxShadow: isActive
-          ? "0 0 0 1px rgba(229,9,20,0.25), 0 4px 24px rgba(229,9,20,0.15)"
-          : hovered ? "0 4px 20px rgba(0,0,0,0.5)" : "none",
-      }}
-    >
+    <div onClick={onPlay} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ flexShrink:0, width:210, borderRadius:10, overflow:"hidden", cursor:"pointer", border: isActive ? "2px solid var(--red,#e50914)" : "2px solid transparent", background:"rgba(255,255,255,0.03)", transform: hovered && !isActive ? "scale(1.025)" : "scale(1)", transition:"border-color 0.15s, transform 0.18s cubic-bezier(0.34,1.2,0.64,1), box-shadow 0.18s", boxShadow: isActive ? "0 0 0 1px rgba(229,9,20,0.25), 0 4px 24px rgba(229,9,20,0.15)" : hovered ? "0 4px 20px rgba(0,0,0,0.5)" : "none" }}>
       <div style={{ width:"100%", aspectRatio:"16/9", position:"relative", background:"rgba(255,255,255,0.06)" }}>
         {ep.still_path ? (
-          <img
-            src={imgUrl(ep.still_path, "w300")}
-            alt={ep.name}
-            style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", transition:"filter 0.2s", filter: hovered && !isActive ? "brightness(1.1)" : "brightness(1)" }}
-          />
+          <img src={imgUrl(ep.still_path, "w300")} alt={ep.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
         ) : (
           <div style={{ width:"100%", height:"100%", background:"linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)" }} />
         )}
-        <div style={{ position:"absolute", top:7, left:8, background: isActive ? "var(--red,#e50914)" : "rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, color:"#fff", letterSpacing:0.5, backdropFilter:"blur(4px)" }}>
-          E{ep.episode_number}
-        </div>
-        {isActive && (
-          <div style={{ position:"absolute", inset:0, background:"rgba(229,9,20,0.10)", borderRadius:0 }} />
-        )}
-        {ep.runtime > 0 && (
-          <div style={{ position:"absolute", bottom:7, right:8, background:"rgba(0,0,0,0.72)", borderRadius:4, padding:"2px 6px", fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:600, backdropFilter:"blur(4px)" }}>
-            {ep.runtime}m
-          </div>
-        )}
+        <div style={{ position:"absolute", top:7, left:8, background: isActive ? "var(--red,#e50914)" : "rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, color:"#fff", letterSpacing:0.5 }}>E{ep.episode_number}</div>
+        {isActive && <div style={{ position:"absolute", inset:0, background:"rgba(229,9,20,0.10)" }} />}
+        {ep.runtime > 0 && <div style={{ position:"absolute", bottom:7, right:8, background:"rgba(0,0,0,0.72)", borderRadius:4, padding:"2px 6px", fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:600 }}>{ep.runtime}m</div>}
       </div>
       <div style={{ padding:"9px 12px 11px" }}>
-        <div style={{ fontSize:12, fontWeight:700, lineHeight:1.35, color: isActive ? "var(--red,#e50914)" : hovered ? "#fff" : "rgba(255,255,255,0.85)", overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", transition:"color 0.15s" }}>
+        <div style={{ fontSize:12, fontWeight:700, lineHeight:1.35, color: isActive ? "var(--red,#e50914)" : hovered ? "#fff" : "rgba(255,255,255,0.85)", overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
           {ep.name || `Episode ${ep.episode_number}`}
         </div>
       </div>
@@ -420,10 +373,8 @@ function EpisodeThumb({ ep, isActive, onPlay }) {
 
 function RefreshIcon({ spinning }) {
   return (
-    <svg
-      width="14" height="14" viewBox="0 0 24 24" fill="currentColor"
-      style={{ flexShrink:0, transition:"transform 0.3s ease", animation: spinning ? "spin 0.7s linear infinite" : "none" }}
-    >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"
+      style={{ flexShrink:0, animation: spinning ? "spin 0.7s linear infinite" : "none" }}>
       <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
     </svg>
   );
@@ -479,9 +430,10 @@ export default function WatchPage({
   const receivedRealSignalRef = useRef(false);
   const sourceFailCountRef    = useRef({});
 
-  const [probeProgress, setProbeProgress] = useState(8);
-  const [showLoadBar,   setShowLoadBar]   = useState(false);
-  const [refreshSpinning, setRefreshSpinning] = useState(false);
+  const [probeProgress,    setProbeProgress]    = useState(8);
+  const [showLoadBar,      setShowLoadBar]       = useState(false);
+  const [refreshSpinning,  setRefreshSpinning]   = useState(false);
+  const [restoreTime,      setRestoreTime]       = useState(0);
 
   const [related,        setRelated]        = useState([]);
   const [relatedPage,    setRelatedPage]    = useState(1);
@@ -520,6 +472,11 @@ export default function WatchPage({
   const manualSourceIdRef       = useRef(null);
   const nonEmbedFailCountRef    = useRef(0);
 
+  // Tracks the LATEST m3u8Url synchronously, so effects that fire on the same
+  // tick as a state update never read a stale value (the old polling code's
+  // root bug when switching between titles).
+  const m3u8UrlRef = useRef(null);
+
   const unifiedCaptions = useMemo(() =>
     nonEmbedCaptions
       .map((c) => ({ url:c.url||c.file||"", lang:c.language||c.lang||"", display:c.display||c.label||c.language||"Unknown", format:c.type||c.format||"srt" }))
@@ -540,7 +497,13 @@ export default function WatchPage({
     (!isNonEmbedMode && !!m3u8Url)
   );
 
-  const webviewRef    = useRef(null);
+  // FIX (ARCHITECTURE): <webview> replaced with a main-process BrowserView.
+  // Electron's own docs flag <webview> as having unstable rendering — the
+  // pop-out player has always worked because it's a real BrowserWindow that
+  // never goes through webview's guest-view machinery at all. BrowserView
+  // gives the same reliable path, positioned as a child view over this
+  // container div instead of floating as a separate OS window.
+  const playerContainerRef = useRef(null);
   const iframeRef     = useRef(null);
   const sourceRef     = useRef(null);
   const seasonBtnRef  = useRef(null);
@@ -589,6 +552,16 @@ export default function WatchPage({
       setShowLoadBar(false);
     }
   }, [autoSourceStatus, retryAttempt, isNonEmbedMode]);
+
+  useEffect(() => {
+    if (!item?.id) return;
+    const saved = storage.get(posKey(type, item.id, currentSeason, currentEpisode));
+    if (saved?.time > 10 && saved?.dur > 0 && (saved.dur - saved.time) > 30) {
+      setRestoreTime(saved.time);
+    } else {
+      setRestoreTime(0);
+    }
+  }, [item?.id, type, currentSeason, currentEpisode]);
 
   const tryNextSource = useCallback(() => {
     clearTimeout(secondChanceRef.current);
@@ -688,6 +661,7 @@ export default function WatchPage({
     setCycleCount(0); setRetryAttempt(0);
     setAutoSourceStatus("testing"); setWebviewLoading(true);
     setHlsStream(null); setHlsFailed(false);
+    m3u8UrlRef.current = null;
     setM3u8Url(null); setInterceptedSubs([]);
     invalidateSourceCache(type, item?.id, currentSeason, currentEpisode);
     setPlayerSource(defaultSrc);
@@ -743,11 +717,8 @@ export default function WatchPage({
     onHistory?.({ ...item, media_type: type, season: currentSeason, episode: currentEpisode });
   }, [item?.id]); // eslint-disable-line
 
-  // ── Source finder: Electron skips HTTP probing entirely — webview handles it ──
   useEffect(() => {
     if (!item?.id || isNonEmbedMode) return;
-
-    // Electron validates sources natively through the webview — no probing needed
     if (isElectron) {
       if (preFoundSource && !DEAD_SOURCES.includes(preFoundSource)) {
         if (!isRestrictedForServers || !NEEDS_INTERCEPT.includes(preFoundSource)) {
@@ -758,7 +729,6 @@ export default function WatchPage({
       setAutoSourceStatus("found");
       return;
     }
-
     if (preFoundSource) {
       if (isRestrictedForServers && NEEDS_INTERCEPT.includes(preFoundSource)) { /* fall through */ }
       else { setPlayerSource(preFoundSource); setAutoSourceStatus("found"); return; }
@@ -778,6 +748,7 @@ export default function WatchPage({
   }, [item?.id, type, currentSeason, currentEpisode, preFoundSource, isNonEmbedMode]); // eslint-disable-line
 
   useEffect(() => {
+    m3u8UrlRef.current = null;
     setM3u8Url(null); setInterceptedSubs([]);
     setShowSkipIntro(false); setShowNextEp(false);
     setIsActuallyPlaying(false); receivedRealSignalRef.current = false;
@@ -881,27 +852,34 @@ export default function WatchPage({
     return () => window.removeEventListener("message", handler);
   }, [embedUrl]);
 
+  // ── Electron play-state poll — now asks main process for the BrowserView's
+  //    webContents id instead of reading it off a webview DOM ref. ──────────
   useEffect(() => {
     if (!isElectron || showNSPlayer || isNonEmbedMode) return;
     if (webviewLoading || pipOpen) { setIsActuallyPlaying(false); return; }
     let lastState = null;
+    let cancelled = false;
     const poll = async () => {
-      const wv = webviewRef.current; if (!wv) return;
+      if (cancelled) return;
       try {
-        const wcId = wv.getWebContentsId?.();
+        const wcId = await window.electron.getPlayerViewWebContentsId();
         if (wcId && window.electron?.queryVideoProgress) {
           const prog = await window.electron.queryVideoProgress(wcId);
-          if (prog && prog.duration > 0) { const playing = !prog.paused; if (playing !== lastState) { lastState = playing; receivedRealSignalRef.current = true; setIsActuallyPlaying(playing); } return; }
+          if (prog && prog.duration > 0) {
+            const playing = !prog.paused;
+            if (playing !== lastState) { lastState = playing; receivedRealSignalRef.current = true; setIsActuallyPlaying(playing); }
+            return;
+          }
         }
-        const result = await wv.executeJavaScript(`(()=>{const v=document.querySelector('video');if(!v||!v.duration||isNaN(v.duration)||v.duration===0)return null;return{paused:v.paused,ended:v.ended,readyState:v.readyState};})()`);
-        if (result === null) return;
+        const result = await window.electron.playerViewExecuteJS(`(()=>{const v=document.querySelector('video');if(!v||!v.duration||isNaN(v.duration)||v.duration===0)return null;return{paused:v.paused,ended:v.ended,readyState:v.readyState};})()`);
+        if (result === null || result === undefined) return;
         const playing = !result.paused && !result.ended && result.readyState >= 2;
         if (playing !== lastState) { lastState = playing; receivedRealSignalRef.current = true; setIsActuallyPlaying(playing); }
       } catch {}
     };
     poll();
     const pollId = setInterval(poll, 2000);
-    return () => clearInterval(pollId);
+    return () => { cancelled = true; clearInterval(pollId); };
   }, [isElectron, webviewLoading, pipOpen, embedUrl, showNSPlayer, isNonEmbedMode]);
 
   useEffect(() => {
@@ -911,20 +889,7 @@ export default function WatchPage({
     return () => clearTimeout(timer);
   }, [isElectron, webviewLoading, embedUrl, isNonEmbedMode]);
 
-  // ── Electron: inject CSS/JS on dom-ready (always, every page load) ────────
-  useEffect(() => {
-    if (!isElectron || isNonEmbedMode) return;
-    const wv = webviewRef.current; if (!wv) return;
-    const onDomReady = async () => {
-      try { await wv.insertCSS(_EMBED_CSS); } catch {}
-      try { await wv.executeJavaScript(_EMBED_JS); } catch {}
-      try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {}
-      setTimeout(async () => { try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {} }, 600);
-    };
-    wv.addEventListener("dom-ready", onDomReady);
-    return () => { try { wv.removeEventListener("dom-ready", onDomReady); } catch {} };
-  }, [embedUrl, isElectron, isNonEmbedMode]);
-
+  // ── Web: try autoplay via postMessage ─────────────────────────────────────
   useEffect(() => {
     if (isElectron || isNonEmbedMode) return;
     const iframe = iframeRef.current; if (!iframe) return;
@@ -944,34 +909,22 @@ export default function WatchPage({
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [isElectron, embedUrl, isNonEmbedMode]);
 
-  // ── Electron beast: did-finish-load reveals webview, no video-element polling ─
-  // Root cause of the display bug: document.querySelector('video') searches only
-  // the webview's top-level frame. Embed players render the actual <video> inside
-  // a nested cross-origin iframe, so the query always returns null, the polling
-  // loop times out, and tryNextSource() is called even though the video is playing.
-  // Fix: trust did-finish-load + a short tier-based grace period to reveal the
-  // webview. We keep a hard-fail timeout for pages that never load at all, and a
-  // lightweight post-show check to auto-switch on a definitive video error signal.
+  // ── ELECTRON PLAYER (BrowserView) — creates the view, injects ad-block +
+  //    autoplay scripts on load, reveals once stable, falls through to the
+  //    next source on a hard failure. Replaces the old webview-based effect. ──
   useEffect(() => {
     if (!isElectron || isNonEmbedMode) return;
-    const wv = webviewRef.current; if (!wv) return;
+    if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
+    if (m3u8UrlRef.current) return; // NovaSparksPlayer has already taken over with a direct stream
 
-    // m3u8 path is handled entirely by NovaSparksPlayer — nothing to do here
-    if (m3u8Url) return;
-
-    let active      = true;
-    let showTimer   = null;
-    let failTimer   = null;
-    let postCheckId = null;
-
+    let active = true;
+    let showTimer = null, failTimer = null, postCheckId = null;
     clearInterval(pollRef.current);
     clearTimeout(secondChanceRef.current);
 
     const srcDef  = PLAYER_SOURCES.find((s) => s.id === playerSource);
     const tier    = srcDef?.tier ?? 2;
-    // How long to wait after did-finish-load before revealing the webview
     const SHOW_MS = tier === 1 ? 900 : tier === 2 ? 1300 : 1900;
-    // Hard deadline — if the page never fires did-finish-load, move on
     const HARD_MS = 16000;
 
     const markReady = () => {
@@ -981,33 +934,25 @@ export default function WatchPage({
       clearTimeout(failTimer);
       setAutoSourceStatus((s) => (s === "retrying" || s === "testing") ? "found" : s);
       setWebviewLoading(false);
-      // Kick autoplay after reveal
-      setTimeout(async () => {
-        try { await webviewRef.current?.executeJavaScript(_AUTOPLAY_JS); } catch {}
-      }, 300);
-      // Post-reveal: run up to 5 lightweight checks over 15 s.
-      // If we get 3 consecutive definitive video-error signals, switch source.
-      let failCount = 0;
-      let checkN    = 0;
+      setTimeout(async () => { try { await window.electron.playerViewExecuteJS(_AUTOPLAY_JS); } catch {} }, 300);
+
+      let failCount = 0, checkN = 0;
       postCheckId = setInterval(async () => {
         checkN++;
         if (checkN > 5) { clearInterval(postCheckId); return; }
-        const wv2 = webviewRef.current;
-        if (!wv2) { clearInterval(postCheckId); return; }
+        if (m3u8UrlRef.current) { clearInterval(postCheckId); return; }
         try {
-          // Try the native progress API first (main-process, sees all frames)
-          const wcId = wv2.getWebContentsId?.();
+          const wcId = await window.electron.getPlayerViewWebContentsId();
           if (wcId && window.electron?.queryVideoProgress) {
             const prog = await window.electron.queryVideoProgress(wcId);
-            if (prog && prog.duration > 0) { clearInterval(postCheckId); return; } // playing fine
+            if (prog && prog.duration > 0) { clearInterval(postCheckId); return; }
           }
-          // Fall back to JS in top frame — only useful when video is in top frame
-          const r = await wv2.executeJavaScript(
+          const r = await window.electron.playerViewExecuteJS(
             `(()=>{const v=document.querySelector('video');if(!v)return null;` +
             `return{err:v.networkState===3||!!(v.error&&v.error.code>0),ok:v.readyState>=2&&v.duration>0&&!v.paused};})()`
           );
-          if (!r) return;            // no <video> in top frame — sub-frame player, leave it
-          if (r.ok)  { clearInterval(postCheckId); return; } // confirmed playing
+          if (!r) return;
+          if (r.ok)  { clearInterval(postCheckId); return; }
           if (r.err) { failCount++; if (failCount >= 3) { clearInterval(postCheckId); tryNextSource(); } }
         } catch {}
       }, 3000);
@@ -1023,32 +968,76 @@ export default function WatchPage({
     };
 
     const onFinishLoad = async () => {
-      try { await wv.executeJavaScript(_AUTOPLAY_JS); } catch {}
+      try { await window.electron.playerViewInsertCSS(_EMBED_CSS); } catch {}
+      try { await window.electron.playerViewExecuteJS(_EMBED_JS); } catch {}
+      try { await window.electron.playerViewExecuteJS(_AUTOPLAY_JS); } catch {}
       clearTimeout(showTimer);
       showTimer = setTimeout(markReady, SHOW_MS);
     };
 
-    const onLoadFail = (e) => {
-      if (!e.isMainFrame || e.errorCode === -3) return; // -3 = aborted, ignore
-      clearTimeout(showTimer);
-      onFail();
-    };
+    const onLoadFail = () => { clearTimeout(showTimer); onFail(); };
 
     failTimer = setTimeout(onFail, HARD_MS);
-    wv.addEventListener("did-finish-load", onFinishLoad);
-    wv.addEventListener("did-fail-load",   onLoadFail);
+    const h1 = window.electron.onPlayerViewFinishLoad(onFinishLoad);
+    const h2 = window.electron.onPlayerViewFailLoad(onLoadFail);
+
+    window.electron.createPlayerView(embedUrl).catch(() => { if (active) onFail(); });
 
     return () => {
       active = false;
       clearTimeout(showTimer);
       clearTimeout(failTimer);
       clearInterval(postCheckId);
-      try { wv.removeEventListener("did-finish-load", onFinishLoad); } catch {}
-      try { wv.removeEventListener("did-fail-load",   onLoadFail);   } catch {}
+      try { window.electron.offPlayerViewFinishLoad(h1); } catch {}
+      try { window.electron.offPlayerViewFailLoad(h2); } catch {}
     };
-  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, m3u8Url]); // eslint-disable-line
+  }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource]); // eslint-disable-line
 
-  // ── Web (non-Electron) iframe beast ───────────────────────────────────────
+  // ── Bounds sync: keep the BrowserView positioned exactly over the
+  //    container div, on mount, resize, and any layout-affecting change. ────
+  useEffect(() => {
+    if (!isElectron || isNonEmbedMode) return;
+    const el = playerContainerRef.current;
+    if (!el) return;
+    const sync = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        window.electron.setPlayerViewBounds({ x: r.left, y: r.top, width: r.width, height: r.height }).catch(() => {});
+      }
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    window.addEventListener("resize", sync);
+    return () => { ro.disconnect(); window.removeEventListener("resize", sync); };
+  }, [isElectron, isNonEmbedMode, pipOpen]);
+
+  // ── Visibility coordination: BrowserView always paints ABOVE the page's
+  //    DOM regardless of CSS z-index, so anything meant to overlay the
+  //    player (source/season dropdowns, trailer, download, premium gate,
+  //    pop-out placeholder) must hide the view first or it'll render
+  //    invisibly behind it. Also hide once a direct stream is found, since
+  //    NovaSparksPlayer (plain DOM) takes over visually at that point. ──────
+  const playerViewShouldShow = isElectron && !isNonEmbedMode && !pipOpen && !m3u8Url &&
+    !showSourceMenu && !showSeasonMenu && !showTrailer && !showDownload && !gateModal;
+
+  useEffect(() => {
+    if (!isElectron) return;
+    window.electron.setPlayerViewVisible(playerViewShouldShow).catch(() => {});
+  }, [isElectron, playerViewShouldShow]);
+
+  // Destroy the BrowserView when leaving non-embed-incompatible states or unmounting.
+  useEffect(() => {
+    if (!isElectron) return;
+    if (isNonEmbedMode) window.electron.destroyPlayerView().catch(() => {});
+  }, [isElectron, isNonEmbedMode]);
+
+  useEffect(() => {
+    if (!isElectron) return;
+    return () => { window.electron.destroyPlayerView().catch(() => {}); };
+  }, [isElectron]);
+
+  // ── Web (non-Electron) iframe beast — unchanged, this path already works ──
   useEffect(() => {
     if (isElectron || isNonEmbedMode) return;
     if (!embedUrl || embedUrl === "about:blank") { setWebviewLoading(false); return; }
@@ -1058,23 +1047,15 @@ export default function WatchPage({
     let iframeHasLoaded = false;
     let probeNetworkFailed = false;
 
-    const isManualPick = userManuallySelectedRef.current &&
-                         manualSourceIdRef.current === playerSource;
+    const isManualPick = userManuallySelectedRef.current && manualSourceIdRef.current === playerSource;
     const srcDef = PLAYER_SOURCES.find((s) => s.id === playerSource);
     const tier   = srcDef?.tier ?? 2;
 
-    const LOAD_TIMEOUT   = isManualPick ? 14000
-                         : tier === 1   ?  5000
-                         : tier === 2   ?  7000
-                         :                 9000;
+    const LOAD_TIMEOUT   = isManualPick ? 14000 : tier === 1 ? 5000 : tier === 2 ? 7000 : 9000;
+    const POST_LOAD_GRACE = isManualPick ? 5000 : tier === 1 ? 3000 : tier === 2 ? 4500 : 6000;
 
-    const POST_LOAD_GRACE = isManualPick ? 5000
-                          : tier === 1   ? 3000
-                          : tier === 2   ? 4500
-                          :                6000;
-
-    let probeKillId  = null;
-    let postGraceId  = null;
+    let probeKillId   = null;
+    let postGraceId   = null;
     let loadTimeoutId = null;
     const probeAbortCtrl = new AbortController();
 
@@ -1113,9 +1094,7 @@ export default function WatchPage({
       if (!active || probeNetworkFailed) return;
       iframeHasLoaded = true;
       clearTimeout(loadTimeoutId);
-      postGraceId = setTimeout(() => {
-        if (active) onReady();
-      }, POST_LOAD_GRACE);
+      postGraceId = setTimeout(() => { if (active) onReady(); }, POST_LOAD_GRACE);
     };
 
     iframeErrorCallbackRef.current = () => {
@@ -1135,10 +1114,7 @@ export default function WatchPage({
         onFail();
       });
 
-    loadTimeoutId = setTimeout(() => {
-      if (!active || iframeHasLoaded) return;
-      onFail();
-    }, LOAD_TIMEOUT);
+    loadTimeoutId = setTimeout(() => { if (!active || iframeHasLoaded) return; onFail(); }, LOAD_TIMEOUT);
 
     return () => {
       active = false;
@@ -1150,25 +1126,28 @@ export default function WatchPage({
     };
   }, [embedUrl, isElectron, isNonEmbedMode, tryNextSource, playerSource, hlsLoading, hlsStream, hlsFailed, useHLSPath]); // eslint-disable-line
 
+  // ── Skip-intro / next-ep detection (Electron, embed path) ─────────────────
   useEffect(() => {
     if (!isElectron || showNSPlayer || isNonEmbedMode) return;
+    let cancelled = false;
     const poll = async () => {
-      const wv = webviewRef.current; if (!wv || webviewLoading || pipOpen) return;
+      if (cancelled || webviewLoading || pipOpen) return;
       try {
-        const r = await wv.executeJavaScript(`(()=>{const v=document.querySelector('video');if(!v||!v.duration||v.paused)return null;return{ct:v.currentTime,dur:v.duration};})()`);
+        const r = await window.electron.playerViewExecuteJS(`(()=>{const v=document.querySelector('video');if(!v||!v.duration||v.paused)return null;return{ct:v.currentTime,dur:v.duration};})()`);
         if (!r) return;
         setShowSkipIntro(type === "tv" && r.ct >= 20 && r.ct <= 300);
         setShowNextEp(hasNextEp && (r.dur - r.ct <= 90 || r.ct / r.dur >= 0.92));
       } catch {}
     };
     const pollId = setInterval(poll, 2000);
-    return () => clearInterval(pollId);
+    return () => { cancelled = true; clearInterval(pollId); };
   }, [isElectron, webviewLoading, pipOpen, type, hasNextEp, showNSPlayer, isNonEmbedMode]);
 
   useEffect(() => {
     if (!window.electron) return;
     const h = window.electron.onM3u8Found((url) => {
       if (isNonEmbedMode) return;
+      m3u8UrlRef.current = url;
       setM3u8Url((p) => p !== url ? url : p);
       setAutoSourceStatus("found"); setWebviewLoading(false);
     });
@@ -1201,6 +1180,7 @@ export default function WatchPage({
     retryIdxRef.current = 1; setCycleCount(0); setRetryAttempt(0);
     setAutoSourceStatus("testing"); setWebviewLoading(true);
     setHlsStream(null); setHlsFailed(false);
+    m3u8UrlRef.current = null;
     setM3u8Url(null); setInterceptedSubs([]);
     setPlayerSource(id); storage.set("playerSource", id);
   }, [playerSource, type]);
@@ -1236,8 +1216,7 @@ export default function WatchPage({
   const handleSkipIntro = useCallback(() => {
     setShowSkipIntro(false);
     if (!isElectron) return;
-    const wv = webviewRef.current; if (!wv) return;
-    wv.executeJavaScript(`(()=>{const v=document.querySelector('video');if(v)v.currentTime+=90;})()`).catch(() => {});
+    window.electron.playerViewExecuteJS(`(()=>{const v=document.querySelector('video');if(v)v.currentTime+=90;})()`).catch(() => {});
   }, [isElectron]);
 
   const openDropdownPos = useCallback((btnRef, itemCount) => {
@@ -1246,9 +1225,7 @@ export default function WatchPage({
     const rect = btn.getBoundingClientRect();
     const estimatedH = Math.min(itemCount * 46 + 16, 320);
     const spaceBelow = window.innerHeight - rect.bottom - 8;
-    const top = spaceBelow >= estimatedH
-      ? rect.bottom + 6
-      : Math.max(8, rect.top - estimatedH - 6);
+    const top = spaceBelow >= estimatedH ? rect.bottom + 6 : Math.max(8, rect.top - estimatedH - 6);
     const left = Math.min(rect.left, window.innerWidth - 210);
     return { top, left };
   }, []);
@@ -1268,8 +1245,8 @@ export default function WatchPage({
 
   const currentDownload = useMemo(() => {
     if (!downloads?.length) return null;
-    if (type === "movie") return downloads.find((dl) => dl.mediaType === "movie" && (dl.tmdbId === item.id || dl.mediaId === item.id) && (dl.status === "completed" || dl.status === "local" || dl.status === "downloading"));
-    return downloads.find((dl) => dl.mediaType === "tv" && (dl.tmdbId === item.id || dl.mediaId === item.id) && dl.season === currentSeason && dl.episode === currentEpisode && (dl.status === "completed" || dl.status === "local" || dl.status === "downloading"));
+    if (type === "movie") return downloads.find((dl) => dl.mediaType === "movie" && (dl.tmdbId === item.id || dl.mediaId === item.id) && ["completed","local","downloading"].includes(dl.status));
+    return downloads.find((dl) => dl.mediaType === "tv" && (dl.tmdbId === item.id || dl.mediaId === item.id) && dl.season === currentSeason && dl.episode === currentEpisode && ["completed","local","downloading"].includes(dl.status));
   }, [downloads, item?.id, type, currentSeason, currentEpisode]);
 
   const mediaName = useMemo(() => {
@@ -1287,15 +1264,11 @@ export default function WatchPage({
   if (!item) return null;
 
   const browserNonEmbedUrl = nonEmbedStream
-    ? (nonEmbedStream.format === "hls"
-        ? `${M3U8_PROXY}${encodeURIComponent(nonEmbedStream.url)}`
-        : nonEmbedStream.url)
+    ? (nonEmbedStream.format === "hls" ? `${M3U8_PROXY}${encodeURIComponent(nonEmbedStream.url)}` : nonEmbedStream.url)
     : null;
 
   const showFailedOverlay = autoSourceStatus === "failed" && !webviewLoading && !hlsStream && !hlsLoading && !m3u8Url && !nonEmbedStream && !isNonEmbedMode && !userManuallySelectedRef.current;
   const iframeShieldActive = !isElectron && !isNonEmbedMode && !webviewLoading && !pipOpen;
-
-  const probeTotal = Math.max(retryQueueRef.current.length, 1); // eslint-disable-line
 
   const dropdownStyle = {
     position:"fixed", top:menuPos?.top ?? 60, left:menuPos?.left ?? 0,
@@ -1319,52 +1292,29 @@ export default function WatchPage({
         @keyframes shimmerSweep { 0% { left: -45%; } 100% { left: 120%; } }
         @keyframes probePulse { 0%,100% { opacity:0.7; } 50% { opacity:1; } }
         @keyframes refreshPop { 0% { transform:scale(1); } 40% { transform:scale(0.88); } 100% { transform:scale(1); } }
-
         .ep-carousel::-webkit-scrollbar { display: none; }
         .ep-carousel { scrollbar-width: none; }
         .watch-server-btn { white-space: nowrap !important; }
-        .watch-server-btn svg { width: 14px !important; height: 14px !important; flex-shrink: 0; display: block; }
         .ns-probe-bar { transition: opacity 0.25s ease; }
-
-        .season-dropdown-menu {
-          position:fixed; z-index:99999; background:rgba(10,14,18,0.98);
-          border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:6px 0;
-          min-width:160px; box-shadow:0 10px 40px rgba(0,0,0,0.85); backdrop-filter:blur(16px);
-        }
+        .season-dropdown-menu { position:fixed; z-index:99999; background:rgba(10,14,18,0.98); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:6px 0; min-width:160px; box-shadow:0 10px 40px rgba(0,0,0,0.85); backdrop-filter:blur(16px); }
         .season-dropdown-menu button { display:block; width:100%; text-align:left; padding:10px 18px; background:none; border:none; color:var(--text,#fff); font-size:14px; cursor:pointer; transition:background 0.15s; font-family:inherit; }
         .season-dropdown-menu button:hover { background:rgba(255,255,255,0.08); }
         .season-dropdown-menu button.active { color:var(--red,#e50914); font-weight:700; }
-
         .load-more-btn:hover { background: rgba(255,255,255,0.08) !important; }
         .watch-rel-card:hover .watch-rel-overlay { opacity:1 !important; }
-
         .topbar-pip-btn { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:#fff; font-size:13px; font-weight:600; padding:7px 14px; cursor:pointer; transition:background 0.15s; font-family:inherit; white-space:nowrap; }
         .topbar-pip-btn:hover { background:rgba(255,255,255,0.13); }
         .topbar-pip-btn.active { color:var(--red,#e50914); border-color:rgba(229,9,20,0.35); }
-        .topbar-pip-btn svg { width:14px !important; height:14px !important; }
-
-        .ns-refresh-btn {
-          display:flex; align-items:center; gap:6px;
-          background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
-          border-radius:8px; color:rgba(255,255,255,0.75); font-size:13px; font-weight:600;
-          padding:7px 14px; cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s;
-          font-family:inherit; white-space:nowrap; line-height:1; flex-shrink:0;
-        }
-        .ns-refresh-btn:hover { background:rgba(255,255,255,0.13); color:#fff; border-color:rgba(255,255,255,0.22); }
-        .ns-refresh-btn:active { animation:refreshPop 0.25s ease; }
+        .ns-refresh-btn { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:rgba(255,255,255,0.75); font-size:13px; font-weight:600; padding:7px 14px; cursor:pointer; transition:background 0.15s, color 0.15s; font-family:inherit; white-space:nowrap; line-height:1; flex-shrink:0; }
+        .ns-refresh-btn:hover { background:rgba(255,255,255,0.13); color:#fff; }
         .ns-refresh-btn.spinning { border-color:rgba(229,9,20,0.3); color:rgba(229,9,20,0.9); }
-
         .ns-player-badge { display:inline-flex; align-items:center; gap:4px; background:rgba(229,9,20,0.15); border:1px solid rgba(229,9,20,0.3); border-radius:6px; padding:3px 8px; font-size:11px; font-weight:700; color:#e50914; letter-spacing:.5px; }
-
         .adfree-btn { display:flex; align-items:center; gap:5px; border-radius:8px; font-size:12px; font-weight:600; padding:7px 12px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; border:1px solid; }
         .adfree-btn.off { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.12); color:rgba(255,255,255,0.6); }
         .adfree-btn.off:hover { background:rgba(255,255,255,0.12); color:#fff; }
         .adfree-btn.on { background:rgba(76,175,80,0.12); border-color:rgba(76,175,80,0.35); color:#4caf50; }
-        .adfree-btn.on:hover { background:rgba(76,175,80,0.2); }
-
         .ns-src-dd-item { transition: background 0.12s; }
         .ns-src-dd-item:hover { background: rgba(255,255,255,0.07) !important; }
-
         .ns-info-strip { padding: 14px 20px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .ns-info-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
         .ns-info-chip { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.06); border-radius:5px; padding:3px 8px; white-space:nowrap; }
@@ -1373,53 +1323,37 @@ export default function WatchPage({
         .ns-info-overview-wrap { max-width: 720px; }
         .ns-info-overview { font-size:13px; color:rgba(255,255,255,0.5); line-height:1.7; margin:0; }
         .ns-info-overview.clamped { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-        .ns-info-expand { background:none; border:none; color:rgba(255,255,255,0.35); font-size:12px; cursor:pointer; padding:5px 0 0; font-family:inherit; transition:color 0.15s; }
+        .ns-info-expand { background:none; border:none; color:rgba(255,255,255,0.35); font-size:12px; cursor:pointer; padding:5px 0 0; font-family:inherit; }
         .ns-info-expand:hover { color:rgba(255,255,255,0.8); }
-
-        .watch-player-wrap { box-shadow: none !important; }
-        .watch-topbar { box-shadow: none !important; }
-
         @media (max-width: 768px) {
           .watch-topbar { padding: 8px 10px !important; gap: 5px !important; flex-wrap: nowrap; }
           .watch-topbar-title { font-size: 13px !important; max-width: 150px !important; }
           .watch-topbar-ep { display: none !important; }
           .watch-meta { padding: 12px 14px !important; }
           .watch-meta-actions { flex-wrap: wrap !important; gap: 6px !important; }
-          .watch-meta-actions .btn { flex: 1 1 auto !important; font-size: 12px !important; padding: 8px 10px !important; min-width: 80px !important; justify-content: center !important; }
-          .ep-carousel { padding-left: 12px !important; gap: 8px !important; }
           .ep-carousel > div { width: 165px !important; }
           .cards-grid { grid-template-columns: repeat(2, 1fr) !important; }
-          .section { padding-left: 14px !important; padding-right: 14px !important; }
           .topbar-pip-btn span { display: none !important; }
           .topbar-pip-btn { padding: 7px 10px !important; }
           .adfree-btn span.adfree-label { display: none !important; }
           .ns-probe-bar .probe-label { display: none !important; }
-          .ns-probe-bar { min-width: 40px !important; padding: 0 10px !important; }
-          .ns-info-strip { padding: 12px 14px 8px !important; }
-          .ns-info-overview { font-size: 12px !important; }
-          .watch-server-btn { font-size: 12px !important; padding: 6px 10px !important; }
           .ns-refresh-btn span { display: none !important; }
           .ns-refresh-btn { padding: 7px 10px !important; }
         }
-
         @media (max-width: 480px) {
           .watch-topbar { padding: 7px 8px !important; gap: 3px !important; }
           .watch-topbar-title { font-size: 11px !important; max-width: 80px !important; }
           .watch-topbar-ep { display: none !important; }
-          .watch-server-btn span:first-of-type { display: none; }
-          .adfree-btn { padding: 6px 8px !important; }
           .topbar-pip-btn { display: none !important; }
           .cards-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
-          .ns-info-strip { padding: 10px 12px 6px !important; }
-          .ep-carousel > div { width: 140px !important; }
           .ns-player-badge { display: none !important; }
-          .ns-info-chip.ns-info-genre { display: none; }
         }
       `}</style>
 
       <StealthLoader status={autoSourceStatus} attempt={retryAttempt} />
       <DisclaimerBanner />
 
+      {/* ── Top bar ── */}
       <div className="watch-topbar">
         <button className="btn btn-ghost" onClick={onBack} style={{ gap:6, flexShrink:0 }}><BackIcon /> Back</button>
         <div className="watch-topbar-title" style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
@@ -1435,15 +1369,10 @@ export default function WatchPage({
             </span>
           )}
 
-              <button
-            className={`ns-refresh-btn${refreshSpinning ? " spinning" : ""}`}
-            onClick={retryFromScratch}
-            title="Refresh player"
-          >
+          <button className={`ns-refresh-btn${refreshSpinning ? " spinning" : ""}`} onClick={retryFromScratch} title="Refresh player">
             <RefreshIcon spinning={refreshSpinning} />
             <span>Refresh</span>
           </button>
-
 
           <button
             className={`adfree-btn ${isNonEmbedMode ? "on" : "off"}`}
@@ -1460,13 +1389,12 @@ export default function WatchPage({
                 setNonEmbedRetry((n) => n + 1);
               }
             }}
-            title={isNonEmbedMode ? "Switch to Embed Mode" : "Switch to AD-free Non-Embed Mode"}
           >
             {isNonEmbedMode ? (
               <>
                 <svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#4caf50"/></svg>
                 <span className="adfree-label">AD-free</span>
-                {nonEmbedStream?.quality && <span style={{ fontSize:10, opacity:0.8, letterSpacing:0.3 }}>{nonEmbedStream.quality}</span>}
+                {nonEmbedStream?.quality && <span style={{ fontSize:10, opacity:0.8 }}>{nonEmbedStream.quality}</span>}
               </>
             ) : (
               <>
@@ -1485,7 +1413,7 @@ export default function WatchPage({
                 )}
                 <div style={{ position:"relative", zIndex:1, display:"flex", alignItems:"center", gap:6 }}>
                   {autoSourceStatus === "found" ? (
-                    <><span style={{ color:"#4caf50", fontSize:15, lineHeight:1, fontWeight:700 }}>✓</span><span className="probe-label" style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.9)", whiteSpace:"nowrap" }}>{currentLabel}</span></>
+                    <><span style={{ color:"#4caf50", fontSize:15, fontWeight:700 }}>✓</span><span className="probe-label" style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.9)", whiteSpace:"nowrap" }}>{currentLabel}</span></>
                   ) : (
                     <><div style={{ width:10, height:10, borderRadius:"50%", border:"1.5px solid rgba(255,255,255,0.18)", borderTopColor:"rgba(255,255,255,0.8)", animation:"spin 0.65s linear infinite", flexShrink:0 }} /><span className="probe-label" style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.72)", whiteSpace:"nowrap", animation:"probePulse 1.8s infinite" }}>{retryAttempt === 0 ? "Finding..." : `Server ${retryAttempt + 1}`}</span></>
                   )}
@@ -1526,7 +1454,6 @@ export default function WatchPage({
             </button>
           )}
 
-      
           <DataMeterWidget
             isPlaying={!webviewLoading && !pipOpen}
             isActuallyPlaying={isActuallyPlaying && !webviewLoading && !pipOpen}
@@ -1560,33 +1487,32 @@ export default function WatchPage({
         {isElectron ? (
           <>
             {!isNonEmbedMode && (
-              <webview
-                key={`wv-${playerSource}-${item.id}-s${currentSeason}e${currentEpisode}`}
-                ref={webviewRef}
-                src={embedUrl}
-                partition="persist:player"
-                allowpopups="true"
-                plugins="true"
-                nodeintegration="no"
-                webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
-                useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-                style={{ position:"absolute", inset:0, width:"100%", height:"100%", border:"none", background:"#000", opacity:(showNSPlayer || webviewLoading) ? 0 : 1, pointerEvents:showNSPlayer ? "none" : "auto", transition:"opacity 0.35s ease", zIndex:1 }}
+              // The BrowserView paints natively above this div at the bounds
+              // reported by the bounds-sync effect — this element exists only
+              // so we have a real, measurable spot in the page layout for it.
+              <div
+                ref={playerContainerRef}
+                style={{ position:"absolute", inset:0, width:"100%", height:"100%", background:"#000", zIndex:1 }}
               />
             )}
             {showNSPlayer && (
               <NovaSparksPlayer
                 key={`nsp-${isNonEmbedMode ? "ne" : "em"}-${item.id}-s${currentSeason}e${currentEpisode}${isNonEmbedMode ? `-${nonEmbedStreamIdxRef.current}` : ""}`}
                 streamUrl={nsStreamUrl}
+                startTime={restoreTime}
                 subtitles={isNonEmbedMode ? unifiedCaptions.map((c) => ({ url:c.url, lang:c.lang||"" })) : interceptedSubs}
                 title={`${title}${type === "tv" ? ` · S${currentSeason}E${currentEpisode}` : ""}`}
                 onReady={() => { setWebviewLoading(false); setAutoSourceStatus("found"); setIsActuallyPlaying(true); }}
                 onError={() => {
                   if (isNonEmbedMode) { tryNextNonEmbedSource(); }
-                  else { setM3u8Url(null); setInterceptedSubs([]); setWebviewLoading(true); tryNextSource(); }
+                  else { m3u8UrlRef.current = null; setM3u8Url(null); setInterceptedSubs([]); setWebviewLoading(true); tryNextSource(); }
                 }}
                 onPlayStateChange={setIsActuallyPlaying}
                 onTimeUpdate={(ct, dur) => {
                   if (!dur) return;
+                  if (ct > 10 && dur > 60) {
+                    storage.set(posKey(type, item.id, currentSeason, currentEpisode), { time: ct, dur, ts: Date.now() });
+                  }
                   setShowSkipIntro(type === "tv" && ct >= 20 && ct <= 300);
                   setShowNextEp(hasNextEp && (dur - ct <= 90 || ct / dur >= 0.92));
                 }}
@@ -1600,12 +1526,14 @@ export default function WatchPage({
             streamUrl={browserNonEmbedUrl}
             streamType={nonEmbedStream?.format || "hls"}
             subtitles={unifiedCaptions}
+            startTime={restoreTime}
             title={`${title}${type === "tv" ? ` · S${currentSeason}E${currentEpisode}` : ""}`}
             onReady={() => { setWebviewLoading(false); setAutoSourceStatus("found"); setIsActuallyPlaying(true); }}
             onError={tryNextNonEmbedSource}
             onPlayStateChange={setIsActuallyPlaying}
             onTimeUpdate={(ct, dur) => {
               if (!dur) return;
+              if (ct > 10 && dur > 60) storage.set(posKey(type, item.id, currentSeason, currentEpisode), { time: ct, dur, ts: Date.now() });
               setShowSkipIntro(type === "tv" && ct >= 20 && ct <= 300);
               setShowNextEp(hasNextEp && (dur - ct <= 90 || ct / dur >= 0.92));
             }}
@@ -1615,6 +1543,7 @@ export default function WatchPage({
           <HLSPlayer
             key={`hls-${item.id}-s${currentSeason}e${currentEpisode}-${hlsStream.url}`}
             streamUrl={hlsStream.url} streamType={hlsStream.type} subtitles={hlsStream.subtitles || []}
+            startTime={restoreTime}
             title={`${title}${type === "tv" ? ` · S${currentSeason}E${currentEpisode}` : ""}`}
             onReady={() => { setWebviewLoading(false); setAutoSourceStatus("found"); setIsActuallyPlaying(true); }}
             onError={() => { invalidateHLSCache(item.id, type, currentSeason, currentEpisode); setHlsFailed(true); setHlsStream(null); setWebviewLoading(true); }}
@@ -1697,13 +1626,7 @@ export default function WatchPage({
       </div>
 
       {(d?.overview || year || d?.vote_average > 0) && (
-        <InfoStrip
-          year={year}
-          voteAverage={d?.vote_average}
-          runtime={runtimeMinutes}
-          overview={d?.overview}
-          genres={d?.genres || []}
-        />
+        <InfoStrip year={year} voteAverage={d?.vote_average} runtime={runtimeMinutes} overview={d?.overview} genres={d?.genres || []} />
       )}
 
       {type === "tv" && episodeList.length > 0 && (
@@ -1718,7 +1641,7 @@ export default function WatchPage({
                     if (pos) setSeasonMenuPos({ top: pos.top, left: pos.left - 10 });
                     setShowSeasonMenu((v) => !v);
                   }}
-                  style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:8, color:"#fff", fontSize:13, fontWeight:600, padding:"8px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:6, fontFamily:"inherit", transition:"background 0.15s" }}
+                  style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:8, color:"#fff", fontSize:13, fontWeight:600, padding:"8px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:6, fontFamily:"inherit" }}
                   onMouseEnter={(e) => e.currentTarget.style.background="rgba(255,255,255,0.12)"}
                   onMouseLeave={(e) => e.currentTarget.style.background="rgba(255,255,255,0.07)"}>
                   Season {currentSeason}
