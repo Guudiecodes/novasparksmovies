@@ -2,6 +2,7 @@
 const {
   app,
   BrowserWindow,
+  BrowserView,
   ipcMain,
   session,
   webContents,
@@ -125,6 +126,27 @@ const getMainWindow = () => mainWindow;
 
 const playerWcIds = new Set();
 let sessionsConfigured = false;
+
+// FIX (ROOT CAUSE — architectural): Electron's own docs flag <webview> as
+// unstable: "Electron's webview tag is based on Chromium's webview, which is
+// undergoing dramatic architectural changes. This impacts the stability of
+// webviews, including rendering, navigation, and event routing. We currently
+// recommend to not use the webview tag." That's why the pop-out (a real
+// BrowserWindow loading the URL directly) has always worked while the
+// embedded webview hasn't — pop-out never goes through webview's guest-view
+// machinery at all. BrowserView gives the SAME reliable rendering path as a
+// real window, but positioned as a child view inside the main window instead
+// of floating as a separate OS window — i.e. the pop-out's approach, embedded.
+let playerView = null;
+const getPlayerView = () => playerView;
+
+function teardownPlayerView() {
+  if (!playerView) return;
+  try { mainWindow?.removeBrowserView(playerView); } catch {}
+  try { playerWcIds.delete(playerView.webContents.id); } catch {}
+  try { if (!playerView.webContents.isDestroyed()) playerView.webContents.destroy(); } catch {}
+  playerView = null;
+}
 
 // FIX: track whether the user intentionally closed the app
 // so window-all-closed doesn't quit on webview crashes
@@ -456,6 +478,7 @@ function createWindow() {
   });
 
   mainWindow.on("closed", () => {
+    teardownPlayerView();
     mainWindow = null;
     if (intentionalQuit) app.quit();
   });
@@ -476,8 +499,130 @@ blockStats.init(getMainWindow);
 
 ipcMain.handle("get-block-stats", () => blockStats.getBlockStats());
 
+// -- BrowserView player (replaces <webview> as the embedded movie player) -----
+ipcMain.handle("create-player-view", (_, { url }) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  if (!sessionsConfigured) {
+    sessionsConfigured = true;
+    const playerSession = session.fromPartition("persist:player");
+    const trailerSession = session.fromPartition("persist:trailer");
+    setupSession(playerSession, trailerSession);
+  }
+  teardownPlayerView();
+
+  playerView = new BrowserView({
+    webPreferences: {
+      partition: "persist:player",
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
+      backgroundThrottling: false,
+      autoplayPolicy: "no-user-gesture-required",
+      devTools: false,
+    },
+  });
+
+  mainWindow.addBrowserView(playerView);
+  playerView.setAutoResize({ width: false, height: false });
+  // Start off-screen with zero size until the renderer reports real bounds —
+  // prevents a flash of the view at (0,0) full-window-size before layout settles.
+  playerView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+
+  const wc = playerView.webContents;
+  playerWcIds.add(wc.id);
+
+  wc.setWindowOpenHandler(() => ({ action: "deny" }));
+
+  wc.on("will-navigate", (event, navUrl) => {
+    const adPatterns = ["doubleclick", "googlesyndication", "adservice", "adexchange", "tracking", "click.", "redirect"];
+    try {
+      const host = new URL(navUrl).hostname.toLowerCase();
+      if (adPatterns.some((p) => host.includes(p))) event.preventDefault();
+    } catch {}
+  });
+
+  wc.on("render-process-gone", (_e, details) => {
+    console.error("[player-view] renderer gone:", details.reason);
+    const mw = getMainWindow();
+    if (mw && !mw.isDestroyed()) mw.webContents.send("player-view-fail-load");
+  });
+
+  wc.on("did-finish-load", () => {
+    const mw = getMainWindow();
+    if (mw && !mw.isDestroyed()) mw.webContents.send("player-view-finish-load");
+    setTimeout(() => simulateRealClick(wc), 700);
+    setTimeout(() => simulateRealClick(wc), 2200);
+  });
+
+  wc.on("did-fail-load", (_e, errorCode, _desc, _url, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return; // -3 = aborted, normal
+    const mw = getMainWindow();
+    if (mw && !mw.isDestroyed()) mw.webContents.send("player-view-fail-load");
+  });
+
+  wc.on("enter-html-full-screen", () => mainWindow?.webContents.send("webview-enter-fullscreen"));
+  wc.on("leave-html-full-screen", () => mainWindow?.webContents.send("webview-leave-fullscreen"));
+
+  wc.loadURL(url);
+  return { ok: true, webContentsId: wc.id };
+});
+
+ipcMain.handle("navigate-player-view", (_, url) => {
+  if (!playerView || playerView.webContents.isDestroyed()) return { ok: false };
+  playerView.webContents.loadURL(url);
+  return { ok: true };
+});
+
+ipcMain.handle("set-player-view-bounds", (_, bounds) => {
+  if (!playerView) return { ok: false };
+  try {
+    playerView.setBounds({
+      x: Math.max(0, Math.round(bounds.x)),
+      y: Math.max(0, Math.round(bounds.y)),
+      width: Math.max(0, Math.round(bounds.width)),
+      height: Math.max(0, Math.round(bounds.height)),
+    });
+  } catch {}
+  return { ok: true };
+});
+
+// Toggling visibility via add/remove (not bounds-zeroing) is the documented
+// way to hide a BrowserView — needed because BrowserView always paints ABOVE
+// the host page's DOM regardless of CSS z-index, so dropdowns/modals that
+// need to appear over the player (source menu, trailer, download modal,
+// premium gate) must hide the view first or they'll render invisibly behind it.
+ipcMain.handle("set-player-view-visible", (_, visible) => {
+  if (!playerView || !mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  try {
+    if (visible) mainWindow.addBrowserView(playerView);
+    else mainWindow.removeBrowserView(playerView);
+  } catch {}
+  return { ok: true };
+});
+
+ipcMain.handle("destroy-player-view", () => {
+  teardownPlayerView();
+  return { ok: true };
+});
+
+ipcMain.handle("player-view-execute-js", async (_, code) => {
+  if (!playerView || playerView.webContents.isDestroyed()) return null;
+  try { return await playerView.webContents.executeJavaScript(code); } catch { return null; }
+});
+
+ipcMain.handle("player-view-insert-css", async (_, css) => {
+  if (!playerView || playerView.webContents.isDestroyed()) return null;
+  try { return await playerView.webContents.insertCSS(css); } catch { return null; }
+});
+
+ipcMain.handle("get-player-view-webcontents-id", () => {
+  return playerView && !playerView.webContents.isDestroyed() ? playerView.webContents.id : null;
+});
+
 // -- Player memory cleanup -----------------------------------------------------
 ipcMain.on("player-stopped", () => {
+  teardownPlayerView();
   // FIX: Destroy player webviews safely without crashing main renderer
   for (const id of [...playerWcIds]) {
     try {

@@ -200,4 +200,41 @@ contextBridge.exposeInMainWorld("electron", {
   },
   offScheduledBackupRequested: (h) =>
     ipcRenderer.removeListener("scheduled-backup-requested", h),
+
+  // ── BrowserView player (replaces <webview> as the embedded movie player) ──
+  // These wire directly to the IPC handlers in index.js. The BrowserView is
+  // created/managed entirely in the main process — the renderer only sends
+  // commands and receives load/fail events back.
+  createPlayerView: (url) =>
+    ipcRenderer.invoke("create-player-view", { url }),
+  navigatePlayerView: (url) =>
+    ipcRenderer.invoke("navigate-player-view", url),
+  setPlayerViewBounds: (bounds) =>
+    ipcRenderer.invoke("set-player-view-bounds", bounds),
+  setPlayerViewVisible: (visible) =>
+    ipcRenderer.invoke("set-player-view-visible", visible),
+  destroyPlayerView: () =>
+    ipcRenderer.invoke("destroy-player-view"),
+  playerViewExecuteJS: (code) =>
+    ipcRenderer.invoke("player-view-execute-js", code),
+  playerViewInsertCSS: (css) =>
+    ipcRenderer.invoke("player-view-insert-css", css),
+  getPlayerViewWebContentsId: () =>
+    ipcRenderer.invoke("get-player-view-webcontents-id"),
+
+  onPlayerViewFinishLoad: (cb) => {
+    const h = () => cb();
+    ipcRenderer.on("player-view-finish-load", h);
+    return h;
+  },
+  offPlayerViewFinishLoad: (h) =>
+    ipcRenderer.removeListener("player-view-finish-load", h),
+
+  onPlayerViewFailLoad: (cb) => {
+    const h = () => cb();
+    ipcRenderer.on("player-view-fail-load", h);
+    return h;
+  },
+  offPlayerViewFailLoad: (h) =>
+    ipcRenderer.removeListener("player-view-fail-load", h),
 });

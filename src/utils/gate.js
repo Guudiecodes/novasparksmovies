@@ -1,181 +1,258 @@
 /**
- * gate.js — NovaSpark feature gate · v2.1
+ * gate.js — NovaSpark feature gate · v2.0
  *
  * Single source of truth for what each plan can access.
- * Works WITH premium.js — never duplicates plan resolution.
+ * Import this everywhere; never scatter plan-level logic in pages.
  *
- * Plan order (matches premium.js exactly):
- *   free → standard → premium
+ * Plan order (ascending):
+ *   free → mobile → basic → standard → premium
  *
  * ── STRATEGY ──────────────────────────────────────────────────────────────────
- *  1. 14-day full-access trial  — build habits before the wall appears
- *  2. Soft limits with nudges   — warn at 80%, never surprise-block
- *  3. Loss-aversion messaging   — "you HAD this" > "upgrade to get this"
- *  4. Smart upsell timing       — evening hours + session blocks + trial end
- *  5. Strict post-trial walls   — firm but never rude
+ *  1. 14-day full-access trial  — build habits, create dependency
+ *  2. Soft limits with nudges   — warn before blocking, never surprise
+ *  3. Loss-aversion messaging   — "you HAD this" hits harder than "upgrade"
+ *  4. Smart upsell timing       — nudge when engagement is highest
+ *  5. Strict post-trial walls   — respectful but firm, no free rides
+ *
+ * ── OPEN ACCESS MODE ──────────────────────────────────────────────────────────
+ * Flip OPEN_ACCESS to false to activate all gating + trial logic.
  */
 
-import { isPremiumActive, getPremiumRecord, getEffectivePlan as premiumEffectivePlan } from "./premium";
+export const OPEN_ACCESS = false; // ← true = everything free (dev/promo mode)
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const TRIAL_DAYS        = 14;
-const TRIAL_WARNING_DAY = 11;
+const TRIAL_DAYS        = 14;   // free full-access window
+const TRIAL_WARNING_DAY = 11;   // start showing countdown from this day
 const PREFIX            = "streambert_";
 
-// ── Plan rank — mirrors premium.js exactly ────────────────────────────────────
-const PLAN_RANK = { free: 0, standard: 1, premium: 2 };
-
-// ── Pricing ───────────────────────────────────────────────────────────────────
-export const PLAN_PRICES = {
-  standard: { usd: "$0.99",  ngn: "₦1,584",  label: "Standard" },
-  premium:  { usd: "Coming soon", ngn: null,  label: "Premium"  },
+// ── Plan rank map ─────────────────────────────────────────────────────────────
+const PLAN_RANK = {
+  free:     0,
+  mobile:   1,
+  basic:    2,
+  standard: 3,
+  premium:  4,
 };
 
-// ── Soft usage limits (monthly unless noted as daily) ─────────────────────────
-// free = post-trial locked values
+// ── Pricing (shown in gate messages) ─────────────────────────────────────────
+export const PLAN_PRICES = {
+  mobile:   { usd: "$0.65",  ngn: "₦1,000",  label: "Mobile"   },
+  basic:    { usd: "$0.95",  ngn: "₦1,500",  label: "Basic"    },
+  standard: { usd: "$2.20",  ngn: "₦3,500",  label: "Standard" },
+  premium:  { usd: "$4.10",  ngn: "₦6,500",  label: "Premium"  },
+};
+
+// ── Soft usage limits per billing period ──────────────────────────────────────
+// free = post-trial locked, numbers are monthly allowances
 const SOFT_LIMITS = {
   download: {
     free:     0,
-    standard: Infinity,   // standard gets unlimited downloads
+    mobile:   0,
+    basic:    10,
+    standard: 40,
     premium:  Infinity,
   },
   source_switch: {
-    free:     3,          // 3 per day — enough to taste, not enough to rely on
+    free:     3,   // 3 per day, resets daily — enough to taste, not enough to rely on
+    mobile:   Infinity,
+    basic:    Infinity,
     standard: Infinity,
     premium:  Infinity,
   },
   subtitles: {
-    free:     2,          // 2 per day
+    free:     2,   // per day
+    mobile:   5,
+    basic:    Infinity,
     standard: Infinity,
     premium:  Infinity,
   },
 };
 
-const NUDGE_AT = 0.8; // warn at 80% of limit
+// ── Nudge thresholds — warn at this % of limit ────────────────────────────────
+const NUDGE_AT = 0.8; // 80% used → first warning
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TRIAL SYSTEM
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Call once on app boot (e.g. in App.jsx useEffect).
- * Stamps trial start date on first launch — safe to call multiple times.
+ * Called once on app boot. Sets trial start if not already set.
+ * Safe to call multiple times — only writes once.
  */
 export function initTrial() {
   try {
-    if (!localStorage.getItem(PREFIX + "trial_start")) {
+    const existing = localStorage.getItem(PREFIX + "trial_start");
+    if (!existing) {
       localStorage.setItem(PREFIX + "trial_start", String(Date.now()));
     }
   } catch {}
 }
 
 /**
- * Full trial status. Use this everywhere trial state is needed.
+ * Returns full trial status object.
+ * @returns {{
+ *   started:    boolean,
+ *   active:     boolean,   // trial is currently running
+ *   expired:    boolean,   // trial has ended and user is on free
+ *   daysLeft:   number,    // 0 when expired
+ *   daysUsed:   number,
+ *   startedAt:  number|null,
+ *   endsAt:     number|null,
+ *   warning:    boolean,   // true when in the final warning window
+ * }}
  */
 export function getTrialStatus() {
   const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
   try {
     const raw = localStorage.getItem(PREFIX + "trial_start");
-    if (!raw) return { started: false, active: false, expired: false, daysLeft: 0, daysUsed: 0, startedAt: null, endsAt: null, warning: false };
+    if (!raw) {
+      return { started: false, active: false, expired: false, daysLeft: 0, daysUsed: 0, startedAt: null, endsAt: null, warning: false };
+    }
     const startedAt = parseInt(raw, 10);
     const endsAt    = startedAt + TRIAL_MS;
     const now       = Date.now();
-    const daysUsed  = Math.floor((now - startedAt) / (24 * 60 * 60 * 1000));
+    const elapsed   = now - startedAt;
+    const daysUsed  = Math.floor(elapsed / (24 * 60 * 60 * 1000));
     const daysLeft  = Math.max(0, TRIAL_DAYS - daysUsed);
     const active    = now < endsAt;
-    return {
-      started: true,
-      active,
-      expired: !active,
-      daysLeft,
-      daysUsed,
-      startedAt,
-      endsAt,
-      warning: active && daysUsed >= TRIAL_WARNING_DAY,
-    };
+    const expired   = !active;
+    const warning   = active && daysUsed >= TRIAL_WARNING_DAY;
+    return { started: true, active, expired, daysLeft, daysUsed, startedAt, endsAt, warning };
   } catch {
     return { started: false, active: false, expired: false, daysLeft: 0, daysUsed: 0, startedAt: null, endsAt: null, warning: false };
   }
 }
 
 /**
- * Banner text for the countdown UI. Returns null when no message needed.
+ * Human-readable trial status string for UI banners.
+ * Returns null when no message is needed.
  */
 export function getTrialBannerMessage() {
-  // Already a paying subscriber — no banner
-  if (isPremiumActive()) return null;
+  if (OPEN_ACCESS) return null;
+  const plan = getCurrentPlan();
+  if (plan !== "free") return null; // paying user, no banner needed
   const t = getTrialStatus();
-  if (!t.started || !t.warning) return null;
+  if (!t.started) return null;
+  if (t.expired)  return null; // wall is shown elsewhere
+  if (!t.warning) return null; // too early, don't nag
   if (t.daysLeft === 0) return "⏰ Your free trial ends today. Lock in your plan to keep everything.";
-  if (t.daysLeft === 1) return "⏰ 1 day left on your trial. Don't lose access tomorrow.";
+  if (t.daysLeft === 1) return "⏰ 1 day left on your free trial. Don't lose access tomorrow.";
   return `⏰ ${t.daysLeft} days left on your free trial.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLAN RESOLUTION — thin wrapper over premium.js
+// PLAN RESOLUTION
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The plan that governs feature access RIGHT NOW.
- * During an active trial, free users are treated as standard.
- * Paying users always get their real plan from premium.js.
+ * Returns the stored plan id for the current user.
+ * Does NOT apply trial or admin floor — use getEffectivePlan() for that.
  */
-export function getActivePlan() {
-  // Paying subscriber — trust premium.js
-  if (isPremiumActive()) return premiumEffectivePlan();
-
-  // Free user — check if trial is active
-  const trial = getTrialStatus();
-  if (trial.active) return "standard"; // trial = full standard access
-
-  return "free";
+export function getCurrentPlan() {
+  if (OPEN_ACCESS) return "premium";
+  try {
+    const raw = localStorage.getItem(PREFIX + "ns_premium_record");
+    if (!raw) return "free";
+    const rec = JSON.parse(raw);
+    if (!rec?.planId || rec.planId === "free") return "free";
+    if (rec.expiresAt && Date.now() >= rec.expiresAt) return "free";
+    return rec.planId;
+  } catch {
+    return "free";
+  }
 }
 
-function atLeast(required) {
-  return (PLAN_RANK[getActivePlan()] ?? 0) >= (PLAN_RANK[required] ?? 999);
+export function getAdminGlobalPlan() {
+  try { return localStorage.getItem("ns_admin_global_plan") || "free"; } catch { return "free"; }
+}
+
+export function setAdminGlobalPlan(planId) {
+  try {
+    if (!planId || planId === "free") localStorage.removeItem("ns_admin_global_plan");
+    else localStorage.setItem("ns_admin_global_plan", planId);
+  } catch {}
+}
+
+/**
+ * The plan that actually governs feature access.
+ * Applies: admin floor > stored plan > trial boost > free.
+ *
+ * During an active trial a "free" user is treated as "premium"
+ * so they experience everything before the wall hits.
+ */
+export function getEffectivePlan(planId) {
+  if (OPEN_ACCESS) return "premium";
+
+  const user  = planId || getCurrentPlan();
+  const floor = getAdminGlobalPlan();
+
+  // Trial boost — free users get premium during trial
+  let resolved = user;
+  if (resolved === "free") {
+    const trial = getTrialStatus();
+    if (trial.active) resolved = "premium";
+  }
+
+  // Admin floor wins if higher
+  const resolvedRank = PLAN_RANK[resolved]  ?? 0;
+  const floorRank    = PLAN_RANK[floor]     ?? 0;
+  return floorRank > resolvedRank ? floor : resolved;
+}
+
+function atLeast(planId, requiredId) {
+  if (OPEN_ACCESS) return true;
+  const effective = getEffectivePlan(planId);
+  return (PLAN_RANK[effective] ?? 0) >= (PLAN_RANK[requiredId] ?? 999);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FEATURE GATES
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function canSwitchSource()    { return atLeast("standard"); }
-export function canDownload()        { return atLeast("standard"); }
-export function canUseSubtitles()    { return atLeast("standard"); }
-export function canContinueWatching(){ return atLeast("standard"); }
-export function canPopOut()          { return atLeast("premium");  }
-export function can4K()              { return atLeast("premium");  }
+export function canSwitchSource(planId) { return atLeast(planId, "mobile");   }
+export function canDownload(planId)     { return atLeast(planId, "basic");    }
+export function canUseSubtitles(planId) { return atLeast(planId, "basic");    }
+export function canPopOut(planId)       { return atLeast(planId, "standard"); }
+export function canMultiDevice(planId)  { return atLeast(planId, "standard"); }
+export function can4K(planId)          { return atLeast(planId, "premium");  }
 
-export function maxQualityLabel() {
-  const p = getActivePlan();
-  if (p === "premium")  return "4K Ultra HD";
-  if (p === "standard") return "Full HD 1080p";
+export function maxQualityLabel(planId) {
+  if (OPEN_ACCESS) return "4K Ultra HD";
+  const p = getEffectivePlan(planId);
+  if (atLeast(p, "premium"))  return "4K Ultra HD";
+  if (atLeast(p, "standard")) return "Full HD 1080p";
+  if (atLeast(p, "basic"))    return "HD 720p";
+  if (atLeast(p, "mobile"))   return "HD 720p";
   return "SD 480p";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SOFT LIMITS
+// SOFT LIMITS — usage counters that warn before blocking
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DAILY_FEATURES = ["source_switch", "subtitles"];
-
-function usageKey(feature) {
-  const now = new Date();
-  const daily = DAILY_FEATURES.includes(feature);
-  const bucket = daily
+/**
+ * Returns the storage key for a given feature's usage counter.
+ * Resets are period-based: "monthly" or "daily".
+ */
+function usageKey(feature, period = "monthly") {
+  const now    = new Date();
+  const bucket = period === "daily"
     ? `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`
     : `${now.getFullYear()}-${now.getMonth()}`;
   return `${PREFIX}usage_${feature}_${bucket}`;
 }
 
-export function getUsageCount(feature) {
-  try { return parseInt(localStorage.getItem(usageKey(feature)) || "0", 10); } catch { return 0; }
+export function getUsageCount(feature, period = "monthly") {
+  try {
+    const raw = localStorage.getItem(usageKey(feature, period));
+    return raw ? parseInt(raw, 10) : 0;
+  } catch { return 0; }
 }
 
-export function incrementUsage(feature) {
+export function incrementUsage(feature, period = "monthly") {
   try {
-    const key = usageKey(feature);
-    const cur = getUsageCount(feature);
+    const key = usageKey(feature, period);
+    const cur = getUsageCount(feature, period);
     localStorage.setItem(key, String(cur + 1));
     trackActivity(feature, { count: cur + 1 });
     return cur + 1;
@@ -183,44 +260,69 @@ export function incrementUsage(feature) {
 }
 
 /**
- * Full soft-limit check.
- * Call this before letting a user perform a gated action.
+ * Full soft-limit check for a feature.
+ * @returns {{
+ *   allowed:   boolean,  // can they do this action right now?
+ *   hardBlock: boolean,  // over limit — show upgrade wall
+ *   nudge:     boolean,  // approaching limit — show soft warning
+ *   used:      number,
+ *   limit:     number,
+ *   remaining: number,
+ *   period:    string,
+ * }}
  */
-export function checkSoftLimit(feature) {
-  const plan    = getActivePlan();
-  const limits  = SOFT_LIMITS[feature];
-  if (!limits) return { allowed: true, hardBlock: false, nudge: false, used: 0, limit: Infinity, remaining: Infinity };
+export function checkSoftLimit(feature, planId) {
+  if (OPEN_ACCESS) return { allowed: true, hardBlock: false, nudge: false, used: 0, limit: Infinity, remaining: Infinity, period: "monthly" };
 
-  const limit     = limits[plan] ?? 0;
-  const used      = getUsageCount(feature);
+  const effective = getEffectivePlan(planId);
+
+  // Determine period for this feature
+  const dailyFeatures = ["source_switch", "subtitles"];
+  const period        = dailyFeatures.includes(feature) ? "daily" : "monthly";
+
+  const limits = SOFT_LIMITS[feature];
+  if (!limits) return { allowed: true, hardBlock: false, nudge: false, used: 0, limit: Infinity, remaining: Infinity, period };
+
+  const limit     = limits[effective] ?? 0;
+  const used      = getUsageCount(feature, period);
   const remaining = Math.max(0, limit - used);
   const hardBlock = limit !== Infinity && used >= limit;
   const nudge     = !hardBlock && limit !== Infinity && used >= Math.floor(limit * NUDGE_AT);
 
-  return { allowed: !hardBlock, hardBlock, nudge, used, limit, remaining };
-}
-
-export function getSoftLimitNudge(feature, remaining) {
-  const m = {
-    download:      `${remaining} download${remaining !== 1 ? "s" : ""} left this month.`,
-    source_switch: `${remaining} source switch${remaining !== 1 ? "es" : ""} left today.`,
-    subtitles:     `${remaining} subtitle download${remaining !== 1 ? "s" : ""} left today.`,
-  };
-  return (m[feature] || `${remaining} use${remaining !== 1 ? "s" : ""} remaining.`) + " Upgrade for unlimited.";
+  return { allowed: !hardBlock, hardBlock, nudge, used, limit, remaining, period };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SMART UPSELL TIMING
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Returns true when the system thinks the user is most receptive to an upsell.
+ * Factors: evening hours, high engagement session, trial warning window,
+ * multiple hard blocks in this session.
+ */
 export function shouldNudgeUpgrade() {
-  if (isPremiumActive()) return false;
+  if (OPEN_ACCESS) return false;
+  const plan = getEffectivePlan();
+  if (plan !== "free") return false; // already paying
+
   const hour      = new Date().getHours();
-  const isEvening = hour >= 18 && hour <= 23;
-  const trial     = getTrialStatus();
-  return isEvening || (trial.active && trial.daysLeft <= 3) || trial.expired || getSessionBlockCount() >= 2;
+  const isEvening = hour >= 18 && hour <= 23; // peak emotional engagement
+
+  const trial    = getTrialStatus();
+  const nearEnd  = trial.active && trial.daysLeft <= 3;
+  const expired  = trial.expired;
+
+  const blocks = getSessionBlockCount();
+  const highBlock = blocks >= 2; // hit wall twice this session
+
+  return isEvening || nearEnd || expired || highBlock;
 }
 
+/**
+ * Track how many times user has hit a hard block this session.
+ * Resets on page reload (sessionStorage).
+ */
 export function recordSessionBlock() {
   try {
     const cur = parseInt(sessionStorage.getItem("ns_session_blocks") || "0", 10);
@@ -229,43 +331,38 @@ export function recordSessionBlock() {
 }
 
 export function getSessionBlockCount() {
-  try { return parseInt(sessionStorage.getItem("ns_session_blocks") || "0", 10); } catch { return 0; }
+  try { return parseInt(sessionStorage.getItem("ns_session_blocks") || "0", 10); }
+  catch { return 0; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GATE DESCRIPTORS
+// GATE DESCRIPTORS + PSYCHOLOGY-AWARE MESSAGES
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const GATES = {
   source_switch: {
     label:       "Source Switching",
     description: "Access 30+ streaming providers and auto-source detection.",
-    required:    "standard",
-    planLabel:   "Standard Plan",
+    required:    "mobile",
+    planLabel:   "Mobile Plan",
   },
   download: {
     label:       "Downloads",
     description: "Download movies and episodes to watch offline.",
-    required:    "standard",
-    planLabel:   "Standard Plan",
+    required:    "basic",
+    planLabel:   "Basic Plan",
   },
   subtitles: {
     label:       "Subtitle Downloader",
     description: "Download subtitles in any language for your local files.",
-    required:    "standard",
-    planLabel:   "Standard Plan",
-  },
-  continue_watching: {
-    label:       "Continue Watching",
-    description: "Pick up exactly where you left off, across sessions.",
-    required:    "standard",
-    planLabel:   "Standard Plan",
+    required:    "basic",
+    planLabel:   "Basic Plan",
   },
   pip: {
     label:       "Pop-Out Player",
     description: "Watch in a floating window while you browse.",
-    required:    "premium",
-    planLabel:   "Premium Plan",
+    required:    "standard",
+    planLabel:   "Standard Plan",
   },
   quality_4k: {
     label:       "4K Ultra HD",
@@ -276,65 +373,58 @@ export const GATES = {
 };
 
 const GATE_ICONS = {
-  source_switch:     "🌐",
-  download:          "⬇️",
-  pip:               "🖼️",
-  subtitles:         "📝",
-  quality_4k:        "🎬",
-  continue_watching: "▶️",
+  source_switch: "🌐",
+  download:      "⬇️",
+  pip:           "🖼️",
+  subtitles:     "📝",
+  quality_4k:    "🎬",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PSYCHOLOGY-AWARE GATE MESSAGES
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * Returns a gate message object tuned to current user state.
+ * Returns a psychologically-tuned gate message.
+ * Adapts tone based on: trial state, session block count, time of day.
  *
- * Shape (used by PremiumGate.jsx):
- * {
- *   icon:    string,
- *   title:   string,
- *   desc:    string,
- *   subdesc: string | null,
- *   price:   string | null,
- *   cta:     string,
- *   urgency: boolean,
- * }
+ * Three states:
+ *   "trial_expired" — they HAD it, now it's gone (loss aversion)
+ *   "first_block"   — soft, curious
+ *   "repeat_block"  — urgent, specific price
  */
 export function getGateMessage(feature) {
   const keyMap = {
-    source:           "source_switch",
-    download:         "download",
-    pip:              "pip",
-    subtitles:        "subtitles",
-    quality_4k:       "quality_4k",
-    continue_watching:"continue_watching",
+    source:     "source_switch",
+    download:   "download",
+    pip:        "pip",
+    subtitles:  "subtitles",
+    quality_4k: "quality_4k",
   };
   const key  = keyMap[feature] || feature;
   const gate = GATES[key];
 
   if (!gate) {
     return {
-      icon: "🔒", title: "Premium Feature",
-      desc: "Upgrade your plan to unlock this.", subdesc: null,
-      price: null, cta: "See Plans", urgency: false,
+      icon:    "🔒",
+      title:   "Premium Feature",
+      desc:    "Upgrade your plan to unlock this.",
+      subdesc: null,
+      price:   null,
+      cta:     "See Plans",
+      urgency: false,
     };
   }
 
-  const trial    = getTrialStatus();
-  const blocks   = getSessionBlockCount();
+  const trial  = getTrialStatus();
+  const blocks = getSessionBlockCount();
   recordSessionBlock();
 
-  const priceData = PLAN_PRICES[gate.required];
-  const priceStr  = priceData?.ngn ? `${priceData.ngn}/month · ${priceData.usd}` : null;
+  const price   = PLAN_PRICES[gate.required];
+  const priceStr = price ? `${price.ngn}/month · ${price.usd}` : null;
 
-  // ── Loss aversion — trial expired, they REMEMBER having this ──────────────
-  if (trial.expired && !isPremiumActive()) {
+  // Loss aversion — most powerful message, only shown post-trial
+  if (trial.expired) {
     return {
       icon:    GATE_ICONS[key] || "🔒",
       title:   `You had ${gate.label} — get it back`,
-      desc:    `You used this free during your 14-day trial. Upgrade to ${gate.planLabel} to keep it.`,
+      desc:    `You used this free during your trial. Upgrade to ${gate.planLabel} to keep it.`,
       subdesc: "Everything you built your habits around is still here.",
       price:   priceStr,
       cta:     "Restore Access",
@@ -342,33 +432,33 @@ export function getGateMessage(feature) {
     };
   }
 
-  // ── Trial ending soon — countdown urgency ─────────────────────────────────
+  // Soft nudge — first time hitting a wall, trial still active but near end
   if (trial.warning && blocks <= 1) {
     return {
       icon:    GATE_ICONS[key] || "🔒",
       title:   `${trial.daysLeft}d left of ${gate.label}`,
-      desc:    `Your free trial ends in ${trial.daysLeft} day${trial.daysLeft !== 1 ? "s" : ""}. Upgrade to keep uninterrupted access.`,
-      subdesc: priceStr ? `${gate.planLabel} — ${priceStr}` : null,
+      desc:    `Your free trial ends in ${trial.daysLeft} day${trial.daysLeft !== 1 ? "s" : ""}. Upgrade now to keep uninterrupted access.`,
+      subdesc: `${gate.planLabel} — ${priceStr}`,
       price:   priceStr,
       cta:     "Keep Access",
       urgency: true,
     };
   }
 
-  // ── Repeat block — they keep trying, be direct ────────────────────────────
+  // Repeat block in same session — they're clearly trying to use it, be direct
   if (blocks >= 2) {
     return {
       icon:    GATE_ICONS[key] || "🔒",
       title:   `Unlock ${gate.label}`,
       desc:    gate.description,
-      subdesc: "Thousands of NovaSpark users have this right now.",
+      subdesc: `Thousands of NovaSpark users are watching with this right now.`,
       price:   priceStr,
-      cta:     priceStr ? `Upgrade — ${priceStr}` : `Upgrade to ${gate.planLabel}`,
+      cta:     `Upgrade — ${priceStr || "See Plans"}`,
       urgency: true,
     };
   }
 
-  // ── Default — first encounter ─────────────────────────────────────────────
+  // Default — first encounter, neutral
   return {
     icon:    GATE_ICONS[key] || "🔒",
     title:   gate.label,
@@ -380,8 +470,21 @@ export function getGateMessage(feature) {
   };
 }
 
+/**
+ * Soft-limit nudge message — shown BEFORE the hard block.
+ * Called when checkSoftLimit().nudge === true.
+ */
+export function getSoftLimitNudge(feature, remaining) {
+  const messages = {
+    download:      `${remaining} download${remaining !== 1 ? "s" : ""} left this month. Upgrade for unlimited.`,
+    source_switch: `${remaining} source switch${remaining !== 1 ? "es" : ""} left today.`,
+    subtitles:     `${remaining} subtitle download${remaining !== 1 ? "s" : ""} left today.`,
+  };
+  return messages[feature] || `${remaining} use${remaining !== 1 ? "s" : ""} remaining.`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// ACTIVITY TRACKER (unchanged from v1)
+// ACTIVITY TRACKER
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function trackActivity(feature, meta = {}) {
@@ -398,32 +501,50 @@ export function trackActivity(feature, meta = {}) {
 export function getActivityLog() {
   try {
     const raw = localStorage.getItem(PREFIX + "ns_activity_log");
-    return (raw ? JSON.parse(raw) : []).sort((a, b) => b.ts - a.ts);
+    const log = raw ? JSON.parse(raw) : [];
+    return log.sort((a, b) => b.ts - a.ts);
   } catch { return []; }
 }
 
 export function getFeatureUsageSummary() {
-  return getActivityLog().reduce((acc, e) => {
+  const log = getActivityLog();
+  return log.reduce((acc, e) => {
     acc[e.feature] = (acc[e.feature] || 0) + 1;
     return acc;
   }, {});
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ENGAGEMENT STATS — fed back to AI and admin dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a summary of this user's engagement for the admin dashboard
+ * and for the NS AI personalisation engine.
+ */
 export function getUserEngagementProfile() {
   const log     = getActivityLog();
   const trial   = getTrialStatus();
+  const plan    = getCurrentPlan();
   const summary = getFeatureUsageSummary();
-  const top     = Object.entries(summary).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-  const first   = log.length ? log[log.length - 1].ts : null;
+  const blocks  = getSessionBlockCount();
+
+  // Most-used feature
+  const topFeature = Object.entries(summary).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+  // Days since first activity
+  const first = log.length ? log[log.length - 1].ts : null;
+  const daysSinceFirst = first ? Math.floor((Date.now() - first) / (1000 * 60 * 60 * 24)) : 0;
+
   return {
-    plan:           getActivePlan(),
+    plan,
     trial,
-    topFeature:     top,
-    totalEvents:    log.length,
-    daysSinceFirst: first ? Math.floor((Date.now() - first) / 86400000) : 0,
-    sessionBlocks:  getSessionBlockCount(),
-    featureSummary: summary,
-    convertRisk:    trial.expired && !isPremiumActive() ? "high" : trial.warning ? "medium" : "low",
-    nudgeNow:       shouldNudgeUpgrade(),
+    topFeature,
+    totalEvents:     log.length,
+    daysSinceFirst,
+    sessionBlocks:   blocks,
+    featureSummary:  summary,
+    convertRisk:     trial.expired && plan === "free" ? "high" : trial.warning ? "medium" : "low",
+    nudgeNow:        shouldNudgeUpgrade(),
   };
 }
