@@ -84,14 +84,14 @@ async function handleAuth(req, res) {
     const user = Array.isArray(data) ? data[0] : data;
     return res.status(200).json({
       ok:   true,
-      user: { id: user.id, email: normalEmail, displayName: user.display_name },
+      user: { id: user.id, email: normalEmail, displayName: user.display_name, is_admin: user.is_admin || false },
     });
   }
 
   // ── Login ───────────────────────────────────────────────────────────────────
   if (action === "login") {
     const { ok, data } = await sb("GET", "/users", null, {
-      select:        "id,email,display_name",
+      select:        "id,email,display_name,is_admin",
       email:         `eq.${normalEmail}`,
       password_hash: `eq.${passHash}`,
     });
@@ -106,7 +106,7 @@ async function handleAuth(req, res) {
 
     return res.status(200).json({
       ok:   true,
-      user: { id: user.id, email: user.email, displayName: user.display_name },
+      user: { id: user.id, email: user.email, displayName: user.display_name, is_admin: user.is_admin || false },
     });
   }
 
