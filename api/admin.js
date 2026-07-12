@@ -4,7 +4,7 @@
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const ADMIN_EMAIL  = "jokesonyou146@gmail.com";
-const ADMIN_PASS   = "flexlife1";
+const ADMIN_PASS   = process.env.ADMIN_PASSWORD;
 
 function checkAuth(req) {
   const token = req.headers["x-admin-token"];
