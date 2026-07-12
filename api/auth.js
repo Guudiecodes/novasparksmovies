@@ -14,6 +14,9 @@ function hashPassword(str) {
 }
 
 async function sb(method, path, body = null, params = {}) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    throw new Error("MISSING_ENV: SUPABASE_URL or SUPABASE_SERVICE_KEY not set on this Vercel project");
+  }
   const url = new URL(`${SUPABASE_URL}/rest/v1${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   const res = await fetch(url.toString(), {
@@ -30,6 +33,15 @@ async function sb(method, path, body = null, params = {}) {
 }
 
 export default async function handler(req, res) {
+  try {
+    return await handleAuth(req, res);
+  } catch (err) {
+    console.error("AUTH_HANDLER_CRASH:", err.message);
+    return res.status(500).json({ error: "Server error: " + err.message });
+  }
+}
+
+async function handleAuth(req, res) {
   res.setHeader("Access-Control-Allow-Origin",  "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -47,7 +59,6 @@ export default async function handler(req, res) {
 
   // ── Register ────────────────────────────────────────────────────────────────
   if (action === "register") {
-    // Check if email already taken
     const check = await sb("GET", "/users", null, {
       select: "id",
       email:  `eq.${normalEmail}`,
@@ -91,7 +102,6 @@ export default async function handler(req, res) {
 
     const user = data[0];
 
-    // Update last_active (fire-and-forget)
     sb("PATCH", `/users?id=eq.${user.id}`, { last_active: new Date().toISOString() }).catch(() => {});
 
     return res.status(200).json({
