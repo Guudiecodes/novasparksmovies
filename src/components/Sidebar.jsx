@@ -4,7 +4,6 @@ import { getEffectivePlan as getCurrentPlan } from "../utils/premium";
 import DonateModal from "../components/DonateModal";
 
 // ── Thin-stroke modern icon set ─────────────────────────────────────────────
-// Consistent: 1.75px stroke, 20px, rounded caps/joins
 const S = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round", strokeLinejoin: "round" };
 function Ico({ d, children }) { return <svg {...S}>{children || <path d={d}/>}</svg>; }
 
@@ -23,8 +22,9 @@ const IcoShorts   = () => <Ico><rect x="3" y="2" width="13" height="20" rx="3.2"
 const IcoBookmark = () => <Ico><path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6.5-4.3L5.5 21V4.5a1 1 0 0 1 1-1z"/></Ico>;
 const IcoDots     = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>;
 const IcoX        = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>;
+const IcoShield   = () => <Ico><path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z"/><path d="M9 12l2 2 4-4"/></Ico>;
+const IcoSparkle  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3.5l1.85 4.65L18.5 10l-4.65 1.85L12 16.5l-1.85-4.65L5.5 10l4.65-1.85z" fill="currentColor"/></svg>;
 
-// NS-AI gradient icon (kept as the one intentional spark of color in the rail)
 const IcoAI = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
     <defs>
@@ -38,8 +38,6 @@ const IcoAI = () => (
 );
 
 // ── Constants ────────────────────────────────────────────────────────────────
-// One fixed rail width. No hover-expand, no width animation — this is the fix
-// for the lag: nothing about the sidebar's own layout ever changes on hover.
 const SB_W = 78;
 
 function getPlanTier(id) {
@@ -86,22 +84,6 @@ function DownloadPopup({ onClose, left = SB_W + 12, bottom = 100 }) {
   );
 }
 
-// ── NS Logo ───────────────────────────────────────────────────────────────────
-function NSLogo({ tier }) {
-  const t=TIER[tier]||TIER.free, gid=`nsg${tier}`;
-  return (
-    <svg viewBox="0 0 44 44" fill="none" style={{width:"100%",height:"100%",display:"block"}}>
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="44" y2="44" gradientUnits="userSpaceOnUse">
-          <stop stopColor={t.g0}/><stop offset="1" stopColor={t.g1}/>
-        </linearGradient>
-      </defs>
-      <circle cx="22" cy="22" r="20" fill={`url(#${gid})`} opacity={tier==="free"?0.08:0.14}/>
-      <circle cx="22" cy="22" r="20" stroke={`url(#${gid})`} strokeWidth={tier==="free"?"1.5":"2"} fill="none"/>
-      <text x="22" y="28" textAnchor="middle" fontFamily="'Bebas Neue','Outfit',sans-serif" fontSize="18" fontWeight="700" fill={`url(#${gid})`} letterSpacing="1">NS</text>
-    </svg>
-  );
-}
 function TierDot({ tier }) {
   if (tier==="free") return null;
   const t=TIER[tier];
@@ -115,7 +97,7 @@ function useIsMobile() {
   return m;
 }
 
-// ── Corner badge — sits ON TOP of an icon's corner, never expands the row ────
+// ── Corner badge ──────────────────────────────────────────────────────────────
 function IconWithBadge({ icon, badge }) {
   return (
     <span style={{ position:"relative", width:20, height:20, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -127,11 +109,7 @@ function IconWithBadge({ icon, badge }) {
 const DotBadge = ({ color="var(--red)" }) => <span style={{ display:"block", width:7, height:7, borderRadius:"50%", background:color, border:"1.5px solid var(--bg,#050c0f)" }}/>;
 const CountBadge = ({ n }) => <span style={{ display:"flex", minWidth:15, height:15, padding:"0 3px", borderRadius:8, background:"var(--red)", border:"1.5px solid var(--bg,#050c0f)", color:"#fff", fontSize:9, fontWeight:800, alignItems:"center", justifyContent:"center" }}>{n>9?"9+":n}</span>;
 
-// ── Rail button — icon + a permanent micro-label underneath. ────────────────
-// This is the whole point: the user can tell what a button does by *reading
-// it*, every time, with zero hover delay and zero layout change. A tooltip
-// (driven by the parent's showTip/hideTip) only ever adds a little extra
-// detail (a shortcut, a count) — the rail never depends on it to make sense.
+// ── Rail button ──────────────────────────────────────────────────────────────
 function RailBtn({ active, icon, label, badge, hint, accent, activeColor, onClick, onTip, onTipEnd }) {
   const [hov,setHov]=useState(false);
   const ref = useRef(null);
@@ -151,6 +129,70 @@ function RailBtn({ active, icon, label, badge, hint, accent, activeColor, onClic
   );
 }
 
+// ── Account avatar — the new element replacing the logo slot ────────────────
+// Small animated ring pulse on mount/tier-change gives the "futuristic" feel
+// requested, without adding any layout shift or ongoing CPU cost (animation
+// runs once via CSS, not a JS interval).
+function AccountAvatar({ userProfile, tier, open, onClick, onTip, onTipEnd }) {
+  const tc = TIER[tier];
+  const initial = (userProfile?.displayName || userProfile?.email || "?").trim().charAt(0).toUpperCase();
+  const ref = useRef(null);
+
+  if (!userProfile) {
+    return (
+      <button
+        ref={ref}
+        onClick={onClick}
+        onMouseEnter={()=>onTip?.(ref.current, "Sign in")}
+        onMouseLeave={onTipEnd}
+        style={{
+          all:"unset", display:"flex", alignItems:"center", justifyContent:"center",
+          width:44, height:44, borderRadius:"50%", cursor:"pointer",
+          border:"1.5px dashed var(--border)", color:"var(--text3)",
+          transition:"border-color 0.15s, color 0.15s", flexShrink:0,
+        }}
+        onMouseOver={e=>{ e.currentTarget.style.borderColor="var(--red)"; e.currentTarget.style.color="var(--text)"; }}
+        onMouseOut={e=>{ e.currentTarget.style.borderColor="var(--border)"; e.currentTarget.style.color="var(--text3)"; }}
+      >
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>
+        </svg>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      ref={ref}
+      onClick={onClick}
+      onMouseEnter={()=>onTip?.(ref.current, userProfile.displayName || userProfile.email)}
+      onMouseLeave={onTipEnd}
+      style={{ all:"unset", position:"relative", width:44, height:44, cursor:"pointer", flexShrink:0 }}
+    >
+      <style>{`
+        @keyframes ns-avatar-ring{
+          0%{ box-shadow:0 0 0 0 ${tc.ring}55; }
+          70%{ box-shadow:0 0 0 8px ${tc.ring}00; }
+          100%{ box-shadow:0 0 0 0 ${tc.ring}00; }
+        }
+      `}</style>
+      <div style={{
+        width:"100%", height:"100%", borderRadius:"50%",
+        background:`linear-gradient(135deg, ${tc.g0}, ${tc.g1})`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        color:"#fff", fontSize:16, fontWeight:800, fontFamily:"var(--font-display)",
+        border: open ? `2px solid ${tc.ring}` : "2px solid transparent",
+        boxSizing:"border-box",
+        animation: tier!=="free" ? "ns-avatar-ring 2.4s ease-out 1" : "none",
+        transition:"border-color 0.15s",
+      }}>
+        {initial}
+      </div>
+      <TierDot tier={tier}/>
+    </button>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // SIDEBAR COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
@@ -158,16 +200,18 @@ export default function Sidebar({
   page, onNavigate, onSearch, savedList, activeDownloads,
   onReorderSaved, onRemoveSaved, canGoBack, onBack,
   onShowShortcuts, isPremium, onUpgrade,
+  userProfile, onLogin, onLogout, onAdmin,
 }) {
   const [showDonate, setShowDonate] = useState(false);
   const [showDl,     setShowDl]     = useState(false);
   const [ctxMenu,    setCtxMenu]    = useState(null);
   const [planId,     setPlanId]     = useState(()=>getCurrentPlan());
-  const [tip,        setTip]        = useState(null);   // { text, top }
+  const [tip,        setTip]        = useState(null);
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreTop,    setMoreTop]    = useState(0);
   const [wlOpen,     setWlOpen]     = useState(false);
   const [wlTop,      setWlTop]      = useState(0);
+  const [acctOpen,   setAcctOpen]   = useState(false);
 
   const dragItem = useRef(null);
   const dragNode = useRef(null);
@@ -180,7 +224,6 @@ export default function Sidebar({
   const tc   = TIER[tier];
   const isWeb = !window.electron;
 
-  // Rail width is fixed — set the CSS var once instead of on every hover.
   useEffect(()=>{
     if (!isMobile) document.documentElement.style.setProperty("--sidebar", `${SB_W}px`);
   },[isMobile]);
@@ -192,7 +235,7 @@ export default function Sidebar({
   },[]);
   const hideTip = useCallback(()=> setTip(null), []);
 
-  const closeFlyouts = useCallback(()=>{ setCtxMenu(null); setMoreOpen(false); setWlOpen(false); },[]);
+  const closeFlyouts = useCallback(()=>{ setCtxMenu(null); setMoreOpen(false); setWlOpen(false); setAcctOpen(false); },[]);
 
   useEffect(()=>{
     window.addEventListener("click", closeFlyouts);
@@ -209,17 +252,22 @@ export default function Sidebar({
   const toggleMore = (e)=>{
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    setWlOpen(false);
+    setWlOpen(false); setAcctOpen(false);
     setMoreOpen(v=>{ const nv=!v; if(nv) setMoreTop(Math.max(8, Math.min(r.top, window.innerHeight-230))); return nv; });
   };
   const toggleWl = (e)=>{
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    setMoreOpen(false);
+    setMoreOpen(false); setAcctOpen(false);
     setWlOpen(v=>{ const nv=!v; if(nv) setWlTop(Math.max(8, Math.min(r.top, window.innerHeight-420))); return nv; });
   };
+  const toggleAcct = (e)=>{
+    e.stopPropagation();
+    if (!userProfile) { onLogin?.(); return; }
+    setMoreOpen(false); setWlOpen(false);
+    setAcctOpen(v=>!v);
+  };
 
-  // Drag handlers (re-order watchlist)
   const dStart=(e,i)=>{ dragItem.current=i; dragNode.current=e.currentTarget; setTimeout(()=>{ if(dragNode.current) dragNode.current.style.opacity="0.4"; },0); e.dataTransfer.effectAllowed="move"; };
   const dEnd=()=>{ if(dragNode.current) dragNode.current.style.opacity="1"; dragItem.current=null; dragNode.current=null; };
   const dEnter=(e,i)=>{ if(dragItem.current===i)return; };
@@ -227,7 +275,6 @@ export default function Sidebar({
   const dOver=(e)=>{ e.preventDefault(); e.dataTransfer.dropEffect="move"; };
   const ctxOpen=(e,item)=>{ e.preventDefault(); e.stopPropagation(); hideTip(); setCtxMenu({ item, x:e.clientX, y:e.clientY }); };
 
-  const logoLabel = tier==="free" ? "Free · Upgrade" : `${tc.label} Plan`;
   const ICO = 22;
 
   // ── MOBILE ─────────────────────────────────────────────────────────────────
@@ -253,13 +300,25 @@ export default function Sidebar({
         icon:()=><svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> },
       ...(isWeb?[{ id:"get-app",label:"App",onTap:()=>setShowDl(v=>!v), icon:()=><svg width={ICO} height={ICO} viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="3.5" width="19" height="12.5" rx="1.8"/><path d="M8.5 20.5h7M12 16v4.3"/></svg> }]:[]),
     ];
+    const mobileInitial = (userProfile?.displayName || userProfile?.email || "?").trim().charAt(0).toUpperCase();
     return (
       <>
-      {/* Mobile top bar */}
       <div style={{position:"fixed",top:0,left:0,right:0,height:52,background:"rgba(4,8,13,0.98)",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",zIndex:100}}>
-        <div onClick={()=>onNavigate("pricing")} title={logoLabel} style={{position:"relative",width:32,height:32,cursor:"pointer"}}>
-          <NSLogo tier={tier}/><TierDot tier={tier}/>
-        </div>
+        <button
+          onClick={()=>{ if(!userProfile){ onLogin?.(); return; } setAcctOpen(v=>!v); }}
+          style={{ all:"unset", position:"relative", width:32, height:32, cursor:"pointer" }}
+        >
+          {userProfile ? (
+            <div style={{width:"100%",height:"100%",borderRadius:"50%",background:`linear-gradient(135deg, ${tc.g0}, ${tc.g1})`,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,fontWeight:800,fontFamily:"var(--font-display)"}}>
+              {mobileInitial}
+            </div>
+          ) : (
+            <div style={{width:"100%",height:"100%",borderRadius:"50%",border:"1.5px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text3)"}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+            </div>
+          )}
+          {userProfile && <TierDot tier={tier}/>}
+        </button>
         <span style={{fontFamily:"var(--font-display)",fontSize:18,letterSpacing:3,color:"var(--text)"}}>NOVASPARK</span>
         <div onClick={()=>onNavigate("pricing")} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:20,border:`1px solid ${tier==="free"?"var(--border)":tc.ring}`,background:tier==="free"?"rgba(255,255,255,0.03)":"rgba(0,180,166,0.07)",cursor:"pointer"}}>
           <span style={{width:6,height:6,borderRadius:"50%",background:tier==="free"?"var(--red)":tier==="silver"?"#c0c8d0":tier==="gold"?"#f5a623":"linear-gradient(135deg,#00d4ff,#7c3aed)"}}/>
@@ -267,7 +326,30 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* Mobile bottom nav */}
+      {acctOpen && userProfile && (
+        <div onClick={e=>e.stopPropagation()} style={{ position:"fixed", left:12, top:58, zIndex:9000, width:220, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:6, boxShadow:"0 10px 30px rgba(0,0,0,0.45)", animation:"nsFlyIn 0.15s ease" }}>
+          <style>{`@keyframes nsFlyIn{from{opacity:0;transform:translateY(-4px) scale(0.98);}to{opacity:1;transform:none;}}`}</style>
+          <div style={{ padding:"8px 10px 10px" }}>
+            <div style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{userProfile.displayName || "Account"}</div>
+            <div style={{ fontSize:11, color:"var(--text3)", marginTop:2 }}>{userProfile.email}</div>
+          </div>
+          <div style={{ height:1, margin:"2px 8px 6px", background:"var(--border)" }}/>
+          {tier==="free" && (
+            <button onClick={()=>{ onNavigate("pricing"); setAcctOpen(false); }} style={{ all:"unset", display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 10px", borderRadius:8, cursor:"pointer", color:"#f5a623", fontSize:13, fontWeight:600, boxSizing:"border-box" }}>
+              <IcoSparkle/> Upgrade Plan
+            </button>
+          )}
+          {userProfile.is_admin && (
+            <button onClick={()=>{ onAdmin?.(); setAcctOpen(false); }} style={{ all:"unset", display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 10px", borderRadius:8, cursor:"pointer", color:"var(--text)", fontSize:13, fontWeight:500, boxSizing:"border-box" }}>
+              <span style={{width:16,display:"flex"}}><IcoShield/></span> Admin Panel
+            </button>
+          )}
+          <button onClick={()=>{ onLogout?.(); setAcctOpen(false); }} style={{ all:"unset", display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 10px", borderRadius:8, cursor:"pointer", color:"#e53e3e", fontSize:13, fontWeight:500, boxSizing:"border-box" }}>
+            <span style={{width:16,display:"flex"}}><IcoPower/></span> Sign Out
+          </button>
+        </div>
+      )}
+
       <nav style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(4,8,13,0.98)",borderTop:"1px solid var(--border)",paddingBottom:"env(safe-area-inset-bottom,0)",zIndex:100}}>
         <style>{`@keyframes ns-ai-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.45;transform:scale(0.65);}}`}</style>
         <div style={{display:"flex",alignItems:"stretch",overflowX:"auto",scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
@@ -338,17 +420,17 @@ export default function Sidebar({
           .ns-wcard-x:hover{background:var(--red);}
         `}</style>
 
-        {/* ── Logo ── */}
-        <button
-          onClick={()=>onNavigate("pricing")}
-          onMouseEnter={(e)=>showTip(e.currentTarget, tier==="free" ? "Free plan · Upgrade" : `${tc.label} plan`)}
-          onMouseLeave={hideTip}
-          style={{ all:"unset", display:"flex", justifyContent:"center", padding:"14px 0 10px", cursor:"pointer" }}
-        >
-          <div style={{ position:"relative", width:32, height:32 }}>
-            <NSLogo tier={tier}/><TierDot tier={tier}/>
-          </div>
-        </button>
+        {/* ── Account avatar — replaces the old logo slot ── */}
+        <div style={{ display:"flex", justifyContent:"center", padding:"16px 0 10px", flexShrink:0 }}>
+          <AccountAvatar
+            userProfile={userProfile}
+            tier={tier}
+            open={acctOpen}
+            onClick={toggleAcct}
+            onTip={showTip}
+            onTipEnd={hideTip}
+          />
+        </div>
 
         <div style={{ height:1, margin:"2px 14px 6px", background:"var(--border)", opacity:0.6, flexShrink:0 }}/>
 
@@ -392,14 +474,72 @@ export default function Sidebar({
         <div style={{ height:10, flexShrink:0 }}/>
       </div>
 
-      {/* ── Tooltip — instant, no width animation, just supplementary info ── */}
+      {/* ── Tooltip ── */}
       {tip && (
         <div style={{ position:"fixed", left:SB_W+8, top:tip.top, transform:"translateY(-50%)", background:"var(--surface3)", color:"var(--text)", fontSize:11.5, fontWeight:600, padding:"5px 10px", borderRadius:7, border:"1px solid var(--border)", zIndex:9500, pointerEvents:"none", whiteSpace:"nowrap", boxShadow:"0 6px 18px rgba(0,0,0,0.4)", animation:"nsFlyIn 0.1s ease" }}>
           {tip.text}
         </div>
       )}
 
-      {/* ── "More" flyout — replaces the old push-down accordion ── */}
+      {/* ── Account flyout — profile, upgrade, admin, sign out ── */}
+      {acctOpen && userProfile && (
+        <div onClick={e=>e.stopPropagation()} style={{ position:"fixed", left:SB_W+10, top:64, zIndex:9000, width:224, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:6, boxShadow:"0 10px 30px rgba(0,0,0,0.45)", animation:"nsFlyIn 0.15s ease" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px 10px" }}>
+            <div style={{
+              width:34, height:34, borderRadius:"50%", flexShrink:0,
+              background:`linear-gradient(135deg, ${tc.g0}, ${tc.g1})`,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              color:"#fff", fontSize:14, fontWeight:800, fontFamily:"var(--font-display)",
+            }}>
+              {(userProfile.displayName || userProfile.email || "?").trim().charAt(0).toUpperCase()}
+            </div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--text)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{userProfile.displayName || "Account"}</div>
+              <div style={{ fontSize:10.5, color:"var(--text3)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{userProfile.email}</div>
+            </div>
+          </div>
+
+          <div style={{ display:"flex", alignItems:"center", gap:5, margin:"2px 10px 8px", padding:"3px 9px", borderRadius:20, border:`1px solid ${tier==="free"?"var(--border)":tc.ring}`, background:tier==="free"?"rgba(255,255,255,0.03)":"rgba(0,180,166,0.07)", width:"fit-content" }}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:tier==="free"?"var(--text3)":tier==="silver"?"#c0c8d0":tier==="gold"?"#f5a623":"linear-gradient(135deg,#00d4ff,#7c3aed)"}}/>
+            <span style={{fontSize:9,fontWeight:700,letterSpacing:0.5,color:tier==="free"?"var(--text3)":tc.g0,textTransform:"uppercase"}}>{tc.label} Plan</span>
+          </div>
+
+          <div style={{ height:1, margin:"2px 8px 6px", background:"var(--border)" }}/>
+
+          {tier==="free" && (
+            <button
+              onClick={()=>{ onNavigate("pricing"); setAcctOpen(false); }}
+              style={{ all:"unset", display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 10px", borderRadius:8, cursor:"pointer", color:"#f5a623", fontSize:13, fontWeight:600, boxSizing:"border-box" }}
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(245,166,35,0.1)"}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+            >
+              <span style={{width:16,display:"flex"}}><IcoSparkle/></span> Upgrade Plan
+            </button>
+          )}
+
+          {userProfile.is_admin && (
+            <button
+              onClick={()=>{ onAdmin?.(); setAcctOpen(false); }}
+              style={{ all:"unset", display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 10px", borderRadius:8, cursor:"pointer", color:"var(--text)", fontSize:13, fontWeight:500, boxSizing:"border-box" }}
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+            >
+              <span style={{width:16,display:"flex"}}><IcoShield/></span> Admin Panel
+            </button>
+          )}
+
+          <button
+            onClick={()=>{ onLogout?.(); setAcctOpen(false); }}
+            style={{ all:"unset", display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 10px", borderRadius:8, cursor:"pointer", color:"#e53e3e", fontSize:13, fontWeight:500, boxSizing:"border-box" }}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(229,62,62,0.08)"}
+            onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+          >
+            <span style={{width:16,display:"flex"}}><IcoPower/></span> Sign Out
+          </button>
+        </div>
+      )}
+
+      {/* ── "More" flyout ── */}
       {moreOpen && (
         <div onClick={e=>e.stopPropagation()} style={{ position:"fixed", left:SB_W+10, top:moreTop, zIndex:9000, width:188, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:6, boxShadow:"0 10px 30px rgba(0,0,0,0.45)", animation:"nsFlyIn 0.15s ease" }}>
           {moreItems.map(it=>(
@@ -417,7 +557,7 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* ── Watchlist flyout — replaces the cramped inline thumbnail rail ── */}
+      {/* ── Watchlist flyout ── */}
       {wlOpen && (
         <div onClick={e=>e.stopPropagation()} style={{ position:"fixed", left:SB_W+10, top:wlTop, zIndex:9000, width:264, maxHeight:420, display:"flex", flexDirection:"column", background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, boxShadow:"0 10px 30px rgba(0,0,0,0.45)", overflow:"hidden", animation:"nsFlyIn 0.15s ease" }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 14px 8px", flexShrink:0 }}>
