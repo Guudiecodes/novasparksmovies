@@ -2,10 +2,15 @@ import { useState } from "react";
 
 const PREFIX = "streambert_";
 
-const API_BASE =
-  typeof window !== "undefined" && window.location.hostname !== "localhost"
-    ? window.location.origin
-    : "https://novaspark.vercel.app";
+const IS_ELECTRON = typeof window !== "undefined" && !!window.electronAPI;
+const API_BASE = (() => {
+  if (IS_ELECTRON) return "https://novasparks.xyz";
+  if (typeof window === "undefined") return "https://novasparks.xyz";
+  const { hostname, protocol } = window.location;
+  if (protocol === "file:" || hostname === "" || hostname === "null") return "https://novasparks.xyz";
+  if (hostname === "localhost" || hostname === "127.0.0.1") return "https://novasparks.xyz";
+  return window.location.origin;
+})();
 
 export default function LoginPage({ onSuccess, onClose, onSkip }) {
   const [mode,     setMode]    = useState("login");
