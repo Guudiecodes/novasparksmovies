@@ -78,7 +78,7 @@ async function handleAuth(req, res) {
 
     if (!ok) {
       console.error("Register error:", data);
-      return res.status(500).json({ error: "Registration failed. Try again." });
+      return res.status(500).json({ error: "Registration failed: " + JSON.stringify(data) });
     }
 
     const user = Array.isArray(data) ? data[0] : data;
