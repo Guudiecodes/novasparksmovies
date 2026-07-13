@@ -69,14 +69,19 @@ export default function App() {
   }, []);
 
   const [userProfile, setUserProfile] = useState(() => {
-    const id    = localStorage.getItem(NS_PREFIX + "ns_user_id");
-    const email = localStorage.getItem(NS_PREFIX + "ns_user_email");
-    const name  = localStorage.getItem(NS_PREFIX + "ns_user_name");
-    return id ? { id, email, displayName: name } : null;
+    const id      = localStorage.getItem(NS_PREFIX + "ns_user_id");
+    const email   = localStorage.getItem(NS_PREFIX + "ns_user_email");
+    const name    = localStorage.getItem(NS_PREFIX + "ns_user_name");
+    const isAdmin = localStorage.getItem(NS_PREFIX + "ns_user_is_admin") === "true";
+    return id ? { id, email, displayName: name, is_admin: isAdmin } : null;
   });
   const [showLogin, setShowLogin] = useState(!localStorage.getItem("ns_user"));
 
   const handleLogin = useCallback((user) => {
+    localStorage.setItem(NS_PREFIX + "ns_user_id",       user.id);
+    localStorage.setItem(NS_PREFIX + "ns_user_email",    user.email);
+    localStorage.setItem(NS_PREFIX + "ns_user_name",     user.displayName || "");
+    localStorage.setItem(NS_PREFIX + "ns_user_is_admin", user.is_admin ? "true" : "false");
     setUserProfile(user);
     setShowLogin(false);
   }, []);
@@ -892,7 +897,7 @@ export default function App() {
 
         {window.location.pathname === "/admin-login" && (
           <Suspense fallback={null}>
-            <AdminLoginPage onSuccess={() => { window.location.href = "/"; }} />
+            <AdminLoginPage onSuccess={(user) => { handleLogin(user); window.location.href = "/"; }} />
           </Suspense>
         )}
 
