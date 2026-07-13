@@ -14,10 +14,13 @@ const NS_ADMIN_PASS     = import.meta.env.VITE_ADMIN_PASSWORD || "";
 const ADMIN_SESSION_KEY = "ns_admin_panel_v1";
 const PLAN_RANK = { free: 0, mobile: 1, basic: 2, standard: 3, premium: 4 };
 
-const API_BASE =
-  typeof window !== "undefined" && window.location.hostname !== "localhost"
-    ? window.location.origin
-    : "https://novaspark.vercel.app";
+const API_BASE = (() => {
+  if (typeof window === "undefined") return "https://novasparks.xyz";
+  const { hostname, protocol } = window.location;
+  if (protocol === "file:" || hostname === "" || hostname === "null") return "https://novasparks.xyz";
+  if (hostname === "localhost" || hostname === "127.0.0.1") return "https://novasparks.xyz";
+  return window.location.origin;
+})();
 
 const ADMIN_TOKEN = typeof btoa !== "undefined"
   ? btoa(`${NS_ADMIN_EMAIL}:${NS_ADMIN_PASS}`)
