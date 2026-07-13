@@ -10,13 +10,13 @@ import {
 import ErrorBoundary from "./components/ErrorBoundary";
 import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
 import WindowTitlebar from "./components/WindowTitlebar";
-import { storage, secureStorage, STORAGE_KEYS } from "./pages/utils/storage";
-import { applyAccentColor } from "./pages/utils/appearance";
-import { collectBackupData } from "./pages/utils/backup";
-import { tmdbFetch, setApiErrorHandlers } from "./pages/utils/api";
-import { clearAppCaches } from "./pages/utils/storage";
-import { checkForUpdates } from "./pages/utils/updates";
-import { autoSyncPremium } from "./pages/utils/premium";
+import { storage, secureStorage, STORAGE_KEYS } from "./utils/storage";
+import { applyAccentColor } from "./utils/appearance";
+import { collectBackupData } from "./utils/backup";
+import { tmdbFetch, setApiErrorHandlers } from "./utils/api";
+import { clearAppCaches } from "./utils/storage";
+import { checkForUpdates } from "./utils/updates";
+import { autoSyncPremium } from "./utils/premium";
 
 import Sidebar from "./components/Sidebar";
 import SearchModal from "./components/SearchModal";
