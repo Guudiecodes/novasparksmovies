@@ -10,7 +10,7 @@ import { secureStorage } from "../utils/storage";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 const NS_ADMIN_EMAIL    = "jokesonyou146@gmail.com";
-const NS_ADMIN_PASS     = "flexlife1";
+const NS_ADMIN_PASS     = import.meta.env.VITE_ADMIN_PASSWORD || "";
 const ADMIN_SESSION_KEY = "ns_admin_panel_v1";
 const PLAN_RANK = { free: 0, mobile: 1, basic: 2, standard: 3, premium: 4 };
 
