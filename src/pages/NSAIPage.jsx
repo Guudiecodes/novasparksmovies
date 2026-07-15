@@ -3,9 +3,7 @@
 // New in v11: on-device taste learning, live token streaming, voice in/out,
 // and an AI Shorts Studio that scripts + narrates + cuts a vertical promo reel.
 import { useState, useEffect, useRef, useCallback } from "react";
-import MusicStudio     from "../components/MusicStudio";
-import FaceSwapStudio  from "../components/FaceSwapStudio";
-import MovieClipStudio from "../components/MovieClipStudio";
+import { storage } from "../utils/storage";
 
 // ─── KEYS ─────────────────────────────────────────────────────────────────────
 const GROQ_KEY    = "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";
@@ -469,9 +467,7 @@ const INTENTS = [
   { id: "NAVIGATE",       p: [/\b(?:go|take me|open|navigate|switch|head)\b.{0,20}\b(?:to|back)?\b.{0,12}(?:home|movies?|films?|tv\s?shows?|series|anime|downloads?|search|settings)\b/i, /^(?:home|movies|films|tv shows|series|anime|downloads|settings)$/i] },
   { id: "SEARCH",         p: [/^(?:search|find|look up|look for|search for)\s+.{2,}/i] },
   { id: "CLEAR_MEMORY",   p: [/\b(?:clear|reset|forget|wipe|start over|new session)\b.{0,20}(?:memory|history|chat|conversation|everything)\b/i] },
-  { id: "MAKE_MUSIC",    p: [/\b(?:make|create|generate|compose|write|produce)\b.{0,20}\b(?:music|song|beat|track|sound|score|soundtrack|banger|tune)\b/i, /\b(?:music|beat|song|track)\b.{0,15}\b(?:for|about)\b/i, /^(?:make|create|generate) (?:a |an )?(?:music|beat|song|track)/i] },
-  { id: "FACE_SWAP",     p: [/\b(?:swap|replace|put|change|drop)\b.{0,20}\b(?:face|head)\b/i, /\bface.{0,10}swap\b/i, /\b(?:my face|selfie).{0,20}(?:on|in|with|onto)\b/i, /\bswap\b.{0,10}\b(?:me|my|myself)\b/i] },
-  { id: "MOVIE_CLIP",    p: [/\b(?:make|create|compile|edit|cut|build)\b.{0,20}\b(?:clip|video|compilation|montage|reel|promo)\b/i, /\bmovie.{0,10}clip\b/i, /\bclip.{0,10}(?:from|of)\b/i, /\bcompile\b.{0,20}\b(?:movie|show|film)\b/i] },
+  { id: "REPORT_ISSUE",   p: [/\b(?:not working|won'?t play|wont play|broken|stuck|frozen|keeps failing|black screen|blank screen|nothing (?:is )?happening|isn'?t (?:loading|playing|working)|error|glitch|bug)\b/i] },
 ];
 
 function getIntent(text) {
@@ -1228,10 +1224,6 @@ export default function NSAIPage({
   const [listening, setListening] = useState(false);
   const [shortsOpen, setShortsOpen] = useState(false);
   const [shortsItem, setShortsItem] = useState(null);
-  const [musicOpen,  setMusicOpen]  = useState(false);
-  const [faceOpen,   setFaceOpen]   = useState(false);
-  const [movieOpen,  setMovieOpen]  = useState(false);
-  const [musicTrack, setMusicTrack] = useState(null); // { url, label, genre }
 
   const endRef    = useRef(null);
   const inputRef  = useRef(null);
@@ -1587,29 +1579,25 @@ export default function NSAIPage({
         return true;
       }
 
-      case "MAKE_MUSIC": {
-        setMusicOpen(true);
-        pushAI("Music Studio open — describe what you want and I'll generate it.");
-        return true;
-      }
+      case "REPORT_ISSUE": {
+        let wStatus = null;
+        try { wStatus = storage.get("ns_watch_status"); } catch {}
+        const fresh = wStatus && (Date.now() - (wStatus.ts || 0) < 120000);
 
-      case "FACE_SWAP": {
-        setFaceOpen(true);
-        pushAI("Face Swap Studio open — upload your photo to get started.");
-        return true;
-      }
-
-      case "MOVIE_CLIP": {
-        const titleRaw = cleanTitle(text.replace(/\b(?:clip|video|compilation|montage|reel|promo|make|create|compile|edit|cut|build)\b/gi, " "));
-        if (titleRaw?.length > 1) {
-          setBusy(true);
-          const f = await tSearch(titleRaw, "multi");
-          setBusy(false);
-          pushAI(f[0] ? `Movie Clip Compiler opening for *${f[0].title || f[0].name}*.` : "Movie Clip Compiler open.");
-        } else {
-          pushAI("Movie Clip Compiler open — search any title to start.");
+        if (fresh && wStatus.status === "failed") {
+          pushAI(`All available servers for *${wStatus.title}* were just tried and none worked right now � that happens sometimes and it's usually temporary. Retrying now.`);
+          try { storage.set("ns_watch_refresh_request", { itemId: wStatus.itemId, ts: Date.now() }); } catch {}
+          return true;
         }
-        setMovieOpen(true);
+        if (fresh && (wStatus.status === "testing" || wStatus.status === "retrying")) {
+          pushAI(`Still trying servers for *${wStatus.title}* � give it a few more seconds. If it's still stuck after that, tell me again and I'll step in.`);
+          return true;
+        }
+        if (fresh && wStatus.status === "found") {
+          pushAI(`It actually looks like *${wStatus.title}* found a working server on this end � worth checking if it's playing now. If not, tell me what's happening (no sound, wrong episode, subtitles, something else) and I'll look closer.`);
+          return true;
+        }
+        pushAI("Noted � I don't have enough on this from here to auto-fix it, but I've flagged it so the team can look into it directly.");
         return true;
       }
 
@@ -1824,15 +1812,6 @@ export default function NSAIPage({
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <HeaderIconBtn brand={BRAND} active={voiceOn} onClick={() => setVoiceOn(v => !v)} title={voiceOn ? "Voice replies on" : "Voice replies off"} icon={<IcoSpeaker muted={!voiceOn} size={15} />} />
           <HeaderIconBtn brand={BRAND} onClick={() => openShorts(null)} title="AI Shorts Studio" icon={<IcoClapper size={15} />} />
-          <HeaderIconBtn brand={BRAND} active={musicOpen} onClick={() => setMusicOpen(v => !v)} title="AI Music Studio" icon={
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-          } />
-          <HeaderIconBtn brand={BRAND} active={faceOpen} onClick={() => setFaceOpen(v => !v)} title="Face Swap Studio" icon={
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="5"/><path d="M3 21c0-4.418 4.03-8 9-8s9 3.582 9 8"/><path d="M16 3.5c1.5 1 2 2.5 1.5 4M8 3.5C6.5 4.5 6 6 6.5 7.5"/></svg>
-          } />
-          <HeaderIconBtn brand={BRAND} active={movieOpen} onClick={() => setMovieOpen(v => !v)} title="Movie Clip Compiler" icon={
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M6 2l2 4M12 2v4M18 2l-2 4M2 10h20"/></svg>
-          } />
           <HeaderIconBtn brand={BRAND} onClick={() => { clearMemory(); setMsgs([]); setHist([]); flash("New conversation"); }} title="New conversation" icon={<IcoReset size={15} />} />
         </div>
       </div>
@@ -1998,31 +1977,6 @@ export default function NSAIPage({
       )}
       {toast && <Toast msg={toast} />}
 
-      {musicOpen && (
-        <MusicStudio
-          brand={BRAND}
-          onClose={() => setMusicOpen(false)}
-          onAddToShort={(track) => {
-            setMusicTrack(track);
-            setMusicOpen(false);
-            flash("Music ready — open Shorts or Movie Compiler to use it");
-          }}
-        />
-      )}
-      {faceOpen && (
-        <FaceSwapStudio
-          brand={BRAND}
-          onClose={() => setFaceOpen(false)}
-        />
-      )}
-      {movieOpen && (
-        <MovieClipStudio
-          brand={BRAND}
-          onClose={() => setMovieOpen(false)}
-          externalMusicUrl={musicTrack?.url || null}
-          externalMusicLabel={musicTrack?.label || null}
-        />
-      )}
     </div>
   );
 }

@@ -218,6 +218,12 @@ export default function WatchPage({
   const [nonEmbed, setNonEmbed] = useState(() => storage.get("playerMode") === "nonembed");
 
   const [status,   setStatus]   = useState(() => preFoundSource ? "found" : "testing");
+
+  // -- NS AI page-awareness: mirror current playback status to shared storage --
+  useEffect(() => {
+    if (!item?.id) return;
+    storage.set("ns_watch_status", { status, title, type, itemId: item.id, season, episode, ts: Date.now() });
+  }, [status, item?.id, title, type, season, episode]);
   const [retryN,   setRetryN]   = useState(0);
   const [cycleN,   setCycleN]   = useState(0);
   const [loading,  setLoading]  = useState(true);
@@ -455,6 +461,19 @@ export default function WatchPage({
     m3u8Ref.current=null;setM3u8(null);setSubs([]);
     invalidateSourceCache(type,item?.id,season,episode);setSrc(def);storage.set("playerSource",def);
   },[nonEmbed,type,item?.id,season,episode,isEl]);
+
+  // -- NS AI: listen for a refresh request written to shared storage --
+  useEffect(() => {
+    const check = () => {
+      const req = storage.get("ns_watch_refresh_request");
+      if (req && req.itemId === item?.id) {
+        storage.set("ns_watch_refresh_request", null);
+        refresh();
+      }
+    };
+    const id = setInterval(check, 1500);
+    return () => clearInterval(id);
+  }, [item?.id, refresh]);
 
   // Non-embed fetch
   useEffect(()=>{
