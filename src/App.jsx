@@ -75,7 +75,7 @@ export default function App() {
     const isAdmin = localStorage.getItem(NS_PREFIX + "ns_user_is_admin") === "true";
     return id ? { id, email, displayName: name, is_admin: isAdmin } : null;
   });
-  const [showLogin, setShowLogin] = useState(!localStorage.getItem("ns_user"));
+  const [showLogin, setShowLogin] = useState(!localStorage.getItem(NS_PREFIX + "ns_user_id"));
 
   const handleLogin = useCallback((user) => {
     localStorage.setItem(NS_PREFIX + "ns_user_id",       user.id);
@@ -98,6 +98,7 @@ export default function App() {
   const [navStack, setNavStack] = useState([]);
   const navStackRef = useRef(navStack);
   useEffect(() => { navStackRef.current = navStack; }, [navStack]);
+  const scrollMemory = useRef({});
 
   const [saved,      setSaved]      = useState(() => storage.get("saved")      || {});
   const [savedOrder, setSavedOrder] = useState(() => storage.get("savedOrder") || null);
@@ -464,12 +465,15 @@ export default function App() {
       const last = prev[prev.length - 1];
       setPage(last.page);
       setSelected(last.selected);
+      const saved = scrollMemory.current[last.page];
+      setTimeout(() => window.scrollTo(0, saved || 0), 0);
       if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
       return prev.slice(0, -1);
     });
   }, []);
 
   const navigate = useCallback((pg, data = null) => {
+    scrollMemory.current[pageRef.current] = window.scrollY;
     setNavStack((prev) => [
       ...prev,
       { page: pageRef.current, selected: selectedRef.current },
@@ -477,6 +481,7 @@ export default function App() {
     setSelected(data);
     setPage(pg);
     setShowSearch(false);
+    setTimeout(() => window.scrollTo(0, 0), 0);
     try { window.history.pushState({ nsPage: pg }, "", window.location.pathname); } catch {}
     if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
   }, []);

@@ -137,7 +137,7 @@ function FailedOverlay({ onRetry, onBack }) {
       </div>
       <div>
         <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Stream unavailable</p>
-        <p style={{fontSize:13,color:"rgba(255,255,255,.45)",lineHeight:1.7,margin:0,maxWidth:280}}>All servers failed. Check your connection or try again.</p>
+        <p style={{fontSize:13,color:"rgba(255,255,255,.45)",lineHeight:1.7,margin:0,maxWidth:280}}>All servers failed. Check your connection or try again.</p><div style={{display:"flex",alignItems:"center",gap:8,marginTop:14,padding:"9px 14px",borderRadius:10,background:"rgba(0,180,166,.08)",border:"1px solid rgba(0,180,166,.2)"}}><div style={{width:20,height:20,borderRadius:6,background:"linear-gradient(135deg,#00b4a6,#06201d)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:8,fontWeight:800,color:"#fff"}}>NS</span></div><span style={{fontSize:12,color:"rgba(255,255,255,.65)"}}>NS AI noticed this too - tap Retry and I will look for a better source.</span></div>
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
         <button onClick={onRetry} style={{background:"var(--red,#e50914)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,padding:"11px 28px",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>
