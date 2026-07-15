@@ -8,8 +8,8 @@ const PAYSTACK_PUBLIC_KEY = "pk_live_7a41cee8223af8ebae60c24c63fc8be8cdbb9886";
 const PLAN_AMOUNT_KOBO = 158400;
 
 const CRYPTO_WALLETS = {
-  "USDT (BEP-20)": "0xc216ee7748a18c1a451b223cd0e5b8b4e69bfd83",
-  "Bitcoin (BTC)": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+  "USDT (BEP-20)": "0xc216ee7748a18c1a451b223cd0e344553ecf86ce",
+  "Bitcoin (BTC)": "12SDDVhtgYaKkmYg5tNxCygo43EqxndDXm",
 };
 
 // Dynamically load Paystack inline script — safe to call multiple times

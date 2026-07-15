@@ -64,7 +64,7 @@ import PremiumGate from "../components/PremiumGate";
 // ── Disclaimer ticker ─────────────────────────────────────────────────────────
 function DisclaimerTicker() {
   const msg =
-    "⚠  NovaSparks does not host or store any media content. Stream quality and availability may vary by region.  You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  ⚠";
+    "⚠  NovasparksMovies does not host or store any media content. Stream quality and availability may vary by region.  You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  ⚠";
   return (
     <div style={{
       background: "rgba(229,9,20,0.06)",
@@ -276,7 +276,7 @@ export default function TVPage({
   const seekBackCooldownRef           = useRef(0);
 
   const planId       = isPremium?.planId || (isPremium ? "premium" : "free");
-  const handleUpgrade = onUpgrade ?? (() => window.dispatchEvent(new CustomEvent("novaspark:upgrade")));
+  const handleUpgrade = onUpgrade ?? (() => window.dispatchEvent(new CustomEvent("NovasparksMovies:upgrade")));
 
   // ── Fetch TV details + credits + reviews + keywords ───────────────────────
   useEffect(() => {

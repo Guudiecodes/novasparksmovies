@@ -96,6 +96,8 @@ export default function App() {
   }, []);
 
   const [navStack, setNavStack] = useState([]);
+  const navStackRef = useRef(navStack);
+  useEffect(() => { navStackRef.current = navStack; }, [navStack]);
 
   const [saved,      setSaved]      = useState(() => storage.get("saved")      || {});
   const [savedOrder, setSavedOrder] = useState(() => storage.get("savedOrder") || null);
@@ -475,8 +477,18 @@ export default function App() {
     setSelected(data);
     setPage(pg);
     setShowSearch(false);
+    try { window.history.pushState({ nsPage: pg }, "", window.location.pathname); } catch {}
     if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
   }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (navStackRef.current.length > 0) navigateBack();
+      else try { window.history.pushState({ nsPage: pageRef.current }, "", window.location.pathname); } catch {}
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [navigateBack]);
 
   const handleWatch = useCallback(
     (watchData) => navigate("watch", watchData),
