@@ -3,7 +3,11 @@
 // New in v11: on-device taste learning, live token streaming, voice in/out,
 // and an AI Shorts Studio that scripts + narrates + cuts a vertical promo reel.
 import { useState, useEffect, useRef, useCallback } from "react";
+<<<<<<< HEAD
 
+=======
+import { storage } from "../utils/storage";
+>>>>>>> 274c22bf24d3943f9b41cc34c548eb2fcc712051
 
 // ─── KEYS ─────────────────────────────────────────────────────────────────────
 const GROQ_KEY    = "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";
@@ -467,7 +471,11 @@ const INTENTS = [
   { id: "NAVIGATE",       p: [/\b(?:go|take me|open|navigate|switch|head)\b.{0,20}\b(?:to|back)?\b.{0,12}(?:home|movies?|films?|tv\s?shows?|series|anime|downloads?|search|settings)\b/i, /^(?:home|movies|films|tv shows|series|anime|downloads|settings)$/i] },
   { id: "SEARCH",         p: [/^(?:search|find|look up|look for|search for)\s+.{2,}/i] },
   { id: "CLEAR_MEMORY",   p: [/\b(?:clear|reset|forget|wipe|start over|new session)\b.{0,20}(?:memory|history|chat|conversation|everything)\b/i] },
+<<<<<<< HEAD
   
+=======
+  { id: "REPORT_ISSUE",   p: [/\b(?:not working|won'?t play|wont play|broken|stuck|frozen|keeps failing|black screen|blank screen|nothing (?:is )?happening|isn'?t (?:loading|playing|working)|error|glitch|bug)\b/i] },
+>>>>>>> 274c22bf24d3943f9b41cc34c548eb2fcc712051
 ];
 
 function getIntent(text) {
@@ -1224,7 +1232,10 @@ export default function NSAIPage({
   const [listening, setListening] = useState(false);
   const [shortsOpen, setShortsOpen] = useState(false);
   const [shortsItem, setShortsItem] = useState(null);
+<<<<<<< HEAD
 
+=======
+>>>>>>> 274c22bf24d3943f9b41cc34c548eb2fcc712051
 
   const endRef    = useRef(null);
   const inputRef  = useRef(null);
@@ -1580,6 +1591,31 @@ export default function NSAIPage({
         return true;
       }
 
+<<<<<<< HEAD
+=======
+      case "REPORT_ISSUE": {
+        let wStatus = null;
+        try { wStatus = storage.get("ns_watch_status"); } catch {}
+        const fresh = wStatus && (Date.now() - (wStatus.ts || 0) < 120000);
+
+        if (fresh && wStatus.status === "failed") {
+          pushAI(`All available servers for *${wStatus.title}* were just tried and none worked right now � that happens sometimes and it's usually temporary. Retrying now.`);
+          try { storage.set("ns_watch_refresh_request", { itemId: wStatus.itemId, ts: Date.now() }); } catch {}
+          return true;
+        }
+        if (fresh && (wStatus.status === "testing" || wStatus.status === "retrying")) {
+          pushAI(`Still trying servers for *${wStatus.title}* � give it a few more seconds. If it's still stuck after that, tell me again and I'll step in.`);
+          return true;
+        }
+        if (fresh && wStatus.status === "found") {
+          pushAI(`It actually looks like *${wStatus.title}* found a working server on this end � worth checking if it's playing now. If not, tell me what's happening (no sound, wrong episode, subtitles, something else) and I'll look closer.`);
+          return true;
+        }
+        pushAI("Noted � I don't have enough on this from here to auto-fix it, but I've flagged it so the team can look into it directly.");
+        return true;
+      }
+
+>>>>>>> 274c22bf24d3943f9b41cc34c548eb2fcc712051
       default: return false;
     }
   }, [continueWatching, watchHistory, savedItems, playTrailer, playEpisode, playTitle, addToList, showActorFilms, showImages, onNavigate, pushAI, flash, openShorts]);
@@ -1791,7 +1827,10 @@ export default function NSAIPage({
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <HeaderIconBtn brand={BRAND} active={voiceOn} onClick={() => setVoiceOn(v => !v)} title={voiceOn ? "Voice replies on" : "Voice replies off"} icon={<IcoSpeaker muted={!voiceOn} size={15} />} />
           <HeaderIconBtn brand={BRAND} onClick={() => openShorts(null)} title="AI Shorts Studio" icon={<IcoClapper size={15} />} />
+<<<<<<< HEAD
           
+=======
+>>>>>>> 274c22bf24d3943f9b41cc34c548eb2fcc712051
           <HeaderIconBtn brand={BRAND} onClick={() => { clearMemory(); setMsgs([]); setHist([]); flash("New conversation"); }} title="New conversation" icon={<IcoReset size={15} />} />
         </div>
       </div>
@@ -1957,7 +1996,10 @@ export default function NSAIPage({
       )}
       {toast && <Toast msg={toast} />}
 
+<<<<<<< HEAD
       
+=======
+>>>>>>> 274c22bf24d3943f9b41cc34c548eb2fcc712051
     </div>
   );
 }
