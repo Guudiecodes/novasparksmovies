@@ -453,6 +453,7 @@ export default function App() {
 
   const pageRef     = useRef(page);
   const selectedRef = useRef(selected);
+  const scrollMemory = useRef({});
   useEffect(() => { pageRef.current     = page;     }, [page]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
 
