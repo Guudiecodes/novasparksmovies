@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   setAdminGlobalPlan,
   getAdminGlobalPlan,
@@ -8,11 +8,10 @@ import {
 } from "../utils/gate";
 import { secureStorage } from "../utils/storage";
 
-// â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Config ─────────────────────────────────────────────────────────────────────
 const NS_ADMIN_EMAIL    = "jokesonyou146@gmail.com";
+const NS_ADMIN_PASS     = import.meta.env.VITE_ADMIN_PASSWORD || "";
 const ADMIN_SESSION_KEY = "ns_admin_panel_v1";
-const ADMIN_TOKEN_KEY   = "ns_admin_token_v1";
-function getAdminToken() { try { return sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""; } catch { return ""; } }
 const PLAN_RANK = { free: 0, mobile: 1, basic: 2, standard: 3, premium: 4 };
 
 const API_BASE = (() => {
@@ -23,18 +22,22 @@ const API_BASE = (() => {
   return window.location.origin;
 })();
 
+const ADMIN_TOKEN = typeof btoa !== "undefined"
+  ? btoa(`${NS_ADMIN_EMAIL}:${NS_ADMIN_PASS}`)
+  : "";
+
 async function adminFetch(action, params = {}) {
   const url = new URL(`${API_BASE}/api/admin`);
   url.searchParams.set("action", action);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   const res = await fetch(url.toString(), {
-    headers: { "x-admin-token": getAdminToken() },
+    headers: { "x-admin-token": ADMIN_TOKEN },
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
 }
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function timeSince(ts) {
   if (!ts) return "Never";
   const diff = Date.now() - new Date(ts).getTime();
@@ -48,11 +51,11 @@ function timeSince(ts) {
 }
 
 function fmtDate(ts) {
-  if (!ts) return "â€”";
+  if (!ts) return "—";
   return new Date(ts).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
-// â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Sub-components ─────────────────────────────────────────────────────────────
 function PlanBadge({ plan }) {
   const C = {
     free:     ["rgba(255,255,255,0.06)", "var(--text3)",  "var(--border)"],
@@ -84,7 +87,7 @@ function StatCard({ icon, label, value, sub, accent }) {
         fontVariantNumeric: "tabular-nums",
         color: accent || "var(--text)",
       }}>
-        {value ?? <span style={{ opacity: 0.25 }}>â€”</span>}
+        {value ?? <span style={{ opacity: 0.25 }}>—</span>}
       </div>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "var(--text3)" }}>{label}</div>
       {sub && <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 3 }}>{sub}</div>}
@@ -121,28 +124,23 @@ function LiveDot() {
   );
 }
 
-// â”€â”€ Login Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Login Screen ───────────────────────────────────────────────────────────────
 function AdminLogin({ onSuccess }) {
   const [email, setEmail] = useState("");
   const [pass,  setPass]  = useState("");
   const [error, setError] = useState("");
 
-  const [loading, setLoading] = useState(false);
-  const attempt = async () => {
-    setLoading(true); setError("");
-    try {
-      const res = await fetch(`${API_BASE}/api/auth`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "admin-login", email, password: pass }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.token) { setError(data.error || "Invalid credentials"); setTimeout(() => setError(""), 3000); return; }
-      try { sessionStorage.setItem(ADMIN_SESSION_KEY, "1"); sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token); } catch {}
+  const attempt = () => {
+    if (
+      email.trim().toLowerCase() === NS_ADMIN_EMAIL.toLowerCase() &&
+      pass === NS_ADMIN_PASS
+    ) {
+      try { sessionStorage.setItem(ADMIN_SESSION_KEY, "1"); } catch {}
       onSuccess();
-    } catch {
-      setError("Server unreachable"); setTimeout(() => setError(""), 3000);
-    } finally { setLoading(false); }
+    } else {
+      setError("Invalid credentials");
+      setTimeout(() => setError(""), 3000);
+    }
   };
 
   return (
@@ -165,7 +163,7 @@ function AdminLogin({ onSuccess }) {
 
         {[
           { label: "Email",    type: "email",    ph: "admin@novaspark.app", val: email, set: setEmail },
-          { label: "Password", type: "password", ph: "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢",           val: pass,  set: setPass  },
+          { label: "Password", type: "password", ph: "••••••••",           val: pass,  set: setPass  },
         ].map(({ label, type, ph, val, set }, i) => (
           <div key={label} style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--text3)", marginBottom: 7 }}>
@@ -195,7 +193,7 @@ function AdminLogin({ onSuccess }) {
   );
 }
 
-// â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Dashboard ──────────────────────────────────────────────────────────────────
 function AdminDashboard({ onBack }) {
   const [tab,             setTab]           = useState("overview");
   const [stats,           setStats]         = useState(null);
@@ -222,9 +220,9 @@ function AdminDashboard({ onBack }) {
   const localSummary  = getFeatureUsageSummary();
 
   const FEATURE_LABELS = {
-    watch: "ðŸŽ¬ Watch", download: "â¬‡ï¸ Download", source_switch: "ðŸ”„ Source Switch",
-    subtitles: "ðŸ“ Subtitles", login: "ðŸ” Login", search: "ðŸ” Search",
-    pip: "ðŸ–¼ï¸ Pop-Out", signup: "ðŸ‘¤ Sign Up", share: "ðŸ“¤ Share",
+    watch: "🎬 Watch", download: "⬇️ Download", source_switch: "🔄 Source Switch",
+    subtitles: "📝 Subtitles", login: "🔐 Login", search: "🔍 Search",
+    pip: "🖼️ Pop-Out", signup: "👤 Sign Up", share: "📤 Share",
   };
 
   useEffect(() => {
@@ -247,7 +245,7 @@ function AdminDashboard({ onBack }) {
       usersRes.status === "rejected" &&
       actRes.status  === "rejected"
     ) {
-      setApiError("Cannot reach API â€” showing local device data only.");
+      setApiError("Cannot reach API — showing local device data only.");
     }
     setLastRefreshed(new Date());
     setLoading(false);
@@ -281,17 +279,17 @@ function AdminDashboard({ onBack }) {
         { signal: AbortSignal.timeout(10000) }
       );
       setWyzieStatus(res.ok
-        ? { ok: true,  msg: "âœ“ Key is valid and working." }
-        : { ok: false, msg: `âœ• Rejected (${res.status}).` }
+        ? { ok: true,  msg: "✓ Key is valid and working." }
+        : { ok: false, msg: `✕ Rejected (${res.status}).` }
       );
     } catch {
-      setWyzieStatus({ ok: false, msg: "âœ• Could not reach Wyzie." });
+      setWyzieStatus({ ok: false, msg: "✕ Could not reach Wyzie." });
     }
     setWyzieChecking(false);
   };
 
   const handleLogout = () => {
-    try { sessionStorage.removeItem(ADMIN_SESSION_KEY); sessionStorage.removeItem(ADMIN_TOKEN_KEY); } catch {}
+    try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch {}
     window.location.reload();
   };
 
@@ -327,7 +325,7 @@ function AdminDashboard({ onBack }) {
     { value: "mobile",   label: "Mobile"                    },
     { value: "basic",    label: "Basic"                     },
     { value: "standard", label: "Standard"                  },
-    { value: "premium",  label: "Premium â€” unlock everything"},
+    { value: "premium",  label: "Premium — unlock everything"},
   ];
 
   const sRow = {
@@ -341,7 +339,7 @@ function AdminDashboard({ onBack }) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-body)" }}>
 
-      {/* â”€â”€ Header â”€â”€ */}
+      {/* ── Header ── */}
       <div style={{
         position: "sticky", top: 0, zIndex: 200,
         background: "rgba(16,16,16,0.96)", backdropFilter: "blur(14px)",
@@ -367,7 +365,7 @@ function AdminDashboard({ onBack }) {
           )}
           <button className="btn btn-ghost" onClick={fetchAll} disabled={loading}
             style={{ padding: "5px 14px", fontSize: 12, opacity: loading ? 0.5 : 1 }}>
-            {loading ? "Refreshingâ€¦" : "â†» Refresh"}
+            {loading ? "Refreshing…" : "↻ Refresh"}
           </button>
           <button className="btn btn-ghost" onClick={handleLogout}
             style={{ padding: "5px 14px", fontSize: 12, color: "var(--text3)" }}>
@@ -378,37 +376,37 @@ function AdminDashboard({ onBack }) {
 
       <div style={{ padding: "40px 40px 80px" }}>
 
-        {/* â”€â”€ Title â”€â”€ */}
+        {/* ── Title ── */}
         <div style={{ marginBottom: 36 }}>
           <div style={{ fontFamily: "var(--font-display)", fontSize: 52, letterSpacing: 1, lineHeight: 1, marginBottom: 6 }}>
             DASHBOARD
           </div>
           <div style={{ fontSize: 13, color: "var(--text3)" }}>
-            NovaSpark Â· Real-time user management &amp; analytics
+            NovaSpark · Real-time user management &amp; analytics
           </div>
         </div>
 
-        {/* â”€â”€ API error banner â”€â”€ */}
+        {/* ── API error banner ── */}
         {apiError && (
           <div style={{
             marginBottom: 28, padding: "12px 18px",
             background: "rgba(255,180,80,0.07)", border: "1px solid rgba(255,180,80,0.25)",
             borderRadius: 10, fontSize: 13, color: "#ffb450",
           }}>
-            âš  {apiError}
+            ⚠ {apiError}
           </div>
         )}
 
-        {/* â”€â”€ Stats Row â”€â”€ */}
+        {/* ── Stats Row ── */}
         <div style={{ display: "flex", gap: 16, marginBottom: 40, flexWrap: "wrap" }}>
-          <StatCard icon="ðŸ‘¥" label="Registered Users" value={stats?.total          ?? "â€”"} />
-          <StatCard icon="âš¡" label="Active Today"      value={stats?.activeToday   ?? "â€”"} accent="var(--red)" />
-          <StatCard icon="ðŸ†•" label="New This Week"     value={stats?.newThisWeek   ?? "â€”"} accent="#48c774"
+          <StatCard icon="👥" label="Registered Users" value={stats?.total          ?? "—"} />
+          <StatCard icon="⚡" label="Active Today"      value={stats?.activeToday   ?? "—"} accent="var(--red)" />
+          <StatCard icon="🆕" label="New This Week"     value={stats?.newThisWeek   ?? "—"} accent="#48c774"
             sub={stats?.newThisWeek ? `+${stats.newThisWeek} signups` : null} />
-          <StatCard icon="ðŸ’Ž" label="Premium Users"     value={stats?.premium       ?? "â€”"} accent="#ffb450" />
+          <StatCard icon="💎" label="Premium Users"     value={stats?.premium       ?? "—"} accent="#ffb450" />
         </div>
 
-        {/* â”€â”€ Tab Bar â”€â”€ */}
+        {/* ── Tab Bar ── */}
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", marginBottom: 32 }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -424,7 +422,7 @@ function AdminDashboard({ onBack }) {
           ))}
         </div>
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• OVERVIEW TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* ═══════════════ OVERVIEW TAB ═══════════════ */}
         {tab === "overview" && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 1100 }}>
 
@@ -470,14 +468,14 @@ function AdminDashboard({ onBack }) {
               ))}
             </div>
 
-            {/* Live Activity Feed â€” full width */}
+            {/* Live Activity Feed — full width */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "26px 30px", gridColumn: "1 / -1" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>Live Activity Feed</div>
                 <LiveDot />
               </div>
               <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 22 }}>
-                Auto-refreshes every 30 seconds Â· Showing {Math.min(mergedFeed.length, 12)} most recent events
+                Auto-refreshes every 30 seconds · Showing {Math.min(mergedFeed.length, 12)} most recent events
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
                 {mergedFeed.slice(0, 12).map((e, i) => (
@@ -492,7 +490,7 @@ function AdminDashboard({ onBack }) {
                       <span style={{ fontSize: 10, color: "var(--text3)" }}>{timeSince(new Date(e.ts))}</span>
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {e.meta?.title || e.meta?.query || (e.meta ? JSON.stringify(e.meta).slice(0, 50) : "â€”")}
+                      {e.meta?.title || e.meta?.query || (e.meta ? JSON.stringify(e.meta).slice(0, 50) : "—")}
                     </div>
                   </div>
                 ))}
@@ -506,12 +504,12 @@ function AdminDashboard({ onBack }) {
           </div>
         )}
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• USERS TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* ═══════════════ USERS TAB ═══════════════ */}
         {tab === "users" && (
           <div style={{ maxWidth: 1100 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22 }}>
               <input className="apikey-input"
-                placeholder="Search email or nameâ€¦"
+                placeholder="Search email or name…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 style={{ maxWidth: 320, marginBottom: 0 }}
@@ -523,7 +521,7 @@ function AdminDashboard({ onBack }) {
 
             {filteredUsers.length === 0 ? (
               <div style={{ padding: "80px 0", textAlign: "center", color: "var(--text3)", fontSize: 14 }}>
-                {apiError ? "âš  API unreachable â€” deploy api/admin.js to Vercel" : "No users yet"}
+                {apiError ? "⚠ API unreachable — deploy api/admin.js to Vercel" : "No users yet"}
               </div>
             ) : (
               <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
@@ -560,7 +558,7 @@ function AdminDashboard({ onBack }) {
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {u.display_name || "â€”"}
+                            {u.display_name || "—"}
                           </div>
                           <div style={{ fontSize: 11, color: "var(--text3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {u.email}
@@ -590,7 +588,7 @@ function AdminDashboard({ onBack }) {
           </div>
         )}
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ACTIVITY TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* ═══════════════ ACTIVITY TAB ═══════════════ */}
         {tab === "activity" && (
           <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 24, maxWidth: 1100 }}>
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "26px 30px" }}>
@@ -609,7 +607,7 @@ function AdminDashboard({ onBack }) {
                 <LiveDot />
               </div>
               <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 22 }}>
-                Auto-refreshes every 30s Â· {mergedFeed.length} events
+                Auto-refreshes every 30s · {mergedFeed.length} events
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 520, overflowY: "auto" }}>
                 {mergedFeed.map((e, i) => (
@@ -622,7 +620,7 @@ function AdminDashboard({ onBack }) {
                       {e.feature}
                     </span>
                     <span style={{ flex: 1, fontSize: 12, color: "var(--text2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {e.meta?.title || e.meta?.query || (e.meta ? JSON.stringify(e.meta).slice(0, 60) : "â€”")}
+                      {e.meta?.title || e.meta?.query || (e.meta ? JSON.stringify(e.meta).slice(0, 60) : "—")}
                     </span>
                     <span style={{ fontSize: 10, color: "var(--text3)", flexShrink: 0 }}>{timeSince(new Date(e.ts))}</span>
                   </div>
@@ -635,7 +633,7 @@ function AdminDashboard({ onBack }) {
           </div>
         )}
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SETTINGS TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* ═══════════════ SETTINGS TAB ═══════════════ */}
         {tab === "settings" && (
           <div style={{ maxWidth: 720 }}>
             {/* Global Plan Floor */}
@@ -666,7 +664,7 @@ function AdminDashboard({ onBack }) {
                           fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 700,
                           background: "rgba(72,199,116,0.1)", color: "#48c774", border: "1px solid rgba(72,199,116,0.2)",
                         }}>
-                          âœ“ {g.label}
+                          ✓ {g.label}
                         </span>
                       ))}
                   </div>
@@ -674,7 +672,7 @@ function AdminDashboard({ onBack }) {
               )}
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <button className="btn btn-primary" onClick={handleSavePlan}>Save Plan Floor</button>
-                {planSaved && <span style={{ fontSize: 13, color: "#48c774", fontWeight: 600 }}>âœ“ Active for all users</span>}
+                {planSaved && <span style={{ fontSize: 13, color: "#48c774", fontWeight: 600 }}>✓ Active for all users</span>}
               </div>
             </div>
 
@@ -706,10 +704,10 @@ function AdminDashboard({ onBack }) {
                   {showWyzieKey ? "Hide" : "Show"}
                 </button>
                 <button className="btn btn-ghost" style={{ padding: "7px 12px", fontSize: 12 }} disabled={wyzieChecking} onClick={handleTestWyzie}>
-                  {wyzieChecking ? "Testingâ€¦" : "Test Key"}
+                  {wyzieChecking ? "Testing…" : "Test Key"}
                 </button>
                 <button className="btn btn-primary" onClick={handleSaveWyzie}>Save Key</button>
-                {wyzieSaved && <span style={{ fontSize: 13, color: "#48c774", fontWeight: 600 }}>âœ“ Saved</span>}
+                {wyzieSaved && <span style={{ fontSize: 13, color: "#48c774", fontWeight: 600 }}>✓ Saved</span>}
               </div>
               {wyzieStatus && (
                 <div style={{
@@ -737,7 +735,7 @@ function AdminDashboard({ onBack }) {
   );
 }
 
-// â”€â”€ Entry Point â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Entry Point ────────────────────────────────────────────────────────────────
 export default function AdminPage({ onBack }) {
   const [authed, setAuthed] = useState(() => {
     try { return sessionStorage.getItem(ADMIN_SESSION_KEY) === "1"; } catch { return false; }

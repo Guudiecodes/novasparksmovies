@@ -1,31 +1,16 @@
-﻿import crypto from "crypto";
-// api/auth.js â€” NovaSpark user register / login
+// api/auth.js — NovaSpark user register / login
 // Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY in Vercel env vars
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-// Simple hash â€” not bcrypt but avoids plain-text storage
+// Simple hash — not bcrypt but avoids plain-text storage
 function hashPassword(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
     h = ((h << 5) + h) ^ str.charCodeAt(i);
   }
   return Math.abs(h).toString(36);
-}
-
-const ADMIN_EMAIL = "jokesonyou146@gmail.com";
-const ADMIN_PASS = process.env.ADMIN_PASSWORD;
-const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET;
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-
-function sign(payloadB64) {
-  return crypto.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
-}
-function createSessionToken(email) {
-  const payload = JSON.stringify({ email, exp: Date.now() + SESSION_TTL_MS });
-  const payloadB64 = Buffer.from(payload).toString("base64url");
-  return `${payloadB64}.${sign(payloadB64)}`;
 }
 
 async function sb(method, path, body = null, params = {}) {
@@ -72,18 +57,7 @@ async function handleAuth(req, res) {
   const normalEmail = email.trim().toLowerCase();
   const passHash    = hashPassword(password);
 
-  if (action === "admin-login") {
-    if (!ADMIN_PASS || !SESSION_SECRET) {
-      return res.status(500).json({ error: "Server missing ADMIN_PASSWORD or ADMIN_SESSION_SECRET" });
-    }
-    const emailOk = normalEmail === ADMIN_EMAIL.toLowerCase();
-    const a = Buffer.from(password), b = Buffer.from(ADMIN_PASS);
-    const passOk = a.length === b.length && crypto.timingSafeEqual(a, b);
-    if (!emailOk || !passOk) return res.status(401).json({ error: "Invalid credentials" });
-    return res.status(200).json({ ok: true, token: createSessionToken(ADMIN_EMAIL) });
-  }
-
-  // â”€â”€ Register â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Register ────────────────────────────────────────────────────────────────
   if (action === "register") {
     const check = await sb("GET", "/users", null, {
       select: "id",
@@ -114,7 +88,7 @@ async function handleAuth(req, res) {
     });
   }
 
-  // â”€â”€ Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Login ───────────────────────────────────────────────────────────────────
   if (action === "login") {
     const { ok, data } = await sb("GET", "/users", null, {
       select:        "id,email,display_name,is_admin",
