@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import {
   PLANS,
   FEATURE_LABELS,
@@ -25,7 +25,7 @@ function FAQItem({ q, a }) {
         style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "14px 18px", fontSize: 14, fontWeight: 600, color: "var(--text)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
       >
         {q}
-        <span style={{ fontSize: 18, color: "var(--text3)", flexShrink: 0, marginLeft: 12 }}>{open ? "−" : "+"}</span>
+        <span style={{ fontSize: 18, color: "var(--text3)", flexShrink: 0, marginLeft: 12 }}>{open ? "âˆ’" : "+"}</span>
       </button>
       {open && (
         <div style={{ padding: "0 18px 14px", fontSize: 13, color: "var(--text3)", lineHeight: 1.7 }}>{a}</div>
@@ -61,8 +61,8 @@ function ExpiryWarningBanner({ onRenew }) {
   if (!warning) return null;
   const msgs = {
     "7d": { text: "Your plan expires in 7 days.",                               color: "#f5a623" },
-    "3d": { text: "Your plan expires in 3 days — renew now to stay premium.",   color: "#f97316" },
-    "1d": { text: "⚠ Your plan expires tomorrow! Renew now or lose access.",     color: "var(--red)" },
+    "3d": { text: "Your plan expires in 3 days â€” renew now to stay premium.",   color: "#f97316" },
+    "1d": { text: "âš  Your plan expires tomorrow! Renew now or lose access.",     color: "var(--red)" },
   };
   const { text, color } = msgs[warning] || {};
   return (
@@ -122,7 +122,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
           style={{ fontSize: 13, color: "#00b4a6", borderColor: "rgba(0,180,166,0.3)" }}
           onClick={() => setShowRestore(true)}
         >
-          Already subscribed? 🔄 Restore access
+          Already subscribed? ðŸ”„ Restore access
         </button>
       </div>
 
@@ -132,7 +132,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
           UPGRADE NOVASPARK
         </div>
         <p style={{ fontSize: 15, color: "var(--text3)", maxWidth: 480, margin: "0 auto", lineHeight: 1.7 }}>
-          Unlock the full experience. Cancel any time — your plan runs until the end of your billing period.
+          Unlock the full experience. Cancel any time â€” your plan runs until the end of your billing period.
         </p>
       </div>
 
@@ -144,15 +144,15 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
         <div style={{ background: "rgba(0,180,166,0.08)", border: "1px solid rgba(0,180,166,0.3)", borderRadius: 12, padding: "16px 22px", marginBottom: 36, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>
-              {PLANS[record.planId]?.name} — Active
+              {PLANS[record.planId]?.name} â€” Active
               {record.cancelledAt && (
                 <span style={{ marginLeft: 10, fontSize: 11, background: "rgba(255,100,50,0.15)", color: "var(--red)", borderRadius: 4, padding: "2px 8px" }}>Cancelled</span>
               )}
             </div>
             <div style={{ fontSize: 13, color: "var(--text3)" }}>
-              {record.email && <span>{record.email} · </span>}
+              {record.email && <span>{record.email} Â· </span>}
               <ExpiryTimer expiresAt={record.expiresAt} />
-              {record.cancelledAt && <span style={{ marginLeft: 6 }}>· Access until {new Date(record.expiresAt).toLocaleDateString()}</span>}
+              {record.cancelledAt && <span style={{ marginLeft: 6 }}>Â· Access until {new Date(record.expiresAt).toLocaleDateString()}</span>}
             </div>
             {record.txnRef && (
               <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>
@@ -205,7 +205,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                   <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text3)", marginBottom: 16 }}>Coming Soon</div>
                 ) : (
                   <div style={{ fontSize: 36, fontWeight: 800, color: "var(--text)", lineHeight: 1.1, marginBottom: 16 }}>
-                    ${Number(plan.price).toFixed(2)}
+                    ${Number(plan.priceUsd).toFixed(2)}
                     <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text3)" }}> /mo</span>
                   </div>
                 )}
@@ -215,7 +215,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                     const has = plan.features[key];
                     return (
                       <li key={key} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: has ? "var(--text)" : "var(--text3)" }}>
-                        <span style={{ fontSize: 14, color: has ? "#48c774" : "var(--text3)", flexShrink: 0 }}>{has ? "✓" : "—"}</span>
+                        <span style={{ fontSize: 14, color: has ? "#48c774" : "var(--text3)", flexShrink: 0 }}>{has ? "âœ“" : "â€”"}</span>
                         {label}
                       </li>
                     );
@@ -224,7 +224,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
 
                 {isCurrent ? (
                   <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: plan.color, padding: "10px 0", border: `1px solid ${plan.color}44`, borderRadius: 8 }}>
-                    ✓ Your current plan
+                    âœ“ Your current plan
                   </div>
                 ) : plan.comingSoon ? (
                   <div style={{ textAlign: "center", fontSize: 13, color: "var(--text3)", padding: "10px 0", border: "1px solid var(--border)", borderRadius: 8 }}>
@@ -236,7 +236,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                     style={{ width: "100%", justifyContent: "center", background: plan.color, border: "none", fontSize: 14, fontWeight: 700, padding: "12px 0" }}
                     onClick={() => setSelectedPlan(plan)}
                   >
-                    Get {plan.name} — ${Number(plan.price).toFixed(2)}/mo
+                    Get {plan.name} â€” ${Number(plan.priceUsd).toFixed(2)}/mo
                   </button>
                 ) : (
                   <div style={{ textAlign: "center", fontSize: 13, color: "var(--text3)", padding: "10px 0", border: "1px solid var(--border)", borderRadius: 8 }}>
@@ -249,7 +249,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
         })}
       </div>
 
-      {/* Payment methods — Paystack channels only, no bank names */}
+      {/* Payment methods â€” Paystack channels only, no bank names */}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
           Accepted payment methods
@@ -284,8 +284,8 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                 {["standard", "premium"].map((planId) => (
                   <td key={planId} style={{ textAlign: "center", padding: "11px 16px", borderBottom: "1px solid var(--border)" }}>
                     {PLANS[planId].features[key]
-                      ? <span style={{ color: "#48c774", fontWeight: 700, fontSize: 15 }}>✓</span>
-                      : <span style={{ color: "var(--text3)", fontSize: 13 }}>—</span>}
+                      ? <span style={{ color: "#48c774", fontWeight: 700, fontSize: 15 }}>âœ“</span>
+                      : <span style={{ color: "var(--text3)", fontSize: 13 }}>â€”</span>}
                   </td>
                 ))}
               </tr>
@@ -300,10 +300,10 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
           FREQUENTLY ASKED QUESTIONS
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 680, margin: "0 auto" }}>
-          <FAQItem q="Can I cancel my subscription?" a="Yes — cancel any time from this page. Your plan stays active until the end of your 30-day billing period. No charges after that." />
-          <FAQItem q="What if I clear my browser history?" a="No problem — click 'Already subscribed? Restore access' and enter your email and password. Your plan is stored on our server and restored instantly." />
+          <FAQItem q="Can I cancel my subscription?" a="Yes â€” cancel any time from this page. Your plan stays active until the end of your 30-day billing period. No charges after that." />
+          <FAQItem q="What if I clear my browser history?" a="No problem â€” click 'Already subscribed? Restore access' and enter your email and password. Your plan is stored on our server and restored instantly." />
           <FAQItem q="What if I forget my password?" a="Use the 'Forgot password' option in the restore screen. Enter your Paystack payment reference to verify your identity and set a new password." />
-          <FAQItem q="How does payment work?" a="Pay securely via Paystack — card, bank transfer, USSD, mobile money, or crypto. Your plan activates immediately after payment is confirmed." />
+          <FAQItem q="How does payment work?" a="Pay securely via Paystack â€” card, bank transfer, USSD, mobile money, or crypto. Your plan activates immediately after payment is confirmed." />
           <FAQItem q="What happens when my plan expires?" a="You automatically drop to Free. Your watchlist and history are always kept. You'll get warnings at 7 days, 3 days, and 1 day before expiry." />
           <FAQItem q="Is it really ad-free?" a="Yes. NovaSpark is completely ad-free across all plans. No ads, ever." />
         </div>

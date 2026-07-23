@@ -21,7 +21,7 @@ const ADMIN_FLOOR_KEY    = "ns_admin_global_plan";
 const MIGRATED_KEY       = "ns_migrated_from_streambert";
 const REGION_KEY         = "ns_region"; // "NG" | "INTL"
 
-const API_BASE = "https://novaspark.app";
+export const API_BASE = "https://novaspark.app";
 
 export const TRIAL_DAYS = 4;
 const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
