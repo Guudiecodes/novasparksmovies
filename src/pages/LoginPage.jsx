@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 
 const PREFIX = "streambert_";
 
@@ -51,7 +51,8 @@ export default function LoginPage({ onSuccess, onClose, onSkip }) {
       localStorage.setItem(PREFIX + "ns_user_id",    data.user.id);
       localStorage.setItem(PREFIX + "ns_user_email", data.user.email);
       localStorage.setItem(PREFIX + "ns_user_name",  data.user.displayName || "");
-      if (mode === "signup") { setSuccess("Account created! Welcome to NovaSpark 🎬"); setTimeout(() => onSuccess(data.user), 1400); }
+      localStorage.setItem("ns_user_token", data.token || "");
+      if (mode === "signup") { setSuccess("Account created! Welcome to NovaSpark ðŸŽ¬"); setTimeout(() => onSuccess(data.user), 1400); }
       else { onSuccess(data.user); }
     } catch { setError("Could not connect. Check your internet."); setLoading(false); }
   };
@@ -60,7 +61,7 @@ export default function LoginPage({ onSuccess, onClose, onSkip }) {
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: "48px 52px", width: 420, maxWidth: "90%", boxShadow: "0 48px 120px rgba(0,0,0,0.85)", position: "relative" }}>
         {onClose && (
-          <button onClick={onClose} style={{ position: "absolute", top: 16, right: 18, background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: "2px 6px" }}>×</button>
+          <button onClick={onClose} style={{ position: "absolute", top: 16, right: 18, background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: "2px 6px" }}>Ã—</button>
         )}
         <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: 6, color: "var(--red)", marginBottom: 6, textTransform: "uppercase" }}>NovaSpark</div>
         <div style={{ fontFamily: "var(--font-display)", fontSize: 34, letterSpacing: 1, marginBottom: 6, lineHeight: 1 }}>
@@ -81,12 +82,12 @@ export default function LoginPage({ onSuccess, onClose, onSkip }) {
         </div>
         <div style={{ marginBottom: 26 }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--text3)", marginBottom: 7 }}>Password</div>
-          <input className="apikey-input" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} style={{ width: "100%", marginBottom: 0 }} />
+          <input className="apikey-input" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} style={{ width: "100%", marginBottom: 0 }} />
         </div>
         {error && <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, background: "rgba(229,9,20,0.08)", border: "1px solid rgba(229,9,20,0.2)", color: "var(--red)" }}>{error}</div>}
         {success && <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, background: "rgba(72,199,116,0.08)", border: "1px solid rgba(72,199,116,0.2)", color: "#48c774" }}>{success}</div>}
         <button className="btn btn-primary" onClick={handleSubmit} disabled={loading} style={{ width: "100%", padding: "13px", fontSize: 15, fontWeight: 700, opacity: loading ? 0.65 : 1 }}>
-          {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Create Free Account"}
+          {loading ? "Please waitâ€¦" : mode === "login" ? "Sign In" : "Create Free Account"}
         </button>
         <div style={{ marginTop: 18, textAlign: "center", fontSize: 13, color: "var(--text3)" }}>
           {mode === "login" ? "Don't have an account? " : "Already registered? "}
