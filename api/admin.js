@@ -1,5 +1,5 @@
 ﻿import crypto from "crypto";
-// api/admin.js â€” NovaSpark admin data API
+// api/admin.js -- NovaSpark admin data API
 // Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY in Vercel env vars
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -41,9 +41,25 @@ async function sb(path, params = {}) {
   return res.json();
 }
 
+async function sbWrite(method, path, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    method,
+    headers: {
+      "Content-Type":  "application/json",
+      "apikey":        SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Prefer":        "return=representation",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`Supabase ${res.status}: ${JSON.stringify(data)}`);
+  return data;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin",  "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-admin-token");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!checkAuth(req)) return res.status(401).json({ error: "Unauthorized" });
@@ -54,7 +70,7 @@ export default async function handler(req, res) {
   const WEEK = 7 * DAY;
 
   try {
-    // â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Stats --------------------------------------------------------------
     if (action === "stats") {
       const [users, subs] = await Promise.all([
         sb("/users", { select: "id,created_at,last_active" }),
@@ -76,7 +92,7 @@ export default async function handler(req, res) {
       return res.json({ total: users.length, activeToday, newThisWeek, premium });
     }
 
-    // â”€â”€ Users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Users ----------------------------------------------------------------
     if (action === "users") {
       const page   = parseInt(req.query.page || "0");
       const limit  = 50;
@@ -110,7 +126,7 @@ export default async function handler(req, res) {
       return res.json({ users: result, page, limit, total: result.length });
     }
 
-    // â”€â”€ Activity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Activity ---------------------------------------------------------------
     if (action === "activity") {
       const activity = await sb("/activity", {
         select: "id,user_id,feature,meta,created_at",
@@ -120,7 +136,62 @@ export default async function handler(req, res) {
       return res.json({ activity });
     }
 
-    return res.status(400).json({ error: "Unknown action. Use: stats | users | activity" });
+    // -- Crypto: list pending --------------------------------------------------
+    if (action === "crypto_pending") {
+      const pending = await sb("/crypto_pending", {
+        select: "id,email,plan_id,txn_ref,duration_days,status,submitted_at",
+        status: "eq.pending",
+        order:  "submitted_at.desc",
+      });
+      return res.json({ pending });
+    }
+
+    // -- Crypto: approve (writes the real subscription row) ---------------------
+    if (action === "crypto_approve" && req.method === "POST") {
+      const { id } = req.body || {};
+      if (!id) return res.status(400).json({ error: "Missing id" });
+
+      const rows = await sb("/crypto_pending", { id: `eq.${id}`, select: "*", limit: 1 });
+      const claim = rows?.[0];
+      if (!claim) return res.status(404).json({ error: "Submission not found" });
+      if (claim.status !== "pending") return res.status(409).json({ error: `Already ${claim.status}` });
+
+      const expiresAt = now + (claim.duration_days || 30) * DAY;
+
+      await sbWrite("POST", "/subscriptions?on_conflict=email", {
+        email:         claim.email,
+        password_hash: claim.password_hash,
+        plan_id:       claim.plan_id,
+        txn_ref:       claim.txn_ref,
+        started_at:    now,
+        expires_at:    expiresAt,
+        cancelled_at:  null,
+        warning_sent:  { "7d": false, "3d": false, "1d": false },
+        updated_at:    new Date().toISOString(),
+      });
+
+      await sbWrite("PATCH", `/crypto_pending?id=eq.${id}`, {
+        status:      "approved",
+        reviewed_at: new Date().toISOString(),
+      });
+
+      return res.json({ ok: true, expiresAt });
+    }
+
+    // -- Crypto: reject -----------------------------------------------------------
+    if (action === "crypto_reject" && req.method === "POST") {
+      const { id } = req.body || {};
+      if (!id) return res.status(400).json({ error: "Missing id" });
+
+      await sbWrite("PATCH", `/crypto_pending?id=eq.${id}`, {
+        status:      "rejected",
+        reviewed_at: new Date().toISOString(),
+      });
+
+      return res.json({ ok: true });
+    }
+
+    return res.status(400).json({ error: "Unknown action. Use: stats | users | activity | crypto_pending | crypto_approve | crypto_reject" });
 
   } catch (e) {
     console.error("admin API error:", e.message);

@@ -34,6 +34,18 @@ async function adminFetch(action, params = {}) {
   return res.json();
 }
 
+async function adminPost(action, body = {}) {
+  const url = new URL(`${API_BASE}/api/admin`);
+  url.searchParams.set("action", action);
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.json();
+}
+
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function timeSince(ts) {
   if (!ts) return "Never";
@@ -205,6 +217,9 @@ function AdminDashboard({ onBack }) {
   const [apiError,        setApiError]      = useState(null);
   const [lastRefreshed,   setLastRefreshed] = useState(null);
   const [searchQuery,     setSearchQuery]   = useState("");
+  const [cryptoPending,  setCryptoPending] = useState([]);
+  const [cryptoLoading,  setCryptoLoading] = useState(false);
+  const [cryptoActionId, setCryptoActionId]= useState(null);
 
   // Settings tab state
   const [globalPlan,    setGlobalPlanState] = useState(() => getAdminGlobalPlan() || "free");
@@ -258,6 +273,32 @@ function AdminDashboard({ onBack }) {
     pollerRef.current = setInterval(fetchAll, 30000);
     return () => clearInterval(pollerRef.current);
   }, [fetchAll]);
+
+  const fetchCrypto = useCallback(async () => {
+    setCryptoLoading(true);
+    try {
+      const data = await adminFetch("crypto_pending");
+      setCryptoPending(data.pending || []);
+    } catch {
+      setCryptoPending([]);
+    }
+    setCryptoLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (tab === "crypto") fetchCrypto();
+  }, [tab, fetchCrypto]);
+
+  const handleCryptoDecision = async (id, decision) => {
+    setCryptoActionId(id);
+    try {
+      await adminPost(decision === "approve" ? "crypto_approve" : "crypto_reject", { id });
+      await fetchCrypto();
+    } catch (e) {
+      console.error("crypto decision failed:", e);
+    }
+    setCryptoActionId(null);
+  };
 
   const handleSavePlan = () => {
     setAdminGlobalPlan(globalPlan === "free" ? null : globalPlan);
@@ -319,6 +360,7 @@ function AdminDashboard({ onBack }) {
     { id: "overview",  label: "Overview" },
     { id: "users",     label: `Users${users.length ? ` (${users.length})` : ""}` },
     { id: "activity",  label: "Activity" },
+    { id: "crypto",    label: "Crypto Review" },
     { id: "settings",  label: "Settings" },
   ];
 
@@ -636,7 +678,45 @@ function AdminDashboard({ onBack }) {
         )}
 
         {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SETTINGS TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
-        {tab === "settings" && (
+{/* CRYPTO REVIEW TAB */}
+        {tab === "crypto" && (
+          <div style={{ maxWidth: 1000 }}>
+            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20, lineHeight: 1.7 }}>
+              Crypto payments are not automatic. Verify each transaction hash against the wallet on-chain before approving -- approving grants the plan immediately.
+            </div>
+            {cryptoLoading ? (
+              <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text3)", fontSize: 14 }}>Loading...</div>
+            ) : cryptoPending.length === 0 ? (
+              <div style={{ padding: "60px 0", textAlign: "center", color: "var(--text3)", fontSize: 14 }}>No pending crypto submissions.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {cryptoPending.map(p => (
+                  <div key={p.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{p.email} <span style={{ color: "var(--text3)", fontWeight: 500 }}>-- {p.plan_id}</span></div>
+                      <div style={{ fontSize: 11, color: "var(--text3)", wordBreak: "break-all" }}>Tx: {p.txn_ref}</div>
+                      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>Submitted {timeSince(p.submitted_at)}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                      <button className="btn btn-ghost" disabled={cryptoActionId === p.id}
+                        style={{ padding: "7px 16px", fontSize: 12, color: "var(--red)", borderColor: "rgba(255,80,50,0.3)" }}
+                        onClick={() => handleCryptoDecision(p.id, "reject")}>
+                        Reject
+                      </button>
+                      <button className="btn btn-primary" disabled={cryptoActionId === p.id}
+                        style={{ padding: "7px 16px", fontSize: 12, background: "#48c774", border: "none" }}
+                        onClick={() => handleCryptoDecision(p.id, "approve")}>
+                        {cryptoActionId === p.id ? "Working..." : "Approve"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+                {tab === "settings" && (
           <div style={{ maxWidth: 720 }}>
             {/* Global Plan Floor */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "28px 32px", marginBottom: 20 }}>
