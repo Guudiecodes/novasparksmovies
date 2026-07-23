@@ -1,23 +1,25 @@
-/**
- * ReelPage.jsx — NovaSpark Shorts v4
- * Desktop : YouTube Shorts layout — portrait card · action rail · nav arrows
+﻿/**
+ * ReelPage.jsx â€” NovaSpark Shorts v4
+ * Desktop : YouTube Shorts layout â€” portrait card Â· action rail Â· nav arrows
  * Mobile  : Full-screen vertical swipe (body portal)
  *
  * Key decisions
- * ─────────────
- *  ✦ Electron uses electronAPI.getTrailerStream + electronAPI.downloadTrailer
- *    for all video — no YouTube iframe in the desktop app
- *  ✦ Web falls back to YouTube embed (no download button shown)
- *  ✦ Share panel removed — replaced by a single Download button in the rail
- *  ✦ Search overlay: 2-col cinematic grid → inline player with side nav + queue strip
- *  ✦ Smart swipe: velocity gate prevents accidental navigation
- *  ✦ Related carousel lives in the Details sheet
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ *  âœ¦ Electron uses electronAPI.getTrailerStream + electronAPI.downloadTrailer
+ *    for all video â€” no YouTube iframe in the desktop app
+ *  âœ¦ Web falls back to YouTube embed (no download button shown)
+ *  âœ¦ Share panel removed â€” replaced by a single Download button in the rail
+ *  âœ¦ Search overlay: 2-col cinematic grid â†’ inline player with side nav + queue strip
+ *  âœ¦ Smart swipe: velocity gate prevents accidental navigation
+ *  âœ¦ Related carousel lives in the Details sheet
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { canUseShorts, canDownload, incrementFreeDailyUsage } from "../utils/premium";
+import PremiumGate from "../components/PremiumGate";
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ CONSTANTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TMDB_BASE    = "https://api.themoviedb.org/3";
 const TMDB_IMG     = "https://image.tmdb.org/t/p";
 const START_OFFSET = 0;
@@ -33,7 +35,7 @@ const SWIPE_X_PX   = 70;
 const DRAG_RESIST  = 0.38;
 const DIR_LOCK_DEG = 35;
 
-// ─── UTILS ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ UTILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function fmtCount(n) {
   if (!n) return "0";
   if (n >= 1e6)  return (n/1e6).toFixed(1).replace(".0","")+"M";
@@ -61,7 +63,7 @@ function buildYTSrc(id) {
 function imgSrc(path,size="w342"){ return path ? `${TMDB_IMG}/${size}${path}` : null; }
 function ytMsg(ifr,obj){ try{ ifr?.contentWindow?.postMessage(JSON.stringify(obj),"*"); }catch{} }
 
-// ─── PRNG + POOL ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ PRNG + POOL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function mulberry32(seed){
   let a=seed>>>0;
   return ()=>{ a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296; };
@@ -127,7 +129,7 @@ function makeReel(item,ytId,mediaType="movie"){
 }
 const hap={light:()=>{try{navigator.vibrate?.(8);}catch{}},save:()=>{try{navigator.vibrate?.([15,30,60]);}catch{}}};
 
-// ─── ATOMS ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ ATOMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LivePill({count}){
   if(!count)return null;
   return(<span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px 3px 7px",borderRadius:20,background:"rgba(0,180,166,0.12)",border:"1px solid rgba(0,180,166,0.3)",flexShrink:0}}><span style={{width:6,height:6,borderRadius:"50%",background:"#00e5cc",animation:"ns-livepulse 1.6s ease-in-out infinite",flexShrink:0}}/><span style={{fontSize:11,fontWeight:700,color:"#00e5cc",letterSpacing:0.2,whiteSpace:"nowrap"}}>{fmtCount(count)} watching</span></span>);
@@ -155,7 +157,7 @@ function ProgressBar({active,paused,onComplete}){
   return(<div style={{position:"absolute",bottom:0,left:0,right:0,height:2.5,background:"rgba(255,255,255,0.1)",zIndex:30,pointerEvents:"none"}}><div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#00b4a6,#00d4ff)",transition:"width 0.1s linear"}}/></div>);
 }
 
-// ─── WEB YT PLAYER ───────────────────────────────────────────────────────────
+// â”€â”€â”€ WEB YT PLAYER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function WebYTPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,preload}){
   const ifrRef=useRef(null);
   const[injected,setInjected]=useState(false),[loaded,setLoaded]=useState(false),[playing,setPlaying]=useState(false),[spinDone,setSpinDone]=useState(false);
@@ -189,14 +191,14 @@ function WebYTPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,prel
   );
 }
 
-// ─── ELECTRON PLAYER ─────────────────────────────────────────────────────────
-// Electron bypasses YouTube entirely — uses the app's own stream backend.
+// â”€â”€â”€ ELECTRON PLAYER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Electron bypasses YouTube entirely â€” uses the app's own stream backend.
 // v4 fixes:
-//  · fetching tracked via ref (not state) — prevents effect self-triggering
-//  · key={videoId} on <video> — forces DOM reset on track change
-//  · muted handled only via ref — avoids React's known boolean-attribute bug
-//  · onStalled checks v.src not stale closure variable
-//  · err removed from fetch effect deps — was causing re-run after error
+//  Â· fetching tracked via ref (not state) â€” prevents effect self-triggering
+//  Â· key={videoId} on <video> â€” forces DOM reset on track change
+//  Â· muted handled only via ref â€” avoids React's known boolean-attribute bug
+//  Â· onStalled checks v.src not stale closure variable
+//  Â· err removed from fetch effect deps â€” was causing re-run after error
 function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,preload}){
   const vRef=useRef(null);
   const[url,setUrl]=useState(null),[playing,setPlaying]=useState(false),[spinDone,setSpinDone]=useState(false),[err,setErr]=useState(false);
@@ -204,7 +206,7 @@ function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,p
   useEffect(()=>{aRef.current=active;},[active]);
   useEffect(()=>{idRef.current=videoId;},[videoId]);
 
-  // Hard reset — new videoId wipes everything
+  // Hard reset â€” new videoId wipes everything
   useEffect(()=>{
     const v=vRef.current;
     setUrl(null);setPlaying(false);setSpinDone(false);setErr(false);
@@ -250,12 +252,12 @@ function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,p
 
   // active toggle (runs AFTER [url] effect)
   useEffect(()=>{
-    const v=vRef.current;if(!v||!url)return; // url checked — not in deps intentionally
+    const v=vRef.current;if(!v||!url)return; // url checked â€” not in deps intentionally
     if(active){v.play().catch(()=>{v.muted=true;v.play().catch(()=>{});});}
     else{v.pause();v.muted=true;}
   },[active,url]); // include url so effect re-evaluates when both become ready
 
-  // Mute sync — use property not attribute (avoids React boolean-attr bug)
+  // Mute sync â€” use property not attribute (avoids React boolean-attr bug)
   useEffect(()=>{const v=vRef.current;if(v)v.muted=muted;},[muted]);
 
   // Pause / play toggle
@@ -269,7 +271,7 @@ function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,p
   return(
     <div style={{position:"absolute",inset:0,background:"#000",overflow:"hidden"}}>
       {/* key=videoId forces element recreation on track change;
-          no muted prop — handled entirely via ref to avoid React bug */}
+          no muted prop â€” handled entirely via ref to avoid React bug */}
       <video key={videoId} ref={vRef} playsInline preload="auto"
         onCanPlayThrough={()=>setSpinDone(true)}
         onPlaying={()=>{setPlaying(true);setSpinDone(true);}}
@@ -287,7 +289,7 @@ function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,p
 }
 const Player = IS_ELECTRON ? ElectronPlayer : WebYTPlayer;
 
-// ─── SEARCH QUEUE STRIP ──────────────────────────────────────────────────────
+// â”€â”€â”€ SEARCH QUEUE STRIP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SearchQueueStrip({items,idx,onSelect}){
   const ref=useRef(null);
   useEffect(()=>{ref.current?.children[idx]?.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});},[idx]);
@@ -308,7 +310,7 @@ function SearchQueueStrip({items,idx,onSelect}){
   );
 }
 
-// ─── SEARCH OVERLAY ──────────────────────────────────────────────────────────
+// â”€â”€â”€ SEARCH OVERLAY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SearchOverlay({open,apiKey,onClose,onAddToMain}){
   const[mode,setMode]=useState("grid");
   const[q,setQ]=useState("");
@@ -372,11 +374,11 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
   },[open,mode,goPlayer]);
 
   const display=q.length>1?results:trending;
-  const sLabel=sLoading?"Searching…":q.length>1?`${results.length} result${results.length===1?"":"s"}`:"Trending this week";
+  const sLabel=sLoading?"Searchingâ€¦":q.length>1?`${results.length} result${results.length===1?"":"s"}`:"Trending this week";
 
   if(!open)return null;
 
-  // ── PLAYER MODE ─────────────────────────────────────────────────────────────
+  // â”€â”€ PLAYER MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if(mode==="player"){
     const item=pQueue[pIdx];
     const ytKey=item?.id in trailers?trailers[item.id]:undefined;
@@ -395,7 +397,7 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.68)"}}/>
               <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,zIndex:1}}>
                 {isLoadingT&&<><div style={{width:40,height:40,borderRadius:"50%",border:"2.5px solid rgba(255,255,255,0.06)",borderTopColor:"#00b4a6",animation:"ns-spin 0.8s linear infinite"}}/><span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontFamily:"'DM Mono',monospace",letterSpacing:2,textTransform:"uppercase"}}>Loading trailer</span></>}
-                {noTrailer&&<><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="1.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span style={{fontSize:13,color:"rgba(255,255,255,0.3)",fontFamily:"'DM Sans',sans-serif"}}>No trailer available</span><button onClick={()=>goPlayer(1)} style={{all:"unset",marginTop:6,display:"inline-flex",alignItems:"center",gap:6,padding:"7px 16px",borderRadius:6,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.12)",fontSize:12,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontWeight:600}}>Next →</button></>}
+                {noTrailer&&<><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="1.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span style={{fontSize:13,color:"rgba(255,255,255,0.3)",fontFamily:"'DM Sans',sans-serif"}}>No trailer available</span><button onClick={()=>goPlayer(1)} style={{all:"unset",marginTop:6,display:"inline-flex",alignItems:"center",gap:6,padding:"7px 16px",borderRadius:6,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.12)",fontSize:12,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontWeight:600}}>Next â†’</button></>}
               </div>
             </div>
           )}
@@ -422,7 +424,7 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
           <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:25,background:"linear-gradient(to top,rgba(0,0,0,0.97) 0%,rgba(0,0,0,0.7) 50%,transparent 100%)",padding:"90px 18px 18px",animation:"ns-slide-fade 0.3s ease both"}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10,alignItems:"center"}}>
               {itemGenres.map(g=><span key={g} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.6)",letterSpacing:0.4}}>{g}</span>)}
-              {item?.vote_average>0&&<span style={{background:"rgba(241,196,15,0.08)",border:"1px solid rgba(241,196,15,0.22)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#f1c40f"}}>★ {item.vote_average.toFixed(1)}</span>}
+              {item?.vote_average>0&&<span style={{background:"rgba(241,196,15,0.08)",border:"1px solid rgba(241,196,15,0.22)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#f1c40f"}}>â˜… {item.vote_average.toFixed(1)}</span>}
               {item?.media_type==="tv"&&<span style={{background:"rgba(167,139,250,0.12)",border:"1px solid rgba(167,139,250,0.28)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#a78bfa",letterSpacing:0.4}}>TV Series</span>}
             </div>
             <h2 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(26px,5.5vw,50px)",fontWeight:400,margin:"0 0 6px",color:"#fff",letterSpacing:1.5,lineHeight:1}}>{item?.title||item?.name}</h2>
@@ -430,7 +432,7 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
             {item?.overview&&<p style={{fontSize:12,color:"rgba(255,255,255,0.52)",lineHeight:1.55,margin:"0 0 14px",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden",maxWidth:500}}>{item.overview}</p>}
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <button onClick={()=>{onAddToMain(item);onClose();}} style={{all:"unset",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:7,padding:"9px 22px",borderRadius:7,background:"rgba(0,180,166,0.18)",border:"1.5px solid rgba(0,229,204,0.36)",color:"#00e5cc",fontSize:13,fontWeight:700,letterSpacing:0.3,transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(0,180,166,0.3)"} onMouseLeave={e=>e.currentTarget.style.background="rgba(0,180,166,0.18)"}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Watch Now</button>
-              {pIdx<pQueue.length-1&&<button onClick={()=>goPlayer(1)} style={{all:"unset",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:7,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.65)",fontSize:12,fontWeight:600,transition:"background 0.15s",fontFamily:"'DM Sans',sans-serif"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.12)"} onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}>Next →</button>}
+              {pIdx<pQueue.length-1&&<button onClick={()=>goPlayer(1)} style={{all:"unset",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:7,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.65)",fontSize:12,fontWeight:600,transition:"background 0.15s",fontFamily:"'DM Sans',sans-serif"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.12)"} onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}>Next â†’</button>}
             </div>
           </div>
         </div>
@@ -439,7 +441,7 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
     );
   }
 
-  // ── GRID MODE ───────────────────────────────────────────────────────────────
+  // â”€â”€ GRID MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return createPortal(
     <div style={{position:"fixed",inset:0,zIndex:2147483644,background:"rgba(4,4,4,0.97)",backdropFilter:"blur(24px)",display:"flex",flexDirection:"column",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",animation:"ns-srch-in 0.22s cubic-bezier(0.22,1,0.36,1) both"}}>
       <style>{`@keyframes ns-spin{to{transform:rotate(360deg)}}@keyframes ns-srch-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}@keyframes ns-card-pop{from{opacity:0;transform:scale(0.93) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}@keyframes ns-bar-pulse{0%,100%{transform:scaleY(0.3)}50%{transform:scaleY(1)}}.ns-sc:hover .ns-sc-play{opacity:1!important}.ns-sc:hover img{transform:scale(1.05)!important}`}</style>
@@ -450,7 +452,7 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
         </button>
         <div style={{flex:1,position:"relative"}}>
           <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"rgba(255,255,255,0.28)",pointerEvents:"none",display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-          <input ref={inputRef} value={q} onChange={e=>handleInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doSearch(q);if(e.key==="Escape")onClose();}} placeholder="Search movies, shows…" style={{width:"100%",display:"block",boxSizing:"border-box",background:"rgba(255,255,255,0.07)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"9px 34px 9px 34px",color:"#fff",fontSize:15,fontFamily:"inherit",outline:"none",transition:"border-color 0.15s"}} onFocus={e=>e.target.style.borderColor="rgba(0,180,166,0.55)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.1)"}/>
+          <input ref={inputRef} value={q} onChange={e=>handleInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doSearch(q);if(e.key==="Escape")onClose();}} placeholder="Search movies, showsâ€¦" style={{width:"100%",display:"block",boxSizing:"border-box",background:"rgba(255,255,255,0.07)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"9px 34px 9px 34px",color:"#fff",fontSize:15,fontFamily:"inherit",outline:"none",transition:"border-color 0.15s"}} onFocus={e=>e.target.style.borderColor="rgba(0,180,166,0.55)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.1)"}/>
           {q&&<button onClick={()=>handleInput("")} style={{all:"unset",position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",cursor:"pointer",color:"rgba(255,255,255,0.35)",display:"flex",padding:4}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>}
         </div>
       </div>
@@ -472,13 +474,13 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
                   {item.media_type==="tv"&&<div style={{position:"absolute",top:8,left:8,background:"rgba(167,139,250,0.92)",borderRadius:4,padding:"2px 7px",fontSize:8,fontWeight:800,color:"#fff",letterSpacing:1,fontFamily:"'DM Mono',monospace",backdropFilter:"blur(4px)"}}>TV</div>}
                   <div className="ns-sc-play" style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.18)",opacity:0.5,transition:"opacity 0.2s"}}><div style={{width:46,height:46,borderRadius:"50%",background:"rgba(0,0,0,0.55)",border:"1.5px solid rgba(255,255,255,0.28)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(6px)"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style={{marginLeft:2}}><path d="M8 5v14l11-7z"/></svg></div></div>
                   <div style={{position:"absolute",bottom:0,left:0,right:0,height:"45%",background:"linear-gradient(to top,rgba(0,0,0,0.9) 0%,transparent 100%)",pointerEvents:"none"}}/>
-                  {item.vote_average>0&&<span style={{position:"absolute",bottom:8,right:8,fontSize:10,fontWeight:700,color:"#f1c40f",textShadow:"0 1px 4px rgba(0,0,0,0.9)"}}>{item.vote_average.toFixed(1)} ★</span>}
+                  {item.vote_average>0&&<span style={{position:"absolute",bottom:8,right:8,fontSize:10,fontWeight:700,color:"#f1c40f",textShadow:"0 1px 4px rgba(0,0,0,0.9)"}}>{item.vote_average.toFixed(1)} â˜…</span>}
                 </div>
                 <div style={{padding:"10px 11px 13px",background:"rgba(255,255,255,0.015)"}}>
                   <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.92)",lineHeight:1.3,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",fontFamily:"'DM Sans',sans-serif"}}>{item.title||item.name}</div>
                   <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                     <span style={{fontSize:10,color:"rgba(255,255,255,0.28)",fontFamily:"'DM Mono',monospace"}}>{(item.release_date||item.first_air_date||"").slice(0,4)}</span>
-                    {(item.genre_ids||[]).slice(0,1).map(id=>GENRES[id]).filter(Boolean).map(g=><span key={g} style={{fontSize:9,color:"rgba(0,180,166,0.75)",fontWeight:700}}>· {g}</span>)}
+                    {(item.genre_ids||[]).slice(0,1).map(id=>GENRES[id]).filter(Boolean).map(g=><span key={g} style={{fontSize:9,color:"rgba(0,180,166,0.75)",fontWeight:700}}>Â· {g}</span>)}
                   </div>
                 </div>
               </button>
@@ -490,7 +492,7 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
   );
 }
 
-// ─── RELATED CAROUSEL ────────────────────────────────────────────────────────
+// â”€â”€â”€ RELATED CAROUSEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function RelatedCarousel({items,onSelect}){
   if(!items?.length)return null;
   return(
@@ -504,7 +506,7 @@ function RelatedCarousel({items,onSelect}){
               <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.5) 0%,transparent 55%)",pointerEvents:"none"}}/>
             </div>
             <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.6)",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",textAlign:"center"}}>{item.title||item.name}</div>
-            {item.vote_average>0&&<span style={{fontSize:9,color:"#f1c40f",fontWeight:700,textAlign:"center"}}>★ {item.vote_average.toFixed(1)}</span>}
+            {item.vote_average>0&&<span style={{fontSize:9,color:"#f1c40f",fontWeight:700,textAlign:"center"}}>â˜… {item.vote_average.toFixed(1)}</span>}
           </button>
         ))}
       </div>
@@ -512,7 +514,7 @@ function RelatedCarousel({items,onSelect}){
   );
 }
 
-// ─── INFO SHEET ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ INFO SHEET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function InfoSheet({reel,visible,onClose,related,onRelatedSelect}){
   if(!visible||!reel)return null;
   return(
@@ -520,7 +522,7 @@ function InfoSheet({reel,visible,onClose,related,onRelatedSelect}){
       <div onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,alignItems:"center"}}>
           {reel.genres.map(g=><span key={g} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.6)",letterSpacing:0.4}}>{g}</span>)}
-          {reel.rating&&<span style={{background:"rgba(241,196,15,0.08)",border:"1px solid rgba(241,196,15,0.2)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#f1c40f"}}>★ {reel.rating}</span>}
+          {reel.rating&&<span style={{background:"rgba(241,196,15,0.08)",border:"1px solid rgba(241,196,15,0.2)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#f1c40f"}}>â˜… {reel.rating}</span>}
           <LivePill count={reel.watchingNow}/>
         </div>
         <h2 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(28px,7vw,52px)",fontWeight:400,margin:"0 0 10px",color:"#fff",letterSpacing:1.5,lineHeight:0.95}}>{reel.title}</h2>
@@ -532,7 +534,7 @@ function InfoSheet({reel,visible,onClose,related,onRelatedSelect}){
   );
 }
 
-// ─── UI ATOMS ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ UI ATOMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ActionBtn({icon,label,count,active,onClick}){
   const[pop,setPop]=useState(false);const color=active?"#00b4a6":undefined;
   return(<button onClick={()=>{setPop(true);setTimeout(()=>setPop(false),200);onClick?.();}} style={{all:"unset",display:"flex",flexDirection:"column",alignItems:"center",gap:7,cursor:"pointer",WebkitTapHighlightColor:"transparent"}} onMouseEnter={e=>e.currentTarget.querySelector(".ns-ab-c").style.background=active?"rgba(0,180,166,0.2)":"rgba(255,255,255,0.14)"} onMouseLeave={e=>e.currentTarget.querySelector(".ns-ab-c").style.background=active?"rgba(0,180,166,0.1)":"rgba(255,255,255,0.08)"}>
@@ -566,9 +568,9 @@ function GestureRow({icon,text}){
   return(<div style={{display:"flex",alignItems:"center",gap:9}}><span style={{flexShrink:0,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center"}}>{ic}</span><span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.76)",fontFamily:"'DM Sans',sans-serif",letterSpacing:0.1,whiteSpace:"nowrap"}}>{text}</span></div>);
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MAIN
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigate}){
   const[reels,setReels]       =useState([]);
   const[loading,setLoading]   =useState(true);
@@ -617,10 +619,13 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
   const showToast=useCallback((msg,ms=2200)=>{setToast(msg);setTimeout(()=>setToast(null),ms);},[]);
   const firstInteract=useCallback(()=>{if(!hadInteract.current){hadInteract.current=true;setInteracted(true);}},[]);
 
+  const [showGate,setShowGate]=useState(null);
   const goTo=useCallback(n=>{
     firstInteract();if(!canNav.current)return;
     const len=reelsRef.current.length;if(!len)return;
     const c=Math.max(0,Math.min(n,len-1));if(c===idxRef.current)return;
+    const forward=c>idxRef.current;
+    if(forward){if(!canUseShorts()){setShowGate("shorts");return;}incrementFreeDailyUsage("shorts");}
     canNav.current=false;idxRef.current=c;setIdx(c);setTimeout(()=>{canNav.current=true;},380);
   },[firstInteract]);
 
@@ -636,13 +641,14 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
 
   const downloadReel=useCallback(()=>{
     const cur=reelsRef.current[idxRef.current];if(!cur||!IS_ELECTRON)return;
+    if(!canDownload()){setShowGate("download");return;}
     setDownloading(true);setDlProgress(0);
     window.electronAPI?.downloadTrailer?.(cur.youtubeId,cur.title)?.catch(()=>{setDownloading(false);showToast("Download failed");});
   },[showToast]);
 
   const injectReel=useCallback(async(item,mediaType="movie")=>{
-    if(!apiKey)return;showToast(`Loading ${item.title||item.name}…`);
-    const insertAt=idxRef.current; // capture NOW — before any await
+    if(!apiKey)return;showToast(`Loading ${item.title||item.name}â€¦`);
+    const insertAt=idxRef.current; // capture NOW â€” before any await
     try{
       const r=await fetch(`${TMDB_BASE}/${mediaType}/${item.id}/videos?api_key=${apiKey}&language=en-US`);
       const d=await r.json();const ytId=bestTrailer(d.results||[]);
@@ -651,7 +657,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
       setReels(prev=>{const arr=[...prev];arr.splice(insertAt+1,0,reel);return arr;});
       await new Promise(res=>setTimeout(res,80));
       goTo(insertAt+1);
-      showToast(`▶  ${reel.title}`);
+      showToast(`â–¶  ${reel.title}`);
     }catch{showToast("Failed to load");}
   },[apiKey,goTo,showToast]);
 
@@ -678,7 +684,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
     el.addEventListener("wheel",fn,{passive:false});return()=>el.removeEventListener("wheel",fn);
   },[goTo,desktop]);
 
-  // Smart mobile touch — velocity + peek
+  // Smart mobile touch â€” velocity + peek
   useEffect(()=>{
     if(desktop)return;const el=containerRef.current;if(!el)return;
     const g={on:false,x0:0,y0:0,x1:0,y1:0,t0:0,dir:null};
@@ -727,7 +733,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
     </div>
   );
 
-  // ════ DESKTOP ════════════════════════════════════════════════════════════════
+  // â•â•â•â• DESKTOP â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   if(desktop){
     return(
       <div ref={containerRef} style={{position:"fixed",top:0,bottom:0,left:"var(--sidebar,54px)",right:0,background:"#0f0f0f",display:"flex",flexDirection:"column",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",overflow:"hidden"}}>
@@ -755,7 +761,8 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
             {/* Video card */}
             <div style={{flexShrink:0}}>
               <div onClick={e=>{if(e.target.closest("button,a,[data-ns]"))return;togglePause();}} style={{position:"relative",height:`min(calc(100vh - ${HEADER_H}px - 32px), 720px)`,aspectRatio:"9/16",borderRadius:12,overflow:"hidden",background:"#000",cursor:"pointer"}}>
-                {loading&&spinner}
+                {showGate&&<PremiumGate feature={showGate} onClose={()=>setShowGate(null)}/>}
+      {loading&&spinner}
                 {!loading&&reels.map((r,i)=>{
                   if(!visible(i))return null;
                   return(
@@ -773,7 +780,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
                           {cur.overview&&<p style={{fontSize:12,color:"rgba(255,255,255,0.62)",lineHeight:1.45,margin:"0 0 7px",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{cur.overview}</p>}
                           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                             {cur.genres.map(g=><span key={g} style={{fontSize:12,fontWeight:600,color:"#00b4a6"}}>#{g.toLowerCase().replace(/ /g,"-")}</span>)}
-                            {cur.rating&&<span style={{fontSize:12,fontWeight:600,color:"rgba(241,196,15,0.85)"}}>★{cur.rating}</span>}
+                            {cur.rating&&<span style={{fontSize:12,fontWeight:600,color:"rgba(241,196,15,0.85)"}}>â˜…{cur.rating}</span>}
                             <LivePill count={cur.watchingNow}/>
                           </div>
                         </div>
@@ -798,7 +805,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
               <NavBtn dir="down" disabled={idx>=reels.length-1||loading} onClick={()=>{hap.light();goTo(idx+1);}}/>
             </div>
           </div>
-          {!interacted&&!loading&&reels.length>0&&<div style={{position:"absolute",bottom:18,left:"50%",transform:"translateX(-50%)",zIndex:40,pointerEvents:"none",display:"flex",alignItems:"center",gap:10,background:"rgba(10,10,10,0.88)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,padding:"8px 18px",animation:"ns-hintfade 5s ease 1s both",whiteSpace:"nowrap"}}><span style={{fontSize:11,color:"rgba(255,255,255,0.65)",fontFamily:"'DM Sans',sans-serif"}}>Scroll or ↑ ↓ to browse · Click to pause · / to search</span></div>}
+          {!interacted&&!loading&&reels.length>0&&<div style={{position:"absolute",bottom:18,left:"50%",transform:"translateX(-50%)",zIndex:40,pointerEvents:"none",display:"flex",alignItems:"center",gap:10,background:"rgba(10,10,10,0.88)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,padding:"8px 18px",animation:"ns-hintfade 5s ease 1s both",whiteSpace:"nowrap"}}><span style={{fontSize:11,color:"rgba(255,255,255,0.65)",fontFamily:"'DM Sans',sans-serif"}}>Scroll or â†‘ â†“ to browse Â· Click to pause Â· / to search</span></div>}
           {!loading&&!reels.length&&<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,letterSpacing:2,color:"rgba(255,255,255,0.12)"}}>No Shorts</span></div>}
         </div>
         {toast&&<div style={{position:"fixed",top:70,left:"50%",transform:"translateX(-50%)",zIndex:100,background:"rgba(10,10,10,0.92)",border:"1px solid rgba(0,180,166,0.2)",borderRadius:8,padding:"9px 18px",display:"flex",alignItems:"center",gap:8,animation:"ns-fadein 0.2s ease both",whiteSpace:"nowrap",pointerEvents:"none"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span style={{fontFamily:"'DM Mono',monospace",fontSize:11,letterSpacing:0.8,color:"#00b4a6",textTransform:"uppercase"}}>{toast}</span></div>}
@@ -809,10 +816,11 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
     );
   }
 
-  // ════ MOBILE ══════════════════════════════════════════════════════════════════
+  // â•â•â•â• MOBILE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   return createPortal(
     <div ref={containerRef} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:2147483647}}>
       <style>{`${G} .ns-mob-rail{position:absolute;right:8px;bottom:100px;z-index:30;display:flex;flex-direction:column;align-items:center;gap:18px;touch-action:none;} .ns-mob-info{position:absolute;bottom:0;left:0;right:60px;z-index:30;padding:0 14px 72px 16px;pointer-events:none;box-sizing:border-box;}`}</style>
+      {showGate&&<PremiumGate feature={showGate} onClose={()=>setShowGate(null)}/>}
       {loading&&spinner}
       {!loading&&reels.map((r,i)=>{
         if(!visible(i))return null;
@@ -845,7 +853,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
             <div className="ns-mob-info">
               <div style={{display:"flex",gap:5,marginBottom:6,flexWrap:"wrap",alignItems:"center"}}>
                 {r.genres.slice(0,2).map(g=><span key={g} style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"3px 9px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.65)",letterSpacing:0.8,textTransform:"uppercase",fontFamily:"'DM Mono',monospace"}}>{g}</span>)}
-                {r.rating&&<span style={{background:"rgba(241,196,15,0.07)",border:"1px solid rgba(241,196,15,0.2)",borderRadius:20,padding:"3px 8px",fontSize:9,fontWeight:700,color:"#f1c40f",fontFamily:"'DM Mono',monospace"}}>★ {r.rating}</span>}
+                {r.rating&&<span style={{background:"rgba(241,196,15,0.07)",border:"1px solid rgba(241,196,15,0.2)",borderRadius:20,padding:"3px 8px",fontSize:9,fontWeight:700,color:"#f1c40f",fontFamily:"'DM Mono',monospace"}}>â˜… {r.rating}</span>}
                 <LivePill count={r.watchingNow}/>
               </div>
               <h2 style={{margin:"0 0 9px",fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(18px,5.5vw,26px)",fontWeight:400,letterSpacing:1,lineHeight:1.1,color:"#fff",textShadow:"0 2px 18px rgba(0,0,0,0.92)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",animation:isA?"ns-fadein 0.4s ease both":"none"}}>{r.title}</h2>
@@ -855,7 +863,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
             {/* Mobile dock overlay */}
             {isA&&showDock&&(
               <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:75,background:"rgba(0,0,0,0.94)",backdropFilter:"blur(16px)",padding:"14px 16px 80px",animation:"ns-slide-up 0.25s cubic-bezier(0.22,1,0.36,1) both"}} data-ns onClick={e=>e.stopPropagation()}>
-                <div style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:"rgba(255,255,255,0.2)",textTransform:"uppercase",fontFamily:"'DM Mono',monospace",marginBottom:10}}>Queue · {idx+1} / {reels.length}</div>
+                <div style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:"rgba(255,255,255,0.2)",textTransform:"uppercase",fontFamily:"'DM Mono',monospace",marginBottom:10}}>Queue Â· {idx+1} / {reels.length}</div>
                 <div style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
                   {reels.map((rr,ii)=>(
                     <button key={`dk-${rr.id}-${ii}`} onClick={()=>{hap.light();goTo(ii);setShowDock(false);}} style={{all:"unset",cursor:"pointer",flexShrink:0,width:44,height:66,borderRadius:6,overflow:"hidden",background:"#1a1a1a",border:`1.5px solid ${ii===idx?"#00b4a6":"rgba(255,255,255,0.07)"}`,transform:ii===idx?"scale(1.1)":"scale(1)",transition:"border-color 0.15s,transform 0.15s",position:"relative"}}>

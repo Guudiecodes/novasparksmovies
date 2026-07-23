@@ -1,4 +1,4 @@
-import {
+﻿import {
   useState,
   useEffect,
   useLayoutEffect,
@@ -61,10 +61,10 @@ import {
 import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
 import PremiumGate from "../components/PremiumGate";
 
-// ── Disclaimer ticker ─────────────────────────────────────────────────────────
+// â”€â”€ Disclaimer ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function DisclaimerTicker() {
   const msg =
-    "⚠  NovasparksMovies does not host or store any media content. Stream quality and availability may vary by region.  You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  ⚠";
+    "âš   NovasparksMovies does not host or store any media content. Stream quality and availability may vary by region.  You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  âš ";
   return (
     <div style={{
       background: "rgba(229,9,20,0.06)",
@@ -81,7 +81,7 @@ function DisclaimerTicker() {
   );
 }
 
-// ── Cast card ─────────────────────────────────────────────────────────────────
+// â”€â”€ Cast card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const CastCard = memo(function CastCard({ person }) {
   return (
     <div className="ns-cast-card">
@@ -100,12 +100,12 @@ const CastCard = memo(function CastCard({ person }) {
   );
 });
 
-// ── Review card ───────────────────────────────────────────────────────────────
+// â”€â”€ Review card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ReviewCard = memo(function ReviewCard({ review }) {
   const [expanded, setExpanded] = useState(false);
   const content = review.content || "";
   const short = content.length > 320;
-  const display = expanded || !short ? content : content.slice(0, 320) + "…";
+  const display = expanded || !short ? content : content.slice(0, 320) + "â€¦";
   const initials = (review.author || "?").slice(0, 2).toUpperCase();
   const rating = review.author_details?.rating;
   const date = review.created_at
@@ -135,7 +135,7 @@ const ReviewCard = memo(function ReviewCard({ review }) {
   );
 });
 
-// ── Info row (label + value) ──────────────────────────────────────────────────
+// â”€â”€ Info row (label + value) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function InfoRow({ label, value }) {
   if (!value) return null;
   return (
@@ -146,7 +146,7 @@ function InfoRow({ label, value }) {
   );
 }
 
-// ── Section heading ───────────────────────────────────────────────────────────
+// â”€â”€ Section heading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SectionHeading({ children }) {
   return (
     <div className="ns-section-heading">
@@ -278,7 +278,7 @@ export default function TVPage({
   const planId       = isPremium?.planId || (isPremium ? "premium" : "free");
   const handleUpgrade = onUpgrade ?? (() => window.dispatchEvent(new CustomEvent("NovasparksMovies:upgrade")));
 
-  // ── Fetch TV details + credits + reviews + keywords ───────────────────────
+  // â”€â”€ Fetch TV details + credits + reviews + keywords â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let mounted = true;
     setLoading(true);
@@ -302,7 +302,7 @@ export default function TVPage({
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Episode group ─────────────────────────────────────────────────────────
+  // â”€â”€ Episode group â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const groupId = EPISODE_GROUP_IDS[Number(item.id)];
     if (!groupId || !apiKey) { setEpisodeGroupData(null); setEpisodeGroupMap(null); return; }
@@ -313,7 +313,7 @@ export default function TVPage({
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Trailer ───────────────────────────────────────────────────────────────
+  // â”€â”€ Trailer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let mounted = true;
     tmdbFetch(`/tv/${item.id}/videos`, apiKey)
@@ -326,14 +326,14 @@ export default function TVPage({
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Age rating ────────────────────────────────────────────────────────────
+  // â”€â”€ Age rating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let mounted = true;
     fetchTVRating(item.id, apiKey, ratingCountry).then((r) => { if (mounted) setRating(r); });
     return () => { mounted = false; };
   }, [item.id, apiKey, ratingCountry]);
 
-  // ── Season episodes ───────────────────────────────────────────────────────
+  // â”€â”€ Season episodes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!apiKey || !item.id) return;
     if (episodeGroupData) { setSelectedEp(null); setPlaying(false); setSeasonData(null); setLoadingSeason(false); return; }
@@ -347,7 +347,7 @@ export default function TVPage({
     return () => { mounted = false; };
   }, [item.id, selectedSeason, apiKey, anilistSeasons]);
 
-  // ── Auto source ───────────────────────────────────────────────────────────
+  // â”€â”€ Auto source â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let cancelled = false;
     setAutoSourceStatus("testing");
@@ -360,14 +360,14 @@ export default function TVPage({
     return () => { cancelled = true; };
   }, [item.id, selectedSeason, selectedEp?.episode_number]);
 
-  // ── Reset player state ────────────────────────────────────────────────────
+  // â”€â”€ Reset player state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     setM3u8Url(null); setInterceptedSubs([]); setShowSourceMenu(false);
     setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
     setWebviewLoading(true);
   }, [item.id, selectedEp?.episode_number, selectedSeason, playerSource, dubMode]);
 
-  // ── Anime detection ───────────────────────────────────────────────────────
+  // â”€â”€ Anime detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let mounted = true;
     setAnilistData(null); setAnilistSeasons(null);
@@ -390,7 +390,7 @@ export default function TVPage({
     return () => { mounted = false; };
   }, [item.id, isAnime]);
 
-  // ── AllManga async resolve ────────────────────────────────────────────────
+  // â”€â”€ AllManga async resolve â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!playing || !selectedEp || !isAsync) return;
     if (resolvedPlayerUrl || resolvingUrl) return;
@@ -415,7 +415,7 @@ export default function TVPage({
     return () => { mounted = false; };
   }, [playing, selectedEp, playerSource, selectedSeason, dubMode]);
 
-  // ── M3U8 / subtitle listeners ─────────────────────────────────────────────
+  // â”€â”€ M3U8 / subtitle listeners â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!window.electron) return;
     const handler = window.electron.onM3u8Found((url) => { setM3u8Url((prev) => (prev !== url ? url : prev)); });
@@ -535,7 +535,7 @@ export default function TVPage({
     if (wv) { try { wv.src = "about:blank"; } catch {} }
   }, [playing]);
 
-  // ── Webview loading ───────────────────────────────────────────────────────
+  // â”€â”€ Webview loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!playing) return;
     const wv = webviewRef.current;
@@ -560,7 +560,7 @@ export default function TVPage({
     };
   }, [playing, playerSource, item.id, selectedEp?.episode_number]);
 
-  // ── AniSkip ───────────────────────────────────────────────────────────────
+  // â”€â”€ AniSkip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     setSkipTimings(null); setSkipPrompt(null);
     if (introSkipMode === "off" || playerSource !== "allmanga" || !isAnime) return;
@@ -591,7 +591,7 @@ export default function TVPage({
     return () => wv.removeEventListener("before-input-event", handler);
   }, [skipPrompt, handleManualSkip]);
 
-  // ── Progress tracking ─────────────────────────────────────────────────────
+  // â”€â”€ Progress tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const aniSkipActive = introSkipMode !== "off" && playing && !!skipTimings && playerSource === "allmanga";
     if (!aniSkipActive) setSkipPrompt(null);
@@ -658,7 +658,7 @@ export default function TVPage({
     return () => { wv.removeEventListener("dom-ready", inject); };
   }, [playing, playerSource]);
 
-  // ── Fullscreen / PiP ──────────────────────────────────────────────────────
+  // â”€â”€ Fullscreen / PiP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!playing || !NEEDS_INTERCEPT.includes(playerSource)) return;
     const enterH = window.electron?.onWebviewEnterFullscreen?.(() => { setPlayerFullscreen(true); document.documentElement.setAttribute("data-player-fullscreen", "1"); });
@@ -698,13 +698,13 @@ export default function TVPage({
   return (
     <div className="ns-tv-page fade-in" style={{ paddingBottom: "max(80px, env(safe-area-inset-bottom, 80px))" }}>
       <style>{`
-        /* ── Ticker ──────────────────────────────────────────── */
+        /* â”€â”€ Ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         @keyframes tickerMove { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         .ns-ticker-track { display: inline-flex; animation: tickerMove 42s linear infinite; white-space: nowrap; }
         .ns-ticker-track:hover { animation-play-state: paused; }
         .ns-ticker-msg { padding-right: 120px; font-size: 11.5px; color: rgba(255,255,255,0.42); letter-spacing: 0.15px; }
 
-        /* ── Hero ────────────────────────────────────────────── */
+        /* â”€â”€ Hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-tv-hero { position: relative; min-height: 420px; display: flex; align-items: flex-end; }
         .ns-tv-hero-bg {
           position: absolute; inset: 0; background-size: cover; background-position: center top;
@@ -747,10 +747,10 @@ export default function TVPage({
         }
         .ns-tv-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 
-        /* ── Body ────────────────────────────────────────────── */
+        /* â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-tv-body { padding: 0 28px; max-width: 1200px; margin: 0 auto; }
 
-        /* ── Section heading ─────────────────────────────────── */
+        /* â”€â”€ Section heading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-section-heading {
           display: flex; align-items: center; gap: 14px;
           margin: 32px 0 18px; font-size: 12px; font-weight: 800;
@@ -758,7 +758,7 @@ export default function TVPage({
         }
         .ns-section-rule { flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
 
-        /* ── Series info grid ─────────────────────────────────── */
+        /* â”€â”€ Series info grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0; }
         .ns-info-row {
           display: flex; flex-direction: column; gap: 3px;
@@ -768,7 +768,7 @@ export default function TVPage({
         .ns-info-label { font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.35); }
         .ns-info-value { font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,0.82); }
 
-        /* ── Networks row ─────────────────────────────────────── */
+        /* â”€â”€ Networks row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-networks { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 4px; }
         .ns-network {
           background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
@@ -777,7 +777,7 @@ export default function TVPage({
         }
         .ns-network img { height: 22px; width: auto; object-fit: contain; filter: brightness(0) invert(1); opacity: 0.7; display: block; }
 
-        /* ── Cast grid ────────────────────────────────────────── */
+        /* â”€â”€ Cast grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-cast-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -803,7 +803,7 @@ export default function TVPage({
         }
         .ns-show-more-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
 
-        /* ── Reviews ─────────────────────────────────────────── */
+        /* â”€â”€ Reviews â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-reviews-grid { display: flex; flex-direction: column; gap: 14px; }
         .ns-review-card {
           background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
@@ -823,14 +823,14 @@ export default function TVPage({
         .ns-review-body { font-size: 13.5px; line-height: 1.65; color: rgba(255,255,255,0.62); margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; }
         .ns-review-toggle { background: none; border: none; padding: 0; font-size: 12.5px; font-weight: 600; color: var(--red, #e50914); cursor: pointer; font-family: inherit; }
 
-        /* ── Keywords ────────────────────────────────────────── */
+        /* â”€â”€ Keywords â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-keywords { display: flex; flex-wrap: wrap; gap: 7px; }
         .ns-keyword { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 10px; font-size: 11.5px; color: rgba(255,255,255,0.48); }
 
-        /* ── Inline player ───────────────────────────────────── */
+        /* â”€â”€ Inline player â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-player-section { margin-bottom: 8px; }
 
-        /* ── Responsive ──────────────────────────────────────── */
+        /* â”€â”€ Responsive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         @media (max-width: 860px) {
           .ns-tv-hero-content { flex-direction: column; align-items: center; padding: 22px 18px 28px; gap: 20px; }
           .ns-tv-poster { width: 140px; }
@@ -866,10 +866,10 @@ export default function TVPage({
         }
       `}</style>
 
-      {/* ── Disclaimer ticker ────────────────────────────────────────── */}
+      {/* â”€â”€ Disclaimer ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <DisclaimerTicker />
 
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="ns-tv-hero">
         {d.backdrop_path && (
           <div className="ns-tv-hero-bg" style={{ backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})` }} />
@@ -921,15 +921,15 @@ export default function TVPage({
 
             <div className="ns-tv-actions">
               {restricted ? (
-                <button className="btn btn-primary btn-restricted" disabled>🔒 Restricted</button>
+                <button className="btn btn-primary btn-restricted" disabled>ðŸ”’ Restricted</button>
               ) : (
                 <button className="btn btn-primary" onClick={handleWatch}
                   disabled={loadingSeason || currentSeasonEpisodes.length === 0}>
-                  <PlayIcon />{loadingSeason ? "Loading…" : "Watch"}
+                  <PlayIcon />{loadingSeason ? "Loadingâ€¦" : "Watch"}
                 </button>
               )}
               {trailerKey && (restricted
-                ? <button className="btn btn-secondary btn-restricted" disabled>🔒 Trailer</button>
+                ? <button className="btn btn-secondary btn-restricted" disabled>ðŸ”’ Trailer</button>
                 : <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}><TrailerIcon /> Trailer</button>
               )}
               <button className="btn btn-secondary" onClick={onSave}>
@@ -942,16 +942,16 @@ export default function TVPage({
         </div>
       </div>
 
-      {/* ── Page body ─────────────────────────────────────────────────── */}
+      {/* â”€â”€ Page body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="ns-tv-body">
 
-        {/* ── Inline player (when playing) ──────────────────────────── */}
+        {/* â”€â”€ Inline player (when playing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {playing && selectedEp && (
           <div className="ns-player-section">
             <SectionHeading>Now Playing</SectionHeading>
 
             <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span className="tag tag-red">S{selectedSeason} · E{selectedEp.episode_number}</span>
+              <span className="tag tag-red">S{selectedSeason} Â· E{selectedEp.episode_number}</span>
               <span style={{ fontSize: 13.5, fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {selectedEp.name}
               </span>
@@ -960,7 +960,7 @@ export default function TVPage({
                   <WatchedIcon size={14} /> Watched
                 </button>
               ) : (
-                <button className="btn btn-ghost" onClick={() => onMarkWatched?.(currentProgressKey)}>✓ Mark Watched</button>
+                <button className="btn btn-ghost" onClick={() => onMarkWatched?.(currentProgressKey)}>âœ“ Mark Watched</button>
               )}
             </div>
 
@@ -972,7 +972,7 @@ export default function TVPage({
               )}
               {isAsync && resolveError && !resolvingUrl && (
                 <div style={{ position: "absolute", inset: 0, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)", gap: 10, borderRadius: "inherit" }}>
-                  <span style={{ fontSize: 28 }}>⚠️</span>
+                  <span style={{ fontSize: 28 }}>âš ï¸</span>
                   <span style={{ fontSize: 14, color: "var(--text2)" }}>Episode not found</span>
                   <span style={{ fontSize: 12, color: "var(--text3)" }}>{resolveError}</span>
                 </div>
@@ -1003,7 +1003,7 @@ export default function TVPage({
               <div className="player-overlay-group">
                 <button ref={sourceRef} className="player-overlay-btn"
                   onClick={() => {
-                    if (!canSwitchSource(planId)) { setGateModal("source"); return; }
+                    
                     const rect = sourceRef.current?.getBoundingClientRect();
                     if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
                     setShowSourceMenu((v) => !v);
@@ -1026,7 +1026,7 @@ export default function TVPage({
                 <button className="player-overlay-btn"
                   onClick={() => {
                     if (pipOpen) { window.electron?.closePipWindow?.(); return; }
-                    if (!canPopOut(planId)) { setGateModal("pip"); return; }
+                    
                     const url = isAsync ? resolvedPlayerUrl : getSourceUrl(playerSource, "tv", item.id, playerEp.season, playerEp.episode);
                     if (!url) return;
                     pipUrlRef.current = url;
@@ -1075,17 +1075,17 @@ export default function TVPage({
               <button className="btn btn-secondary"
                 onClick={() => {
                   if (currentEpDownload) { onGoToDownloads?.(currentEpDownload.id); return; }
-                  if (!canDownload(planId)) { setGateModal("download"); return; }
+                  
                   setShowSourceMenu(false); setShowDownload(true);
                 }}>
                 {currentEpDownload ? (
                   <span style={{ color: currentEpDownload.status === "downloading" ? "var(--red)" : "#4caf50" }}>
-                    {currentEpDownload.status === "downloading" ? "↓ Downloading…" : "✓ Downloaded"}
+                    {currentEpDownload.status === "downloading" ? "â†“ Downloadingâ€¦" : "âœ“ Downloaded"}
                   </span>
                 ) : <><DownloadIcon /> Download Episode</>}
               </button>
               {m3u8Url && !currentEpDownload && (
-                <span style={{ fontSize: 12, color: "var(--red)", fontWeight: 600 }}>● HD stream detected</span>
+                <span style={{ fontSize: 12, color: "var(--red)", fontWeight: 600 }}>â— HD stream detected</span>
               )}
             </div>
 
@@ -1120,7 +1120,7 @@ export default function TVPage({
           </div>
         )}
 
-        {/* ── Series details grid ───────────────────────────────────── */}
+        {/* â”€â”€ Series details grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <SectionHeading>Series Info</SectionHeading>
         <div className="ns-info-grid">
           <InfoRow label="Status"          value={d.status} />
@@ -1135,7 +1135,7 @@ export default function TVPage({
           <InfoRow label="Episode Runtime" value={d.episode_run_time?.length ? `${d.episode_run_time[0]} min` : null} />
         </div>
 
-        {/* ── Networks ─────────────────────────────────────────────── */}
+        {/* â”€â”€ Networks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {networks.length > 0 && (
           <>
             <SectionHeading>Networks</SectionHeading>
@@ -1151,7 +1151,7 @@ export default function TVPage({
           </>
         )}
 
-        {/* ── Cast ─────────────────────────────────────────────────── */}
+        {/* â”€â”€ Cast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {castList.length > 0 && (
           <>
             <SectionHeading>Cast</SectionHeading>
@@ -1168,7 +1168,7 @@ export default function TVPage({
           </>
         )}
 
-        {/* ── Production ───────────────────────────────────────────── */}
+        {/* â”€â”€ Production â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {productionCompanies.length > 0 && (
           <>
             <SectionHeading>Production</SectionHeading>
@@ -1184,7 +1184,7 @@ export default function TVPage({
           </>
         )}
 
-        {/* ── Keywords ─────────────────────────────────────────────── */}
+        {/* â”€â”€ Keywords â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {keywords.length > 0 && (
           <>
             <SectionHeading>Tags</SectionHeading>
@@ -1196,7 +1196,7 @@ export default function TVPage({
           </>
         )}
 
-        {/* ── Reviews ──────────────────────────────────────────────── */}
+        {/* â”€â”€ Reviews â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {reviews.length > 0 && (
           <>
             <SectionHeading>Reviews</SectionHeading>
@@ -1215,7 +1215,7 @@ export default function TVPage({
 
       </div>{/* end ns-tv-body */}
 
-      {/* ── Modals ───────────────────────────────────────────────────── */}
+      {/* â”€â”€ Modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showTrailer && trailerKey && <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />}
       {showBlockedModal && <BlockedStatsModal sessionDomains={getBlockedDomains()} sessionTotal={blockedSession} alltimeTotal={blockedAlltime} onClose={() => setShowBlockedModal(false)} />}
       {showDownload && (

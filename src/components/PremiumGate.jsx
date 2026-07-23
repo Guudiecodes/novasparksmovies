@@ -1,20 +1,20 @@
-import { useEffect } from "react";
+﻿import { useEffect } from "react";
 import { getGateMessage } from "../utils/gate";
 
 /**
- * PremiumGate — psychology-enhanced upgrade modal.
+ * PremiumGate â€” psychology-enhanced upgrade modal.
  *
  * Adapts its tone automatically based on trial state:
- *   • Trial active, first hit  → soft, benefit-forward
- *   • Trial warning (< 3 days) → countdown urgency
- *   • Trial expired            → loss aversion ("you HAD this")
- *   • Repeat block in session  → direct, price-forward
+ *   â€¢ Trial active, first hit  â†’ soft, benefit-forward
+ *   â€¢ Trial warning (< 3 days) â†’ countdown urgency
+ *   â€¢ Trial expired            â†’ loss aversion ("you HAD this")
+ *   â€¢ Repeat block in session  â†’ direct, price-forward
  *
  * Usage:
  *   {gateModal && <PremiumGate feature={gateModal} onUpgrade={fn} onClose={fn} />}
  */
 export default function PremiumGate({ feature, onUpgrade, onClose }) {
-  const { icon, title, desc, subdesc, price, cta, urgency } = getGateMessage(feature);
+  const gateMessage = getGateMessage(feature);
 
   useEffect(() => {
     const h = (e) => { if (e.key === "Escape") onClose(); };
@@ -28,8 +28,11 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
     else window.dispatchEvent(new CustomEvent("novaspark:upgrade"));
   };
 
+  if (!gateMessage) return null;
+  const { icon, title, desc, subdesc, price, cta, urgency } = gateMessage;
+
   // Urgency state uses a warm amber/gold palette (loss, scarcity).
-  // Default state uses the brand teal — calm, inviting.
+  // Default state uses the brand teal â€” calm, inviting.
   const accentColor  = urgency ? "#f5a623" : "#00b4a6";
   const accentGlow   = urgency ? "rgba(245,166,35,0.18)" : "rgba(0,180,166,0.12)";
   const accentBorder = urgency ? "rgba(245,166,35,0.28)" : "rgba(0,180,166,0.2)";
@@ -102,7 +105,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
           onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.3)"; }}
         >
-          ×
+          Ã—
         </button>
 
         {/* Icon */}
@@ -127,7 +130,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
           {desc}
         </p>
 
-        {/* Sub-description — loss aversion or social proof line */}
+        {/* Sub-description â€” loss aversion or social proof line */}
         {subdesc && (
           <p style={{
             fontSize: 12.5, color: accentColor, lineHeight: 1.6,
@@ -147,7 +150,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
           fontSize: 11.5, color: "rgba(255,255,255,0.5)", fontWeight: 600,
           position: "relative", zIndex: 1,
         }}>
-          ⭐ 50,000+ active subscribers
+          â­ 50,000+ active subscribers
         </div>
 
         {/* Price badge */}
@@ -160,7 +163,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
             fontSize: 13.5, fontWeight: 800, color: accentColor,
             position: "relative", zIndex: 1,
           }}>
-            💎 {price}
+            ðŸ’Ž {price}
           </div>
         )}
 
@@ -181,7 +184,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
             position: "relative", zIndex: 1,
           }}
         >
-          🔓 {cta}
+          ðŸ”“ {cta}
         </button>
 
         {/* Dismiss */}
@@ -208,7 +211,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
           marginTop: 14, letterSpacing: "0.02em",
           position: "relative", zIndex: 1,
         }}>
-          🔒 Secure payment · Cancel anytime · Instant access
+          ðŸ”’ Secure payment Â· Cancel anytime Â· Instant access
         </p>
       </div>
     </div>

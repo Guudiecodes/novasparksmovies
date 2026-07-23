@@ -18,14 +18,25 @@ const ADMIN_EMAIL = "jokesonyou146@gmail.com";
 const ADMIN_PASS = process.env.ADMIN_PASSWORD;
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const USER_SESSION_SECRET = process.env.USER_SESSION_SECRET;
 
 function sign(payloadB64) {
   return crypto.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+}
+function signUser(payloadB64) {
+  return crypto.createHmac("sha256", USER_SESSION_SECRET).update(payloadB64).digest("base64url");
 }
 function createSessionToken(email) {
   const payload = JSON.stringify({ email, exp: Date.now() + SESSION_TTL_MS });
   const payloadB64 = Buffer.from(payload).toString("base64url");
   return `${payloadB64}.${sign(payloadB64)}`;
+}
+
+const USER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+function createUserSessionToken(uid, email) {
+  const payload = JSON.stringify({ uid, email, exp: Date.now() + USER_SESSION_TTL_MS });
+  const payloadB64 = Buffer.from(payload).toString("base64url");
+  return `${payloadB64}.${signUser(payloadB64)}`;
 }
 
 async function sb(method, path, body = null, params = {}) {
@@ -111,6 +122,7 @@ async function handleAuth(req, res) {
     return res.status(200).json({
       ok:   true,
       user: { id: user.id, email: normalEmail, displayName: user.display_name, is_admin: user.is_admin || false },
+      token: createUserSessionToken(user.id, normalEmail),
     });
   }
 
@@ -133,6 +145,7 @@ async function handleAuth(req, res) {
     return res.status(200).json({
       ok:   true,
       user: { id: user.id, email: user.email, displayName: user.display_name, is_admin: user.is_admin || false },
+      token: createUserSessionToken(user.id, user.email),
     });
   }
 

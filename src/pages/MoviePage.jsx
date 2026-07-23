@@ -1,4 +1,4 @@
-import {
+﻿import {
   useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo,
 } from "react";
 import {
@@ -45,10 +45,10 @@ const _EMBED_JS = `(function(){
   setTimeout(function(){obs.disconnect();},12000);
 })()`;
 
-// ── Disclaimer ticker ─────────────────────────────────────────────────────────
+// â”€â”€ Disclaimer ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function DisclaimerTicker() {
   const msg =
-    "⚠  NovaSparks does not host or store any media content. Stream quality and availability may vary by region. You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  ⚠";
+    "âš   NovaSparks does not host or store any media content. Stream quality and availability may vary by region. You must be of legal viewing age in your jurisdiction. We are not responsible for third-party content or advertisements.  âš ";
   return (
     <div style={{
       background: "rgba(229,9,20,0.06)",
@@ -65,7 +65,7 @@ function DisclaimerTicker() {
   );
 }
 
-// ── Server toast ──────────────────────────────────────────────────────────────
+// â”€â”€ Server toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ServerToast({ status, sourceLabel }) {
   const [show, setShow] = useState(false);
   const [fade, setFade] = useState(false);
@@ -94,19 +94,19 @@ function ServerToast({ status, sourceLabel }) {
     }}>
       {(status === "testing" || status === "retrying") ? (<>
         <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
-        <span>{status === "retrying" ? "Trying another server…" : "Finding best server…"}</span>
+        <span>{status === "retrying" ? "Trying another serverâ€¦" : "Finding best serverâ€¦"}</span>
       </>) : status === "found" ? (<>
-        <span style={{ color: "#4caf50", fontSize: 16, lineHeight: 1 }}>✓</span>
+        <span style={{ color: "#4caf50", fontSize: 16, lineHeight: 1 }}>âœ“</span>
         <span>Playing on <strong>{sourceLabel}</strong></span>
       </>) : (<>
-        <span style={{ color: "#ff5252", fontSize: 16, lineHeight: 1 }}>⚠</span>
-        <span>Could not load — try another server</span>
+        <span style={{ color: "#ff5252", fontSize: 16, lineHeight: 1 }}>âš </span>
+        <span>Could not load â€” try another server</span>
       </>)}
     </div>
   );
 }
 
-// ── Cast card (grid style, matching TVPage) ───────────────────────────────────
+// â”€â”€ Cast card (grid style, matching TVPage) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const CastCard = memo(function CastCard({ person }) {
   return (
     <div className="ns-cast-card">
@@ -125,12 +125,12 @@ const CastCard = memo(function CastCard({ person }) {
   );
 });
 
-// ── Review card ───────────────────────────────────────────────────────────────
+// â”€â”€ Review card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ReviewCard = memo(function ReviewCard({ review }) {
   const [expanded, setExpanded] = useState(false);
   const content = review.content || "";
   const short = content.length > 320;
-  const display = expanded || !short ? content : content.slice(0, 320) + "…";
+  const display = expanded || !short ? content : content.slice(0, 320) + "â€¦";
   const initials = (review.author || "?").slice(0, 2).toUpperCase();
   const rating = review.author_details?.rating;
   const date = review.created_at
@@ -160,7 +160,7 @@ const ReviewCard = memo(function ReviewCard({ review }) {
   );
 });
 
-// ── Info row ──────────────────────────────────────────────────────────────────
+// â”€â”€ Info row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function InfoRow({ label, value }) {
   if (!value) return null;
   return (
@@ -171,7 +171,7 @@ function InfoRow({ label, value }) {
   );
 }
 
-// ── Section heading ───────────────────────────────────────────────────────────
+// â”€â”€ Section heading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SectionHeading({ children }) {
   return (
     <div className="ns-section-heading">
@@ -181,7 +181,7 @@ function SectionHeading({ children }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function MoviePage({
   item, apiKey, onSave, isSaved, onHistory, progress, saveProgress,
   onBack, onSettings, onDownloadStarted, watched, onMarkWatched, onMarkUnwatched,
@@ -289,7 +289,7 @@ export default function MoviePage({
     setPlayerSource(nextId); storage.set("playerSource", nextId);
   }, []);
 
-  // ── Details ───────────────────────────────────────────────────────────────
+  // â”€â”€ Details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let mounted = true;
     tmdbFetch(`/movie/${item.id}`, apiKey)
@@ -298,7 +298,7 @@ export default function MoviePage({
     return () => { mounted = false; };
   }, [item.id, apiKey]);
 
-  // ── Credits + reviews + keywords in parallel ──────────────────────────────
+  // â”€â”€ Credits + reviews + keywords in parallel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!item?.id) return;
     let mounted = true;
@@ -613,13 +613,13 @@ export default function MoviePage({
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Ticker ──────────────────────────────────────────── */
+        /* â”€â”€ Ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         @keyframes tickerMove { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         .ns-ticker-track { display: inline-flex; animation: tickerMove 42s linear infinite; white-space: nowrap; }
         .ns-ticker-track:hover { animation-play-state: paused; }
         .ns-ticker-msg { padding-right: 120px; font-size: 11.5px; color: rgba(255,255,255,0.42); letter-spacing: 0.15px; }
 
-        /* ── Hero ────────────────────────────────────────────── */
+        /* â”€â”€ Hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-movie-hero { position: relative; min-height: 420px; display: flex; align-items: flex-end; overflow: hidden; }
         .ns-movie-hero-bg {
           position: absolute; inset: 0; background-size: cover; background-position: center top;
@@ -662,7 +662,7 @@ export default function MoviePage({
         .ns-movie-actions { display: flex; flex-wrap: wrap; gap: 10px; }
         .ns-movie-body { padding: 0 28px; max-width: 1200px; margin: 0 auto; }
 
-        /* ── Section heading ─────────────────────────────────── */
+        /* â”€â”€ Section heading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-section-heading {
           display: flex; align-items: center; gap: 14px;
           margin: 32px 0 18px; font-size: 12px; font-weight: 800;
@@ -670,7 +670,7 @@ export default function MoviePage({
         }
         .ns-section-rule { flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
 
-        /* ── Info grid ───────────────────────────────────────── */
+        /* â”€â”€ Info grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0; }
         .ns-info-row {
           display: flex; flex-direction: column; gap: 3px;
@@ -680,7 +680,7 @@ export default function MoviePage({
         .ns-info-label { font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.35); }
         .ns-info-value { font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,0.82); }
 
-        /* ── Production chips ────────────────────────────────── */
+        /* â”€â”€ Production chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-chip-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
         .ns-chip {
           background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
@@ -689,7 +689,7 @@ export default function MoviePage({
         }
         .ns-chip img { height: 22px; width: auto; object-fit: contain; filter: brightness(0) invert(1); opacity: 0.7; display: block; }
 
-        /* ── Cast grid ───────────────────────────────────────── */
+        /* â”€â”€ Cast grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 14px; }
         .ns-cast-card { display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; }
         .ns-cast-img {
@@ -704,7 +704,7 @@ export default function MoviePage({
         .ns-cast-name { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.85); line-height: 1.3; }
         .ns-cast-role { font-size: 11px; color: rgba(255,255,255,0.38); line-height: 1.3; }
 
-        /* ── Show more ───────────────────────────────────────── */
+        /* â”€â”€ Show more â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-show-more-btn {
           display: block; width: 100%; margin-top: 14px; padding: 10px;
           background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
@@ -713,7 +713,7 @@ export default function MoviePage({
         }
         .ns-show-more-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
 
-        /* ── Reviews ─────────────────────────────────────────── */
+        /* â”€â”€ Reviews â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-reviews-grid { display: flex; flex-direction: column; gap: 14px; }
         .ns-review-card {
           background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
@@ -733,11 +733,11 @@ export default function MoviePage({
         .ns-review-body { font-size: 13.5px; line-height: 1.65; color: rgba(255,255,255,0.62); margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; }
         .ns-review-toggle { background: none; border: none; padding: 0; font-size: 12.5px; font-weight: 600; color: var(--red, #e50914); cursor: pointer; font-family: inherit; }
 
-        /* ── Keywords ────────────────────────────────────────── */
+        /* â”€â”€ Keywords â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .ns-keywords { display: flex; flex-wrap: wrap; gap: 7px; }
         .ns-keyword { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 10px; font-size: 11.5px; color: rgba(255,255,255,0.48); }
 
-        /* ── Responsive ──────────────────────────────────────── */
+        /* â”€â”€ Responsive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         @media (max-width: 860px) {
           .ns-movie-hero-content { flex-direction: column; align-items: center; padding: 22px 18px 28px; gap: 20px; }
           .ns-movie-poster { width: 140px; }
@@ -774,7 +774,7 @@ export default function MoviePage({
         }
       `}</style>
 
-      {/* ── Disclaimer ticker ────────────────────────────────────────── */}
+      {/* â”€â”€ Disclaimer ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <DisclaimerTicker />
 
       {playing && <ServerToast status={autoSourceStatus} sourceLabel={PLAYER_SOURCES.find((s) => s.id === playerSource)?.label} />}
@@ -788,7 +788,7 @@ export default function MoviePage({
         />
       )}
 
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="ns-movie-hero">
         {d.backdrop_path && (
           <div className="ns-movie-hero-bg" style={{
@@ -838,16 +838,16 @@ export default function MoviePage({
             )}
             <div className="ns-movie-actions">
               {isUnreleased ? (
-                <button className="btn btn-primary btn-restricted" disabled>🔒 Unreleased</button>
+                <button className="btn btn-primary btn-restricted" disabled>ðŸ”’ Unreleased</button>
               ) : restricted ? (
-                <button className="btn btn-primary btn-restricted" disabled>🔒 Restricted</button>
+                <button className="btn btn-primary btn-restricted" disabled>ðŸ”’ Restricted</button>
               ) : (
                 <button className="btn btn-primary" onClick={handlePlay}>
                   <PlayIcon /> {playing ? "Restart" : "Play"}
                 </button>
               )}
               {trailerKey && (restricted
-                ? <button className="btn btn-secondary btn-restricted" disabled>🔒 Trailer</button>
+                ? <button className="btn btn-secondary btn-restricted" disabled>ðŸ”’ Trailer</button>
                 : <button className="btn btn-secondary" onClick={() => setShowTrailer(true)}><TrailerIcon /> Trailer</button>
               )}
               <button className="btn btn-secondary" onClick={onSave}>
@@ -859,11 +859,11 @@ export default function MoviePage({
                     <WatchedIcon size={16} /> Watched
                   </button>
                 : <>
-                    <button className="btn btn-ghost" onClick={() => onMarkWatched?.(progressKey)}>✓ Mark Watched</button>
+                    <button className="btn btn-ghost" onClick={() => onMarkWatched?.(progressKey)}>âœ“ Mark Watched</button>
                     {hasProgress && (
                       <button className="btn btn-ghost" style={{ fontSize: 13 }}
                         onClick={() => { saveProgress(progressKey, 0); storage.set("dlTime_" + progressKey, null); }}>
-                        ⊘ Not Started
+                        âŠ˜ Not Started
                       </button>
                     )}
                   </>
@@ -874,7 +874,7 @@ export default function MoviePage({
         </div>
       </div>
 
-      {/* ── Inline player ────────────────────────────────────────────── */}
+      {/* â”€â”€ Inline player â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {playing && !restricted && !isUnreleased && !onWatch && (
         <div className="section">
           <div className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`} ref={playerWrapRef}>
@@ -885,7 +885,7 @@ export default function MoviePage({
             )}
             {sourceIsAsync(playerSource) && resolveError && !resolvingUrl && (
               <div style={{ position: "absolute", inset: 0, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)", gap: 10, borderRadius: "inherit" }}>
-                <span style={{ fontSize: 28 }}>⚠️</span>
+                <span style={{ fontSize: 28 }}>âš ï¸</span>
                 <span style={{ fontSize: 14, color: "var(--text2)" }}>Movie not found</span>
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>{resolveError}</span>
               </div>
@@ -920,7 +920,7 @@ export default function MoviePage({
             <div className="player-overlay-group">
               <button ref={sourceRef} className="player-overlay-btn"
                 onClick={() => {
-                  if (!canSwitchSource(planId)) { setGateModal("source"); return; }
+                  
                   const rect = sourceRef.current?.getBoundingClientRect();
                   if (rect) setMenuPos({ top: rect.bottom + 6, left: rect.left });
                   setShowSourceMenu((v) => !v);
@@ -941,7 +941,7 @@ export default function MoviePage({
               <button className="player-overlay-btn"
                 onClick={() => {
                   if (pipOpen) { window.electron?.closePipWindow?.(); return; }
-                  if (!canPopOut(planId)) { setGateModal("pip"); return; }
+                  
                   const url = sourceIsAsync(playerSource) ? resolvedPlayerUrl : getSourceUrl(playerSource, "movie", item.id, null, null);
                   if (!url) return;
                   pipUrlRef.current = url;
@@ -990,21 +990,21 @@ export default function MoviePage({
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 180 }}>
               <div style={{ width: 38, height: 38, borderRadius: 10, background: movieDownload ? "rgba(76,175,80,0.1)" : "var(--red-dim)", display: "flex", alignItems: "center", justifyContent: "center", color: movieDownload ? "#4caf50" : "var(--red)", fontSize: 18 }}>
-                {movieDownload ? "✓" : "⬇️"}
+                {movieDownload ? "âœ“" : "â¬‡ï¸"}
               </div>
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text)" }}>
-                  {movieDownload ? (movieDownload.status === "downloading" ? "Downloading…" : "Downloaded") : "Download this movie"}
+                  {movieDownload ? (movieDownload.status === "downloading" ? "Downloadingâ€¦" : "Downloaded") : "Download this movie"}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: 2 }}>
-                  {movieDownload ? (movieDownload.status === "downloading" ? "In progress — click to view" : "Available offline") : "Watch offline anytime"}
+                  {movieDownload ? (movieDownload.status === "downloading" ? "In progress â€” click to view" : "Available offline") : "Watch offline anytime"}
                 </div>
               </div>
             </div>
             <button className="btn btn-primary"
               onClick={() => {
                 if (movieDownload) { onGoToDownloads?.(movieDownload.id); return; }
-                if (!canDownload(planId)) { setGateModal("download"); return; }
+                
                 setShowDownload(true);
               }}
               style={{ whiteSpace: "nowrap" }}>
@@ -1030,10 +1030,10 @@ export default function MoviePage({
         </div>
       )}
 
-      {/* ── Page body ─────────────────────────────────────────────────── */}
+      {/* â”€â”€ Page body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="ns-movie-body">
 
-        {/* ── Movie info grid ───────────────────────────────────────── */}
+        {/* â”€â”€ Movie info grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <SectionHeading>Movie Info</SectionHeading>
         <div className="ns-info-grid">
           <InfoRow label="Release Date"   value={d.release_date ? new Date(d.release_date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : null} />
@@ -1046,7 +1046,7 @@ export default function MoviePage({
           <InfoRow label="Original Title" value={d.original_title && d.original_title !== title ? d.original_title : null} />
         </div>
 
-        {/* ── Production companies ──────────────────────────────────── */}
+        {/* â”€â”€ Production companies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {productionCompanies.length > 0 && (
           <>
             <SectionHeading>Production</SectionHeading>
@@ -1062,7 +1062,7 @@ export default function MoviePage({
           </>
         )}
 
-        {/* ── Cast ─────────────────────────────────────────────────── */}
+        {/* â”€â”€ Cast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {cast.length > 0 && (
           <>
             <SectionHeading>Cast</SectionHeading>
@@ -1078,7 +1078,7 @@ export default function MoviePage({
             )}
           </>
         )}
-        {/* ── Keywords / Tags ───────────────────────────────────────── */}
+        {/* â”€â”€ Keywords / Tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {keywords.length > 0 && (
           <>
             <SectionHeading>Tags</SectionHeading>
@@ -1090,7 +1090,7 @@ export default function MoviePage({
           </>
         )}
 
-        {/* ── Reviews ──────────────────────────────────────────────── */}
+        {/* â”€â”€ Reviews â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {reviews.length > 0 && (
           <>
             <SectionHeading>Reviews</SectionHeading>
@@ -1107,7 +1107,7 @@ export default function MoviePage({
           </>
         )}
 
-        {/* ── Collection ───────────────────────────────────────────── */}
+        {/* â”€â”€ Collection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {collection && onSelect && (
           <>
             <SectionHeading>{collection.name}</SectionHeading>
@@ -1126,7 +1126,7 @@ export default function MoviePage({
 
       </div>{/* end ns-movie-body */}
 
-      {/* ── Modals ───────────────────────────────────────────────────── */}
+      {/* â”€â”€ Modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showTrailer && trailerKey && (
         <TrailerModal trailerKey={trailerKey} title={title} onClose={() => setShowTrailer(false)} />
       )}
