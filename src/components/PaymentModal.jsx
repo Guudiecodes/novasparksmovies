@@ -99,11 +99,27 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
   }
 
   // â”€â”€ Crypto manual confirm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  function handleCryptoConfirm() {
+  async function handleCryptoConfirm() {
     setError("");
     if (!validate()) return;
     if (!txnRef.trim()) { setError("Please enter your transaction hash."); return; }
-    savePremiumRecord(plan.id, email, password, txnRef.trim());
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/crypto-submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, planId: plan.id, txnRef: txnRef.trim(), durationDays: plan.durationDays || 30 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) { setError(data.error || "Could not submit for review. Try again."); setLoading(false); return; }
+      setStep(5);
+      onSuccess?.();
+    } catch {
+      setError("Could not connect. Check your internet.");
+    } finally {
+      setLoading(false);
+    }
+    return;
     setStep(4);
     onSuccess?.();
   }
@@ -264,6 +280,22 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
         )}
 
         {/* â”€â”€ Step 4: Success â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {step === 5 && (
+          <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#f5a623", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Submitted for review</div>
+            <div style={{ fontSize: 14, color: "var(--text3)", lineHeight: 1.7, marginBottom: 28 }}>
+              We received your transaction hash. Crypto payments are checked manually against the wallet before your plan activates -- usually within a few hours.
+            </div>
+            <button
+              className="btn btn-primary"
+              style={{ background: planColor, border: "none", fontWeight: 700, justifyContent: "center", width: "100%" }}
+              onClick={onClose}
+            >
+              Got it
+            </button>
+          </div>
+        )}
+
         {step === 4 && (
           <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>ðŸŽ‰</div>
