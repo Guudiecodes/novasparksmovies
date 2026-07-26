@@ -1,11 +1,24 @@
-﻿import crypto from "crypto";
-// api/auth.js â€” NovaSpark user register / login
-// Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY in Vercel env vars
+// api/auth.js — NovaSpark user register / login
+// Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, USER_SESSION_SECRET in Vercel env vars
+//
+// USER_SESSION_SECRET is separate from ADMIN_SESSION_SECRET on purpose — the
+// admin panel and regular user sessions are different trust levels, and a
+// bug or leak in one should never be able to forge access in the other.
+//
+// Token shape (must exactly match verifyUserToken() in api/source.js — if
+// either side changes independently, every login silently stops working):
+//   `${payloadB64}.${signature}`
+//   payloadB64 = base64url(JSON.stringify({ uid, email, exp }))
+//   signature  = base64url(HMAC-SHA256(payloadB64, USER_SESSION_SECRET))
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+import crypto from "crypto";
 
-// Simple hash â€” not bcrypt but avoids plain-text storage
+const SUPABASE_URL         = process.env.SUPABASE_URL;
+const SUPABASE_KEY         = process.env.SUPABASE_SERVICE_KEY;
+const USER_SESSION_SECRET  = process.env.USER_SESSION_SECRET;
+const USER_SESSION_TTL_MS  = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+// Simple hash — not bcrypt but avoids plain-text storage
 function hashPassword(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -18,7 +31,6 @@ const ADMIN_EMAIL = "jokesonyou146@gmail.com";
 const ADMIN_PASS = process.env.ADMIN_PASSWORD;
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-const USER_SESSION_SECRET = process.env.USER_SESSION_SECRET;
 
 function sign(payloadB64) {
   return crypto.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
@@ -32,7 +44,6 @@ function createSessionToken(email) {
   return `${payloadB64}.${sign(payloadB64)}`;
 }
 
-const USER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 function createUserSessionToken(uid, email) {
   const payload = JSON.stringify({ uid, email, exp: Date.now() + USER_SESSION_TTL_MS });
   const payloadB64 = Buffer.from(payload).toString("base64url");
@@ -74,6 +85,13 @@ async function handleAuth(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST")   return res.status(405).json({ error: "Method not allowed" });
 
+  if (!USER_SESSION_SECRET) {
+    // Fail loudly rather than silently issuing unsigned/broken tokens —
+    // this is the same class of bug this whole rewrite exists to fix.
+    console.error("MISSING_ENV: USER_SESSION_SECRET not set on this Vercel project");
+    return res.status(500).json({ error: "Server misconfigured. Contact support." });
+  }
+
   const { action, email, password, displayName } = req.body || {};
 
   if (!action || !email || !password) {
@@ -94,7 +112,7 @@ async function handleAuth(req, res) {
     return res.status(200).json({ ok: true, token: createSessionToken(ADMIN_EMAIL) });
   }
 
-  // â”€â”€ Register â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Register ──────────────────────────────────────────────────────────────
   if (action === "register") {
     const check = await sb("GET", "/users", null, {
       select: "id",
@@ -126,7 +144,7 @@ async function handleAuth(req, res) {
     });
   }
 
-  // â”€â”€ Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Login ─────────────────────────────────────────────────────────────────
   if (action === "login") {
     const { ok, data } = await sb("GET", "/users", null, {
       select:        "id,email,display_name,is_admin",

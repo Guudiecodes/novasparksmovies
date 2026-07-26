@@ -1,5 +1,5 @@
-﻿/**
- * gate.js â€” NovaSpark feature gate Â· v4.0
+/**
+ * gate.js — NovaSpark feature gate · v4.0
  * Thin pass-through over premium.js (the single source of truth).
  * Keeps old function names/call shapes so existing pages don't break.
  */

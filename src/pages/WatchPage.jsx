@@ -789,7 +789,7 @@ export default function WatchPage({
             </div>
           ):(
             <button ref={srcBtnRef} className="wp-src"
-              onClick={()=>{const p=dropPos(srcBtnRef,visSrcs.length);if(p)setMenuPos(p);setSrcMenu(v=>!v);}}>
+              onClick={()=>{if(!canSwitchSource(planId)){setGate("source_switch");return;}const p=dropPos(srcBtnRef,visSrcs.length);if(p)setMenuPos(p);setSrcMenu(v=>!v);}}>
               <SourceIcon size={14}/><span className="sl">{curLabel}</span>
               <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{opacity:.5}}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
             </button>
@@ -797,7 +797,7 @@ export default function WatchPage({
 
           {nonEmbed&&neSrcs.length>1&&(
             <button ref={neSrcRef} className="wp-src"
-              onClick={()=>{const p=dropPos(neSrcRef,neSrcs.length);if(p)setMenuPos(p);setSrcMenu(v=>!v);}}>
+              onClick={()=>{if(!canSwitchSource(planId)){setGate("source_switch");return;}const p=dropPos(neSrcRef,neSrcs.length);if(p)setMenuPos(p);setSrcMenu(v=>!v);}}>
               <SourceIcon size={13}/><span>{neStream?.source||"Source"}</span>
               {neStream?.quality&&<span style={{opacity:.6,fontSize:11}}>{neStream.quality}</span>}
               <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" style={{opacity:.5}}><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
@@ -808,7 +808,7 @@ export default function WatchPage({
 
           {isEl&&(
             <button className={`wp-pip${pip?" on":""}`}
-              onClick={()=>{if(pip){window.electron?.closePipWindow?.();return;}window.electron?.openPipWindow?.(nonEmbed?(nsUrl||embedUrl):embedUrl,title);}}>
+              onClick={()=>{if(pip){window.electron?.closePipWindow?.();return;}if(!canPopOut(planId)){setGate("pip");return;}window.electron?.openPipWindow?.(nonEmbed?(nsUrl||embedUrl):embedUrl,title);}}>
               <PopOutIcon/><span>{pip?"Close":"Pop out"}</span>
             </button>
           )}
@@ -904,7 +904,7 @@ export default function WatchPage({
               return(
                 <button key={nonEmbed?`${s.url}-${i}`:s.id} className="wp-dd-i"
                   style={{...ddItem,color:active?"#e50914":"rgba(255,255,255,.85)",fontWeight:active?700:500}}
-                  onClick={()=>{if(nonEmbed){manRef.current=true;manId.current=s.url;neIdx.current=i;setNeStream(s);}else switchSrc(s.id);setSrcMenu(false);}}>
+                  onClick={()=>{if(!canSwitchSource(planId)){setGate("source_switch");setSrcMenu(false);return;}if(nonEmbed){manRef.current=true;manId.current=s.url;neIdx.current=i;setNeStream(s);}else switchSrc(s.id);setSrcMenu(false);}}>
                   <span>{lbl}</span>
                   <div style={{display:"flex",alignItems:"center",gap:5}}>
                     {tag&&<span style={{fontSize:10,fontWeight:700,background:"rgba(229,9,20,.12)",color:"#e50914",border:"1px solid rgba(229,9,20,.22)",borderRadius:4,padding:"2px 6px"}}>{tag}</span>}
@@ -959,7 +959,7 @@ export default function WatchPage({
           {trailer&&<button className="btn btn-secondary" onClick={()=>setShowTrl(true)}><TrailerIcon/> Trailer</button>}
           {onSave&&<button className="btn btn-secondary" onClick={onSave}>{isSaved?<BookmarkFillIcon/>:<BookmarkIcon/>}{isSaved?"Saved":"Save"}</button>}
           <button className="btn btn-secondary"
-            onClick={()=>{if(curDl){onGoToDownloads?.(curDl.id);return;}setShowDl(true);}}
+            onClick={()=>{if(curDl){onGoToDownloads?.(curDl.id);return;}if(!canDownload(planId)){setGate("download");return;}setShowDl(true);}}
             style={curDl?{color:curDl.status==="downloading"?"var(--red)":"#4caf50",borderColor:curDl.status==="downloading"?"rgba(229,9,20,.3)":"rgba(76,175,80,.3)"}:undefined}>
             {curDl?(curDl.status==="downloading"?"â†“ Downloadingâ€¦":"âœ“ Downloaded"):<><DownloadIcon/> Download</>}
           </button>

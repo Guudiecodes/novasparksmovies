@@ -96,7 +96,12 @@ export default function App() {
     setShowLogin(true);
   }, []);
 
-  const [navStack, setNavStack] = useState([]);
+  // True once we've pushed at least one history entry this session, or the
+  // page was opened somewhere other than the root — i.e. there's somewhere
+  // for the browser (or our navigateBack) to actually go back to. The
+  // History API doesn't expose a readable length/index, so this is tracked
+  // by hand alongside our own pushState calls.
+  const [canGoBack, setCanGoBack] = useState(() => window.location.pathname !== "/");
 
   const [saved,      setSaved]      = useState(() => storage.get("saved")      || {});
   const [savedOrder, setSavedOrder] = useState(() => storage.get("savedOrder") || null);
@@ -454,34 +459,181 @@ export default function App() {
 
   const pageRef     = useRef(page);
   const selectedRef = useRef(selected);
-  const scrollMemory = useRef({});
+const scrollMemory = useRef(storage.get("scrollMemory") || {});
   useEffect(() => { pageRef.current     = page;     }, [page]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
 
-  const navigateBack = useCallback(() => {
-    setNavStack((prev) => {
-      if (prev.length === 0) return prev;
-      const last = prev[prev.length - 1];
-      setPage(last.page);
-      setSelected(last.selected);
-      const saved = scrollMemory.current[last.page];
-      setTimeout(() => window.scrollTo(0, saved || 0), 0);
-      if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
-      return prev.slice(0, -1);
-    });
+  // ── URL <-> app-state mapping ────────────────────────────────────────────
+  // Pages that carry an id-addressable item get a real path so refresh, deep
+  // links, and history entries all resolve to the same place. Everything
+  // else (home, settings, downloads, etc.) is a flat top-level path.
+  const pathForPage = useCallback((pg, data) => {
+    if (pg === "movie" && data?.id)              return `/movie/${data.id}`;
+    if (pg === "tv"    && data?.id)              return `/tv/${data.id}`;
+    if (pg === "genre" && data?.slug)            return `/genre/${data.slug}`;
+    if (pg === "watch" && data?.item?.id) {
+      const type = data.item.media_type || "movie";
+      const qs   = new URLSearchParams();
+      if (data.season  != null) qs.set("s", data.season);
+      if (data.episode != null) qs.set("e", data.episode);
+      const q = qs.toString();
+      return `/watch/${type}/${data.item.id}${q ? `?${q}` : ""}`;
+    }
+    if (pg === "home")     return "/";
+    return `/${pg}`;
+  }, []);
+
+  // Parses the current window.location back into { page, params } so we know
+  // what to (re)load — used on first mount and on every popstate.
+  const parseLocation = useCallback(() => {
+    const path  = window.location.pathname;
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length === 0) return { page: "home", params: null };
+    if (parts[0] === "movie" && parts[1]) return { page: "movie", params: { id: parts[1] } };
+    if (parts[0] === "tv"    && parts[1]) return { page: "tv",    params: { id: parts[1] } };
+    if (parts[0] === "genre" && parts[1]) return { page: "genre", params: { slug: parts[1] } };
+    if (parts[0] === "watch" && parts[1] && parts[2]) {
+      const qs = new URLSearchParams(window.location.search);
+      return {
+        page: "watch",
+        params: {
+          type:    parts[1],
+          id:      parts[2],
+          season:  qs.has("s") ? Number(qs.get("s")) : null,
+          episode: qs.has("e") ? Number(qs.get("e")) : null,
+        },
+      };
+    }
+    return { page: parts[0], params: null };
+  }, []);
+
+  // Full item objects (poster, title, overview, etc.) live in memory and
+  // can't be serialized into a URL — only the id can. So whenever a page
+  // loads from a URL we don't already have data for (first load, refresh,
+  // typed/pasted link, or a popstate that skipped past our in-memory cache),
+  // refetch the item from TMDB before rendering. itemCache avoids refetching
+  // something we already navigated to earlier in the session.
+  const itemCache = useRef({});
+  const resolveFromUrl = useCallback(async ({ page: pg, params }) => {
+    if (!params || !apiKey) { setSelected(null); setPage(pg); return; }
+
+    if (pg === "movie" || pg === "tv") {
+      const cacheKey = `${pg}_${params.id}`;
+      const cached   = itemCache.current[cacheKey];
+      if (cached) { setSelected(cached); setPage(pg); return; }
+      try {
+        const data = await tmdbFetch(`/${pg}/${params.id}`, apiKey);
+        const item = { ...data, media_type: pg };
+        itemCache.current[cacheKey] = item;
+        setSelected(item);
+        setPage(pg);
+      } catch {
+        navigateReplace("home");
+      }
+      return;
+    }
+
+    if (pg === "genre") {
+      setSelected({ slug: params.slug });
+      setPage("genre");
+      return;
+    }
+
+    if (pg === "watch") {
+      const cacheKey = `${params.type}_${params.id}`;
+      let item = itemCache.current[cacheKey];
+      if (!item) {
+        try {
+          const data = await tmdbFetch(`/${params.type}/${params.id}`, apiKey);
+          item = { ...data, media_type: params.type };
+          itemCache.current[cacheKey] = item;
+        } catch {
+          navigateReplace("home");
+          return;
+        }
+      }
+      setSelected({ item, season: params.season, episode: params.episode, episodeName: null, sourceId: null });
+      setPage("watch");
+      return;
+    }
+
+    setPage(pg);
+  }, [apiKey]); // eslint-disable-line
+
+  // Swaps the current history entry instead of pushing — used for redirects
+  // (e.g. a dead link falling back home) so the bad URL isn't left in the
+  // back-button trail.
+  const navigateReplace = useCallback((pg, data = null) => {
+    const path = pathForPage(pg, data);
+    window.history.replaceState({ page: pg, data }, "", path);
+    setSelected(data);
+    setPage(pg);
+  }, [pathForPage]);
+
+  const restoreScroll = useCallback((key) => {
+    const saved = scrollMemory.current[key];
+    requestAnimationFrame(() => window.scrollTo(0, saved || 0));
   }, []);
 
   const navigate = useCallback((pg, data = null) => {
-    scrollMemory.current[pageRef.current] = window.scrollY;
-    setNavStack((prev) => [
-      ...prev,
-      { page: pageRef.current, selected: selectedRef.current },
-    ]);
+    const fromKey = window.location.pathname + window.location.search;
+    scrollMemory.current[fromKey] = window.scrollY;
+    storage.set("scrollMemory", scrollMemory.current);
+
+    const path = pathForPage(pg, data);
+    if (path !== fromKey) {
+      window.history.pushState({ page: pg, data }, "", path);
+      setCanGoBack(true);
+    }
+    if ((pg === "movie" || pg === "tv") && data?.id) {
+      itemCache.current[`${pg}_${data.id}`] = data;
+    }
     setSelected(data);
     setPage(pg);
     setShowSearch(false);
+    window.scrollTo(0, 0);
     if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
-  }, []);
+  }, [pathForPage]);
+
+  // Real back/forward — delegates to the browser so the OS back button,
+  // mouse-side buttons, and trackpad swipe gestures all behave identically
+  // to the in-app back control. The actual state restoration happens in the
+  // popstate listener below, which fires for both this call and any
+  // external back/forward action.
+  const navigateBack = useCallback(() => { window.history.back(); }, []);
+  const navigateForward = useCallback(() => { window.history.forward(); }, []);
+
+  // First mount: resolve whatever URL the app was opened/refreshed on, and
+  // seed a history entry for it so the very first popstate has somewhere
+  // to go back to.
+  useEffect(() => {
+    const initial = parseLocation();
+    window.history.replaceState({ page: initial.page, data: null }, "", window.location.pathname + window.location.search);
+    if (initial.page !== "home" || window.location.pathname !== "/") {
+      resolveFromUrl(initial);
+    }
+  }, []); // eslint-disable-line
+
+  // Fires on real back/forward (button, gesture, or our navigateBack/Forward
+  // calls). Prefers the object pushState stashed (instant, no refetch) and
+  // falls back to re-parsing + refetching from TMDB when that's unavailable
+  // — e.g. after a hard refresh where history.state was rebuilt by the
+  // browser, not by us.
+  useEffect(() => {
+    const onPop = (e) => {
+      const toKey = window.location.pathname + window.location.search;
+      setCanGoBack(window.location.pathname !== "/");
+      if (e.state?.data !== undefined && e.state?.page) {
+        setSelected(e.state.data);
+        setPage(e.state.page);
+        restoreScroll(toKey);
+      } else {
+        resolveFromUrl(parseLocation()).then(() => restoreScroll(toKey));
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [resolveFromUrl, restoreScroll]);
 
   const handleWatch = useCallback(
     (watchData) => navigate("watch", watchData),
@@ -508,12 +660,18 @@ export default function App() {
         const tag = (e.target?.tagName || "").toUpperCase();
         if (tag !== "INPUT" && tag !== "TEXTAREA") { e.preventDefault(); setShowShortcuts((v) => !v); }
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); navigateBack(); }
+      // Alt+Left / Alt+Right mirror the browser's own back/forward chord
+      // (and Cmd+[ / Cmd+] on macOS) rather than overloading Ctrl/Cmd+Z,
+      // which people expect to mean "undo my last edit," not "go back."
+      if (e.altKey && e.key === "ArrowLeft")  { e.preventDefault(); navigateBack(); }
+      if (e.altKey && e.key === "ArrowRight") { e.preventDefault(); navigateForward(); }
+      if (e.metaKey && e.key === "[") { e.preventDefault(); navigateBack(); }
+      if (e.metaKey && e.key === "]") { e.preventDefault(); navigateForward(); }
       if ((e.metaKey || e.ctrlKey) && e.key === "r") { e.preventDefault(); window.location.reload(); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigateBack]);
+  }, [navigateBack, navigateForward]);
 
   const toastTimerRef = useRef(null);
   const showToast = useCallback((msg) => {
@@ -731,7 +889,7 @@ export default function App() {
           activeDownloads={activeDownloadCount}
           onReorderSaved={handleReorderSaved}
           onRemoveSaved={toggleSave}
-          canGoBack={navStack.length > 0}
+          canGoBack={canGoBack}
           onBack={navigateBack}
           onShowShortcuts={() => setShowShortcuts(true)}
           isPremium={isPremium}
@@ -743,14 +901,16 @@ export default function App() {
         />
 
         <div className="main">
-          <Suspense
-            fallback={
-              <div style={{ color: "var(--text2)", padding: 48, textAlign: "center", fontSize: 15 }}>
-                Loadingâ€¦
-              </div>
-            }
-          >
-            {page === "home" && (
+{/* HomePage stays mounted for the lifetime of the app rather than
+              being torn down on navigation like every other page below. It
+              owns a dozen independently-paginated rows (Popular, Action,
+              Anime, etc.), each with its own fetch-page/hasMore state that
+              would otherwise reset to page 1 and refetch every time the user
+              left and came back. Hiding it with CSS instead of unmounting
+              keeps all of that state — and the user's exact scroll position
+              within it — intact across the whole session. */}
+          <div style={{ display: page === "home" ? "block" : "none" }}>
+            <Suspense fallback={null}>
               <HomePage
                 trending={trending}
                 trendingTV={trendingTV}
@@ -766,9 +926,21 @@ export default function App() {
                 history={history}
                 apiKey={apiKey}
                 isPremium={isPremium}
+                onSave={toggleSave}
+                isSaved={isSaved}
+                onNavigate={navigate}
+                active={page === "home"}
               />
-            )}
+            </Suspense>
+          </div>
 
+          <Suspense
+            fallback={
+              <div style={{ color: "var(--text2)", padding: 48, textAlign: "center", fontSize: 15 }}>
+                Loading…
+              </div>
+            }
+          >
             {page === "reel" && (
               <ReelPage
                 apiKey={apiKey}

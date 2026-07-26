@@ -1,25 +1,10 @@
-﻿/**
- * ReelPage.jsx â€” NovaSpark Shorts v4
- * Desktop : YouTube Shorts layout â€” portrait card Â· action rail Â· nav arrows
- * Mobile  : Full-screen vertical swipe (body portal)
- *
- * Key decisions
- * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
- *  âœ¦ Electron uses electronAPI.getTrailerStream + electronAPI.downloadTrailer
- *    for all video â€” no YouTube iframe in the desktop app
- *  âœ¦ Web falls back to YouTube embed (no download button shown)
- *  âœ¦ Share panel removed â€” replaced by a single Download button in the rail
- *  âœ¦ Search overlay: 2-col cinematic grid â†’ inline player with side nav + queue strip
- *  âœ¦ Smart swipe: velocity gate prevents accidental navigation
- *  âœ¦ Related carousel lives in the Details sheet
- */
+﻿
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { canUseShorts, canDownload, incrementFreeDailyUsage } from "../utils/premium";
+import { canUseShorts, canDownload, incrementFreeDailyUsage, recordFeatureUse } from "../utils/premium";
 import PremiumGate from "../components/PremiumGate";
 
-// â”€â”€â”€ CONSTANTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TMDB_BASE    = "https://api.themoviedb.org/3";
 const TMDB_IMG     = "https://image.tmdb.org/t/p";
 const START_OFFSET = 0;
@@ -191,14 +176,7 @@ function WebYTPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,prel
   );
 }
 
-// â”€â”€â”€ ELECTRON PLAYER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Electron bypasses YouTube entirely â€” uses the app's own stream backend.
-// v4 fixes:
-//  Â· fetching tracked via ref (not state) â€” prevents effect self-triggering
-//  Â· key={videoId} on <video> â€” forces DOM reset on track change
-//  Â· muted handled only via ref â€” avoids React's known boolean-attribute bug
-//  Â· onStalled checks v.src not stale closure variable
-//  Â· err removed from fetch effect deps â€” was causing re-run after error
+// ─── ELECTRON PLAYER ─────────────────────────────────────────────────────────
 function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,preload}){
   const vRef=useRef(null);
   const[url,setUrl]=useState(null),[playing,setPlaying]=useState(false),[spinDone,setSpinDone]=useState(false),[err,setErr]=useState(false);
@@ -214,9 +192,6 @@ function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,p
     if(v){v.pause();v.removeAttribute("src");v.load();}
   },[videoId]);
 
-  // Fetch stream from app backend
-  // Deps: videoId (reset guard above handles it), active/preload (triggers fetch)
-  // url/err tracked via state but we gate with refs to avoid re-triggering
   useEffect(()=>{
     if(!active&&!preload)return;
     if(url||fetchingRef.current||err)return;
@@ -238,7 +213,6 @@ function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,p
       });
   },[active,preload,videoId,url,err]); // eslint-disable-line
 
-  // Attach src + initial play when URL first arrives
   useEffect(()=>{
     const v=vRef.current;if(!v||!url)return;
     v.src=url;v.load();
@@ -250,17 +224,15 @@ function ElectronPlayer({videoId,active,muted,paused,onBlocked,backdrop,poster,p
     return()=>clearTimeout(t);
   },[url]); // eslint-disable-line
 
-  // active toggle (runs AFTER [url] effect)
   useEffect(()=>{
     const v=vRef.current;if(!v||!url)return; // url checked â€” not in deps intentionally
     if(active){v.play().catch(()=>{v.muted=true;v.play().catch(()=>{});});}
     else{v.pause();v.muted=true;}
-  },[active,url]); // include url so effect re-evaluates when both become ready
+  },[active,url]);
 
   // Mute sync â€” use property not attribute (avoids React boolean-attr bug)
   useEffect(()=>{const v=vRef.current;if(v)v.muted=muted;},[muted]);
 
-  // Pause / play toggle
   useEffect(()=>{
     const v=vRef.current;if(!v||!url||!active)return;
     if(paused)v.pause();else v.play().catch(()=>{});
@@ -310,7 +282,36 @@ function SearchQueueStrip({items,idx,onSelect}){
   );
 }
 
-// â”€â”€â”€ SEARCH OVERLAY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function SearchResultCard({item,onOpen}){
+  const[h,setH]=useState(false);
+  const type=item.media_type==="tv"?"tv":"movie";
+  const title=item.title||item.name||"";
+  const year=(item.release_date||item.first_air_date||"").slice(0,4);
+  return(
+    <div style={{width:100,flexShrink:0,userSelect:"none",cursor:"pointer"}}
+      onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      onClick={onOpen}>
+      <div style={{width:100,height:150,borderRadius:9,overflow:"hidden",background:"#111",border:`1px solid ${h?"rgba(0,180,166,0.5)":"rgba(255,255,255,0.06)"}`,position:"relative",transform:h?"translateY(-4px) scale(1.04)":"none",transition:"all 0.2s cubic-bezier(.34,1.1,.64,1)",boxShadow:h?"0 14px 32px rgba(0,0,0,0.75)":"none"}}>
+        {item.poster_path
+          ?<img src={imgSrc(item.poster_path,"w300")} alt={title} loading="lazy" draggable={false} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+          :<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.06)",fontSize:24}}>◉</div>}
+        {type==="tv"&&<div style={{position:"absolute",top:5,left:5,background:"rgba(167,139,250,0.92)",borderRadius:4,padding:"2px 6px",fontSize:8,fontWeight:800,color:"#fff",letterSpacing:0.6}}>TV</div>}
+        {item.vote_average>0&&<div style={{position:"absolute",top:5,right:5,background:"rgba(0,0,0,0.9)",borderRadius:5,padding:"2px 5px",fontSize:10,fontWeight:700,color:"#f5c518"}}>★ {item.vote_average.toFixed(1)}</div>}
+        {h&&(
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.7) 0%,transparent 55%)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:7}}>
+            <div style={{width:26,height:26,borderRadius:"50%",background:"rgba(0,0,0,0.55)",border:"1.5px solid rgba(255,255,255,0.28)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(6px)"}}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="white" style={{marginLeft:1}}><path d="M8 5v14l11-7z"/></svg>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{marginTop:5,fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.72)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</div>
+      {year&&<div style={{fontSize:10,color:"rgba(255,255,255,0.24)",marginTop:1}}>{year}</div>}
+    </div>
+  );
+}
+
+// ─── SEARCH OVERLAY ──────────────────────────────────────────────────────────
 function SearchOverlay({open,apiKey,onClose,onAddToMain}){
   const[mode,setMode]=useState("grid");
   const[q,setQ]=useState("");
@@ -382,7 +383,7 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
   if(mode==="player"){
     const item=pQueue[pIdx];
     const ytKey=item?.id in trailers?trailers[item.id]:undefined;
-    const isLoadingT=ytKey===undefined; // undefined = not yet fetched; "loading" never enters trailers state
+    const isLoadingT=ytKey===undefined;
     const noTrailer=ytKey===null;
     const bg=imgSrc(item?.backdrop_path,"w1280")||imgSrc(item?.poster_path,"w780");
     const itemGenres=(item?.genre_ids||[]).slice(0,2).map(id=>GENRES[id]).filter(Boolean);
@@ -441,13 +442,22 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
     );
   }
 
-  // â”€â”€ GRID MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  // ── GRID MODE — wrap layout, fixed 100px cards, same as HomePage's .ns-row.
+  // Not a CSS grid: HomePage uses flex-wrap with fixed-width children, so the
+  // search grid now does the same instead of a responsive minmax() grid that
+  // stretches cards to fill columns. ──────────────────────────────────────────
   return createPortal(
     <div style={{position:"fixed",inset:0,zIndex:2147483644,background:"rgba(4,4,4,0.97)",backdropFilter:"blur(24px)",display:"flex",flexDirection:"column",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",animation:"ns-srch-in 0.22s cubic-bezier(0.22,1,0.36,1) both"}}>
-      <style>{`@keyframes ns-spin{to{transform:rotate(360deg)}}@keyframes ns-srch-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}@keyframes ns-card-pop{from{opacity:0;transform:scale(0.93) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}@keyframes ns-bar-pulse{0%,100%{transform:scaleY(0.3)}50%{transform:scaleY(1)}}.ns-sc:hover .ns-sc-play{opacity:1!important}.ns-sc:hover img{transform:scale(1.05)!important}`}</style>
+      <style>{`@keyframes ns-spin{to{transform:rotate(360deg)}}@keyframes ns-srch-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}@keyframes ns-card-pop{from{opacity:0;transform:scale(0.93) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}@keyframes ns-bar-pulse{0%,100%{transform:scaleY(0.3)}50%{transform:scaleY(1)}}`}</style>
       {/* Search bar */}
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 14px 12px",borderBottom:"1px solid rgba(255,255,255,0.07)",background:"rgba(8,8,8,0.8)",backdropFilter:"blur(20px)",flexShrink:0}}>
-        <button onClick={onClose} style={{all:"unset",cursor:"pointer",flexShrink:0,width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",color:"rgba(255,255,255,0.65)",transition:"background 0.15s,color 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.09)";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.65)";}}>
+        <button
+          onClick={onClose}
+          onPointerUp={e=>{e.stopPropagation();}}
+          onTouchEnd={e=>{e.stopPropagation();}}
+          style={{all:"unset",cursor:"pointer",flexShrink:0,width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",color:"rgba(255,255,255,0.65)",transition:"background 0.15s,color 0.15s",touchAction:"manipulation"}}
+          onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.09)";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.65)";}}>
           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div style={{flex:1,position:"relative"}}>
@@ -461,29 +471,25 @@ function SearchOverlay({open,apiKey,onClose,onAddToMain}){
         {sLoading&&<div style={{width:11,height:11,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,0.08)",borderTopColor:"#00b4a6",animation:"ns-spin 0.7s linear infinite",flexShrink:0}}/>}
         <span style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:"rgba(255,255,255,0.22)",textTransform:"uppercase",fontFamily:"'DM Mono',monospace"}}>{sLabel}</span>
       </div>
-      {/* Grid */}
-      <div style={{flex:1,overflowY:"auto",padding:"4px 12px 48px",WebkitOverflowScrolling:"touch"}}>
-        {sLoading&&!display.length&&(<div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>{Array.from({length:6}).map((_,i)=><div key={i} style={{borderRadius:10,overflow:"hidden",background:"rgba(255,255,255,0.04)",animation:"ns-card-pop 0.28s ease both",animationDelay:`${i*0.05}s`}}><div style={{aspectRatio:"2/3",background:"rgba(255,255,255,0.03)"}}/><div style={{padding:"10px 11px 12px",display:"flex",flexDirection:"column",gap:6}}><div style={{height:12,borderRadius:4,background:"rgba(255,255,255,0.05)",width:"80%"}}/><div style={{height:10,borderRadius:4,background:"rgba(255,255,255,0.03)",width:"50%"}}/></div></div>)}</div>)}
+      {/* Grid — flex-wrap of fixed 100px cards, matching HomePage's .ns-row exactly */}
+      <div style={{flex:1,overflowY:"auto",padding:"4px 16px 48px",WebkitOverflowScrolling:"touch"}}>
+        {sLoading&&!display.length&&(
+          <div style={{display:"flex",flexWrap:"wrap",gap:"14px 10px"}}>
+            {Array.from({length:16}).map((_,i)=>(
+              <div key={i} style={{width:100,animation:"ns-card-pop 0.24s ease both",animationDelay:`${i*0.02}s`}}>
+                <div style={{width:100,height:150,borderRadius:9,background:"rgba(255,255,255,0.04)"}}/>
+                <div style={{marginTop:6,height:10,borderRadius:3,background:"rgba(255,255,255,0.05)",width:"80%"}}/>
+              </div>
+            ))}
+          </div>
+        )}
         {!sLoading&&q.length>1&&!results.length&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:"70px 20px",textAlign:"center"}}><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span style={{fontSize:13,color:"rgba(255,255,255,0.25)"}}>No results for "{q}"</span></div>)}
         {!!display.length&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"14px 10px"}}>
             {display.map((item,i)=>(
-              <button key={item.id} className="ns-sc" onClick={()=>openPlayer(display,i)} style={{all:"unset",cursor:"pointer",display:"flex",flexDirection:"column",borderRadius:10,overflow:"hidden",background:"#111",border:"1.5px solid rgba(255,255,255,0.07)",animation:"ns-card-pop 0.26s ease both",animationDelay:`${Math.min(i*0.04,0.32)}s`,transition:"border-color 0.18s,transform 0.2s,box-shadow 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(0,180,166,0.5)";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 12px 40px rgba(0,0,0,0.45),0 0 0 1px rgba(0,180,166,0.1)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.07)";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
-                <div style={{aspectRatio:"2/3",position:"relative",background:"#1a1a1a",overflow:"hidden"}}>
-                  {item.poster_path?<img src={imgSrc(item.poster_path,"w342")} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block",transition:"transform 0.4s ease"}}/>:<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.06)"}}><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/></svg></div>}
-                  {item.media_type==="tv"&&<div style={{position:"absolute",top:8,left:8,background:"rgba(167,139,250,0.92)",borderRadius:4,padding:"2px 7px",fontSize:8,fontWeight:800,color:"#fff",letterSpacing:1,fontFamily:"'DM Mono',monospace",backdropFilter:"blur(4px)"}}>TV</div>}
-                  <div className="ns-sc-play" style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.18)",opacity:0.5,transition:"opacity 0.2s"}}><div style={{width:46,height:46,borderRadius:"50%",background:"rgba(0,0,0,0.55)",border:"1.5px solid rgba(255,255,255,0.28)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(6px)"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style={{marginLeft:2}}><path d="M8 5v14l11-7z"/></svg></div></div>
-                  <div style={{position:"absolute",bottom:0,left:0,right:0,height:"45%",background:"linear-gradient(to top,rgba(0,0,0,0.9) 0%,transparent 100%)",pointerEvents:"none"}}/>
-                  {item.vote_average>0&&<span style={{position:"absolute",bottom:8,right:8,fontSize:10,fontWeight:700,color:"#f1c40f",textShadow:"0 1px 4px rgba(0,0,0,0.9)"}}>{item.vote_average.toFixed(1)} â˜…</span>}
-                </div>
-                <div style={{padding:"10px 11px 13px",background:"rgba(255,255,255,0.015)"}}>
-                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.92)",lineHeight:1.3,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",fontFamily:"'DM Sans',sans-serif"}}>{item.title||item.name}</div>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                    <span style={{fontSize:10,color:"rgba(255,255,255,0.28)",fontFamily:"'DM Mono',monospace"}}>{(item.release_date||item.first_air_date||"").slice(0,4)}</span>
-                    {(item.genre_ids||[]).slice(0,1).map(id=>GENRES[id]).filter(Boolean).map(g=><span key={g} style={{fontSize:9,color:"rgba(0,180,166,0.75)",fontWeight:700}}>Â· {g}</span>)}
-                  </div>
-                </div>
-              </button>
+            <div key={item.id} style={{animation:"ns-card-pop 0.22s ease both",animationDelay:`${Math.min(i*0.02,0.3)}s`}}>
+                <SearchResultCard item={item} onOpen={()=>openPlayer(display,i)}/>
+              </div>
             ))}
           </div>
         )}
@@ -592,6 +598,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
   const[showDock,setShowDock] =useState(false);
   const[downloading,setDownloading]=useState(false);
   const[dlProgress,setDlProgress]=useState(0);
+  const[showGate,setShowGate]=useState(null);
 
   const containerRef=useRef(null),idxRef=useRef(0),reelsRef=useRef([]),savedRef=useRef(savedItems),canNav=useRef(true),wheelLock=useRef(false),hadInteract=useRef(false),lastTap=useRef({t:0,x:0,y:0});
   const[desktop,setDesktop]=useState(()=>window.innerWidth>800);
@@ -619,14 +626,15 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
   const showToast=useCallback((msg,ms=2200)=>{setToast(msg);setTimeout(()=>setToast(null),ms);},[]);
   const firstInteract=useCallback(()=>{if(!hadInteract.current){hadInteract.current=true;setInteracted(true);}},[]);
 
-  const [showGate,setShowGate]=useState(null);
   const goTo=useCallback(n=>{
     firstInteract();if(!canNav.current)return;
     const len=reelsRef.current.length;if(!len)return;
     const c=Math.max(0,Math.min(n,len-1));if(c===idxRef.current)return;
     const forward=c>idxRef.current;
     if(forward){if(!canUseShorts()){setShowGate("shorts");return;}incrementFreeDailyUsage("shorts");}
+    if(c>idxRef.current&&!canUseShorts()){setShowGate("shorts");return;}
     canNav.current=false;idxRef.current=c;setIdx(c);setTimeout(()=>{canNav.current=true;},380);
+    recordFeatureUse("shorts");
   },[firstInteract]);
 
   const togglePause=useCallback(()=>{
@@ -718,6 +726,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
     @keyframes ns-pause-in{from{opacity:0;transform:scale(0.7)}to{opacity:1;transform:scale(1)}}
     @keyframes ns-burst-ping{0%{opacity:0;transform:translate(-50%,-50%) scale(0.4)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.3)}}
     @keyframes ns-hintfade{0%{opacity:0}10%{opacity:1}80%{opacity:1}100%{opacity:0}}
+    @keyframes ns-toast-in{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
     @keyframes ns-flash{0%{opacity:0}15%{opacity:1}70%{opacity:.5}100%{opacity:0}}
     @keyframes ns-bar-pulse{0%,100%{transform:scaleY(0.35)}50%{transform:scaleY(1)}}
     .ns-ab-c{transition:background 0.15s !important}
@@ -808,9 +817,10 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
           {!interacted&&!loading&&reels.length>0&&<div style={{position:"absolute",bottom:18,left:"50%",transform:"translateX(-50%)",zIndex:40,pointerEvents:"none",display:"flex",alignItems:"center",gap:10,background:"rgba(10,10,10,0.88)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,padding:"8px 18px",animation:"ns-hintfade 5s ease 1s both",whiteSpace:"nowrap"}}><span style={{fontSize:11,color:"rgba(255,255,255,0.65)",fontFamily:"'DM Sans',sans-serif"}}>Scroll or â†‘ â†“ to browse Â· Click to pause Â· / to search</span></div>}
           {!loading&&!reels.length&&<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,letterSpacing:2,color:"rgba(255,255,255,0.12)"}}>No Shorts</span></div>}
         </div>
-        {toast&&<div style={{position:"fixed",top:70,left:"50%",transform:"translateX(-50%)",zIndex:100,background:"rgba(10,10,10,0.92)",border:"1px solid rgba(0,180,166,0.2)",borderRadius:8,padding:"9px 18px",display:"flex",alignItems:"center",gap:8,animation:"ns-fadein 0.2s ease both",whiteSpace:"nowrap",pointerEvents:"none"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span style={{fontFamily:"'DM Mono',monospace",fontSize:11,letterSpacing:0.8,color:"#00b4a6",textTransform:"uppercase"}}>{toast}</span></div>}
+        {toast&&<div style={{position:"fixed",top:20,right:20,zIndex:100,maxWidth:280,background:"rgba(10,10,10,0.92)",border:"1px solid rgba(0,180,166,0.2)",borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:8,animation:"ns-toast-in 0.22s cubic-bezier(.34,1.4,.64,1) both"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="#00b4a6" style={{flexShrink:0}}><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span style={{flex:1,fontFamily:"'DM Mono',monospace",fontSize:11,letterSpacing:0.8,color:"#00b4a6",textTransform:"uppercase"}}>{toast}</span><button onClick={()=>setToast(null)} style={{all:"unset",cursor:"pointer",color:"rgba(255,255,255,0.4)",flexShrink:0,display:"flex"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>}
         {moreLoad&&<div style={{position:"fixed",bottom:20,right:20,zIndex:10,pointerEvents:"none"}}><div style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.06)",borderTopColor:"#00b4a6",animation:"ns-spin 0.8s linear infinite"}}/></div>}
         {IS_ELECTRON&&downloading&&dlProgress>0&&<div style={{position:"fixed",bottom:0,left:"var(--sidebar,54px)",right:0,height:2,background:"rgba(255,255,255,0.06)",zIndex:200}}><div style={{height:"100%",width:`${dlProgress}%`,background:"linear-gradient(90deg,#00b4a6,#00d4ff)",transition:"width 0.3s ease"}}/></div>}
+        {showGate && <PremiumGate feature={showGate} onClose={()=>setShowGate(null)} />}
         <SearchOverlay open={searchOpen} apiKey={apiKey} onClose={()=>setSearchOpen(false)} onAddToMain={handleSearchSelect}/>
       </div>
     );
@@ -821,6 +831,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
     <div ref={containerRef} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:2147483647}}>
       <style>{`${G} .ns-mob-rail{position:absolute;right:8px;bottom:100px;z-index:30;display:flex;flex-direction:column;align-items:center;gap:18px;touch-action:none;} .ns-mob-info{position:absolute;bottom:0;left:0;right:60px;z-index:30;padding:0 14px 72px 16px;pointer-events:none;box-sizing:border-box;}`}</style>
       {showGate&&<PremiumGate feature={showGate} onClose={()=>setShowGate(null)}/>}
+      <style>{`${G} .ns-mob-rail{position:absolute;right:8px;bottom:100px;z-index:30;display:flex;flex-direction:column;align-items:center;gap:18px;touch-action:none;} .ns-mob-info{position:absolute;bottom:0;left:0;right:60px;z-index:30;padding:0 14px 72px 16px;pointer-events:none;box-sizing:border-box;} .ns-mob-topbtn{touch-action:manipulation;}`}</style>
       {loading&&spinner}
       {!loading&&reels.map((r,i)=>{
         if(!visible(i))return null;
@@ -877,14 +888,46 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
           </div>
         );
       })}
-      {/* Mobile top bar */}
+      {/* Mobile top bar — search + dock buttons now use pointerUp+stopPropagation
+          the same way MobBtn does, so a tap starting on them can't be swallowed
+          by the full-screen gesture layer's touch-action:none siblings. Plain
+          onClick with no propagation guard was the root cause of tapping
+          Search doing nothing on mobile while working fine on desktop (no
+          competing touch gesture layer there). */}
       <div style={{position:"absolute",top:0,left:0,right:0,zIndex:50,background:"linear-gradient(to bottom,rgba(0,0,0,0.72) 0%,transparent 100%)",pointerEvents:"none"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 14px 32px",pointerEvents:"auto"}}>
-          <button onClick={()=>nav("home")} style={{all:"unset",width:36,height:36,borderRadius:"50%",background:"rgba(0,0,0,0.38)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"rgba(255,255,255,0.9)"}}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <button
+            className="ns-mob-topbtn"
+            onPointerDown={e=>e.stopPropagation()}
+            onPointerUp={e=>{e.stopPropagation();nav("home");}}
+            onTouchStart={e=>e.stopPropagation()}
+            onTouchEnd={e=>e.stopPropagation()}
+            onClick={e=>{e.stopPropagation();nav("home");}}
+            style={{all:"unset",width:36,height:36,borderRadius:"50%",background:"rgba(0,0,0,0.38)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"rgba(255,255,255,0.9)"}}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
           <div style={{display:"flex",alignItems:"center",gap:7,pointerEvents:"none"}}><span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:19,letterSpacing:2.5,color:"#fff"}}><span style={{color:"#00b4a6"}}>NS</span> Shorts</span><span style={{fontSize:8,fontWeight:800,letterSpacing:0.8,background:"linear-gradient(135deg,#f5a623,#e74c3c)",borderRadius:4,padding:"2px 5px",color:"#fff",fontFamily:"'DM Sans',sans-serif"}}>WORLD</span></div>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={()=>setShowDock(v=>!v)} style={{all:"unset",width:34,height:34,borderRadius:"50%",background:"rgba(0,0,0,0.38)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"rgba(255,255,255,0.9)"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
-            <button onClick={()=>setSearchOpen(true)} style={{all:"unset",width:34,height:34,borderRadius:"50%",background:"rgba(0,0,0,0.38)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"rgba(255,255,255,0.9)"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+            <button
+              className="ns-mob-topbtn"
+              onPointerDown={e=>e.stopPropagation()}
+              onPointerUp={e=>{e.stopPropagation();setShowDock(v=>!v);}}
+              onTouchStart={e=>e.stopPropagation()}
+              onTouchEnd={e=>e.stopPropagation()}
+              onClick={e=>{e.stopPropagation();setShowDock(v=>!v);}}
+              style={{all:"unset",width:34,height:34,borderRadius:"50%",background:"rgba(0,0,0,0.38)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"rgba(255,255,255,0.9)"}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
+            <button
+              className="ns-mob-topbtn"
+              onPointerDown={e=>e.stopPropagation()}
+              onPointerUp={e=>{e.stopPropagation();setSearchOpen(true);}}
+              onTouchStart={e=>e.stopPropagation()}
+              onTouchEnd={e=>{e.stopPropagation();setSearchOpen(true);}}
+              onClick={e=>{e.stopPropagation();setSearchOpen(true);}}
+              style={{all:"unset",width:34,height:34,borderRadius:"50%",background:"rgba(0,0,0,0.38)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"rgba(255,255,255,0.9)"}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -899,6 +942,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
       {toast&&<div style={{position:"absolute",top:72,left:"50%",transform:"translateX(-50%)",zIndex:75,pointerEvents:"none",background:"rgba(5,5,5,0.9)",border:"1px solid rgba(0,180,166,0.2)",borderRadius:8,padding:"9px 18px",display:"flex",alignItems:"center",gap:8,animation:"ns-fadein 0.2s ease both",whiteSpace:"nowrap"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="#00b4a6"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span style={{fontFamily:"'DM Mono',monospace",fontSize:11,letterSpacing:0.8,color:"#00b4a6",textTransform:"uppercase"}}>{toast}</span></div>}
       {moreLoad&&<div style={{position:"absolute",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:50,pointerEvents:"none"}}><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.06)",borderTopColor:"#00b4a6",animation:"ns-spin 0.8s linear infinite"}}/></div>}
       {IS_ELECTRON&&downloading&&dlProgress>0&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:2,background:"rgba(255,255,255,0.06)",zIndex:200}}><div style={{height:"100%",width:`${dlProgress}%`,background:"linear-gradient(90deg,#00b4a6,#00d4ff)",transition:"width 0.3s ease"}}/></div>}
+      {showGate && <PremiumGate feature={showGate} onClose={()=>setShowGate(null)} />}
       <SearchOverlay open={searchOpen} apiKey={apiKey} onClose={()=>setSearchOpen(false)} onAddToMain={handleSearchSelect}/>
     </div>,
     document.body

@@ -1,23 +1,58 @@
-/**
- * api/sources.js — NovaSparks Serverless Source Fetcher
- *
- * NS 1  Consumet   → set env CONSUMET_URL   (self-hosted, ad-free direct HLS)
- * NS 2  HiAnime    → set env HIANIME_URL    (self-hosted, anime)
- * NS 3  Jellyfin   → set env JELLYFIN_URL + JELLYFIN_TOKEN
- * NS 4  CinePro    → set env CINEPRO_URL    (self-hosted scraper)
- * NS 5  VidSrc.to  → public, no env needed
- * NS 6  SRS Live   → set env SRS_URL        (self-hosted live server)
- * NS 7  VidLink    → public
- * NS 8  Videasy    → public
- * NS 9  AutoEmbed  → public
- * NS 10 Vap        → public
- * NS 11 VidsrcCC   → public
- */
+import crypto from "crypto";
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const USER_SESSION_SECRET = process.env.USER_SESSION_SECRET;
+const TRIAL_DAYS = 4; // must match src/utils/premium.js TRIAL_DAYS
+
+function verifyUserToken(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return false;
+  const dot = token.lastIndexOf(".");
+  const payloadB64 = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  if (!sig || !USER_SESSION_SECRET) return false;
+  const expected = crypto.createHmac("sha256", USER_SESSION_SECRET).update(payloadB64).digest("base64url");
+  const sigBuf = Buffer.from(sig), expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
+    return payload.exp && Date.now() <= payload.exp ? payload : false;
+  } catch { return false; }
+}
+
+async function sbGet(path, params) {
+  const url = new URL(`${SUPABASE_URL}/rest/v1${path}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  const r = await fetch(url.toString(), { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+  if (!r.ok) return null;
+  return r.json();
+}
+
+async function resolveEntitlement(uid, email) {
+  const [users, subs] = await Promise.all([
+    sbGet("/users", { select: "created_at", id: `eq.${uid}` }),
+    sbGet("/subscriptions", { select: "plan_id,expires_at", email: `eq.${email}` }),
+  ]);
+  const user = users?.[0];
+  if (!user) return { entitled: false, reason: "no_account" };
+
+  const sub = subs?.[0];
+  const now = Date.now();
+  if (sub && sub.plan_id && sub.plan_id !== "free" && new Date(sub.expires_at).getTime() > now) {
+    return { entitled: true, plan: sub.plan_id };
+  }
+
+  const createdAt = new Date(user.created_at).getTime();
+  const trialActive = Number.isFinite(createdAt) && (now - createdAt) < TRIAL_DAYS * 86400000;
+  if (trialActive) return { entitled: true, plan: "trial" };
+
+  return { entitled: false, reason: "trial_expired" };
+}
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, x-user-token",
   "Content-Type":                 "application/json",
 };
 
@@ -334,6 +369,18 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
+
+  const authPayload = verifyUserToken(req.headers["x-user-token"]);
+  if (!authPayload) return res.status(401).json({ error: "Sign in required." });
+
+  const { entitled, reason } = await resolveEntitlement(authPayload.uid, authPayload.email);
+  if (!entitled) {
+    return res.status(403).json({
+      error: reason === "trial_expired"
+        ? "Your free trial has ended. Subscribe to keep watching."
+        : "Account not found.",
+    });
+  }
 
   const { type, id, season, episode, service } = req.query;
   if (!type || !id) return res.status(400).json({ error: "Missing type or id" });

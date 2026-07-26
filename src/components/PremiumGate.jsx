@@ -1,20 +1,24 @@
 ﻿import { useEffect } from "react";
 import { getGateMessage } from "../utils/gate";
+import { getDailyLimitMessage } from "../utils/premium";
 
 /**
  * PremiumGate â€” psychology-enhanced upgrade modal.
  *
  * Adapts its tone automatically based on trial state:
- *   â€¢ Trial active, first hit  â†’ soft, benefit-forward
- *   â€¢ Trial warning (< 3 days) â†’ countdown urgency
- *   â€¢ Trial expired            â†’ loss aversion ("you HAD this")
- *   â€¢ Repeat block in session  â†’ direct, price-forward
+*   • Trial active, first hit  → soft, benefit-forward
+ *   • Trial final 24h          → countdown urgency
+ *   • Trial expired            → loss aversion ("you HAD this")
+ *   • Repeat block in session  → direct, price-forward
  *
  * Usage:
  *   {gateModal && <PremiumGate feature={gateModal} onUpgrade={fn} onClose={fn} />}
  */
 export default function PremiumGate({ feature, onUpgrade, onClose }) {
-  const gateMessage = getGateMessage(feature);
+  const isDailyFeature = feature === "shorts" || feature === "ai";
+  const { icon, title, desc, subdesc, price, cta, urgency, plan } = isDailyFeature
+    ? getDailyLimitMessage(feature)
+    : getGateMessage(feature);
 
   useEffect(() => {
     const h = (e) => { if (e.key === "Escape") onClose(); };
@@ -27,9 +31,6 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
     if (onUpgrade) onUpgrade();
     else window.dispatchEvent(new CustomEvent("novaspark:upgrade"));
   };
-
-  if (!gateMessage) return null;
-  const { icon, title, desc, subdesc, price, cta, urgency } = gateMessage;
 
   // Urgency state uses a warm amber/gold palette (loss, scarcity).
   // Default state uses the brand teal â€” calm, inviting.
@@ -134,10 +135,20 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
         {subdesc && (
           <p style={{
             fontSize: 12.5, color: accentColor, lineHeight: 1.6,
-            margin: "0 auto 14px", maxWidth: 300,
+            margin: "0 auto 6px", maxWidth: 300,
             fontWeight: 600, position: "relative", zIndex: 1,
           }}>
             {subdesc}
+          </p>
+        )}
+
+        {/* What you actually get — short, factual, answers "how does this work" */}
+        {plan?.tagline && (
+          <p style={{
+            fontSize: 12, color: "rgba(255,255,255,0.42)", lineHeight: 1.6,
+            margin: "0 auto 14px", maxWidth: 300, position: "relative", zIndex: 1,
+          }}>
+            {plan.tagline}
           </p>
         )}
 

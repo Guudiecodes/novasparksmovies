@@ -4,9 +4,6 @@ import { CloseIcon } from "./Icons";
 
 const PAYSTACK_PUBLIC_KEY = "pk_live_7a41cee8223af8ebae60c24c63fc8be8cdbb9886";
 
-// $0.99 â‰ˆ â‚¦1,584 NGN. Paystack amount is in kobo (smallest NGN unit). 1584 Ã— 100 = 158400.
-const PLAN_AMOUNT_KOBO = 158400;
-
 const CRYPTO_WALLETS = {
   "USDT (BEP-20)": "0xc216ee7748a18c1a451b223cd0e344553ecf86ce",
   "Bitcoin (BTC)": "12SDDVhtgYaKkmYg5tNxCygo43EqxndDXm",
@@ -39,8 +36,12 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
   const [error,    setError]    = useState("");
   const [copied,   setCopied]   = useState("");
 
-  const price     = `$${Number(plan.price).toFixed(2)}`;
-  const planColor = plan.color || "#00b4a6";
+  // plan.price / plan.priceKobo are Naira now (premium.js v3.0), not USD.
+  // Never hardcode this — it must always come from the plan actually
+  // being purchased, or Standard/Premium buyers get charged the wrong amount.
+  const price      = `₦${Number(plan.price || 0).toLocaleString()}`;
+  const planColor  = plan.color || "#00b4a6";
+  const amountKobo = plan.priceKobo ?? Math.round((plan.price || 0) * 100);
 
   function validate() {
     if (!email.trim())            { setError("Email is required.");                  return false; }
@@ -53,6 +54,16 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
   async function handlePaystack() {
     setError("");
     if (!validate()) return;
+
+    // Hard guard — never open a checkout for an amount we can't verify.
+    // This is what protects against ever silently charging ₦0 or a stale
+    // hardcoded figure regardless of which plan was actually selected.
+    if (!amountKobo || !Number.isFinite(amountKobo) || amountKobo <= 0) {
+      console.error("PaymentModal: refusing to charge — invalid amountKobo for plan", plan);
+      setError("Pricing error for this plan — please refresh and try again.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -63,11 +74,13 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
       const handler = window.PaystackPop.setup({
         key:      PAYSTACK_PUBLIC_KEY,
         email:    email.trim().toLowerCase(),
-        amount:   PLAN_AMOUNT_KOBO,    // kobo (NGN equivalent of $0.99)
+        amount:   amountKobo,   // ← real per-plan amount, not a hardcoded one
+        currency: "NGN",
         ref,
         metadata: {
           plan_id:       plan.id,
           plan_name:     plan.name,
+          amount_ngn:    plan.price,
           password_hash: simpleHash(password),
         },
         callback(response) {
@@ -165,7 +178,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
 
             {/* Currency info */}
             <div style={{ background: "rgba(0,180,166,0.07)", border: "1px solid rgba(0,180,166,0.25)", borderRadius: 8, padding: "10px 14px", marginBottom: 18, fontSize: 12, color: "var(--text3)", lineHeight: 1.6 }}>
-              ðŸ’¡ Prices shown in <strong style={{ color: "var(--text)" }}>USD</strong>. Via Paystack you pay the <strong style={{ color: "var(--text)" }}>naira equivalent</strong> automatically. Want to pay in actual USD? Use Crypto below.
+              💡 Prices are in <strong style={{ color: "var(--text)" }}>Naira (₦)</strong>. Pay by card, bank transfer, USSD, or mobile money via Paystack — or send crypto below.
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -174,14 +187,14 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                 style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px", cursor: "pointer", textAlign: "left", color: "var(--text)" }}
               >
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Pay with Paystack</div>
-                <div style={{ fontSize: 12, color: "var(--text3)" }}>Naira equivalent Â· Card Â· Bank Transfer Â· USSD Â· Mobile Money</div>
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>Card · Bank Transfer · USSD · Mobile Money</div>
               </button>
               <button
                 onClick={() => { setMethod("crypto"); setStep(2); setError(""); }}
                 style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px", cursor: "pointer", textAlign: "left", color: "var(--text)" }}
               >
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Pay with Crypto <span style={{ fontSize: 11, color: "#f5a623", fontWeight: 600 }}>Â· USD</span></div>
-                <div style={{ fontSize: 12, color: "var(--text3)" }}>Pay exactly {price} in USD Â· USDT (BEP-20) Â· Bitcoin</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Pay with Crypto</div>
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>Send the {price} equivalent · USDT (BEP-20) · Bitcoin</div>
               </button>
             </div>
           </>
@@ -196,14 +209,14 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
             <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20, lineHeight: 1.6 }}>
               {method === "paystack"
                 ? "We'll store these so you can restore your plan on any device."
-                : "Send the exact amount to a wallet below, then confirm with your transaction hash."}
+                : "Send the equivalent of your plan price to a wallet below, then confirm with your transaction hash."}
             </div>
 
             {/* Crypto wallets â€” compact */}
             {method === "crypto" && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8, lineHeight: 1.5 }}>
-                  Send <strong style={{ color: "#f5a623" }}>{price} USD</strong> to one wallet, then paste your transaction hash below.
+                  Send the equivalent of <strong style={{ color: "#f5a623" }}>{price}</strong> (at today's exchange rate) to one wallet, then paste your transaction hash below.
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {Object.entries(CRYPTO_WALLETS).map(([key, addr]) => (

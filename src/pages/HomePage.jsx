@@ -41,6 +41,27 @@ function TikTokIcon({ size = 18 }) {
 const HERO_COUNT    = 5;
 const HERO_INTERVAL = 7000;
 
+// ── Genre catalogue — maps every clickable nav item to a concrete TMDB
+// query. Single source of truth for genre mode: label, discover endpoint,
+// media type. Every item.scroll id used in NAV_CATEGORIES below must have a
+// matching entry here, or HeroNavBar falls back to its old scrollIntoView
+// behavior for that item instead of opening genre mode. ────────────────────
+const GENRE_CATALOGUE = {
+  "popular-movies":   { label: "Popular Movies",   endpoint: "/movie/popular",                                        mediaType: "movie" },
+  "now-playing":      { label: "Now Playing",       endpoint: "/movie/now_playing",                                    mediaType: "movie" },
+  "action":           { label: "Action",            endpoint: "/discover/movie?with_genres=28",                       mediaType: "movie" },
+  "comedy":           { label: "Comedy",             endpoint: "/discover/movie?with_genres=35",                       mediaType: "movie" },
+  "horror":           { label: "Horror",             endpoint: "/discover/movie?with_genres=27",                       mediaType: "movie" },
+  "scifi":            { label: "Sci-Fi",             endpoint: "/discover/movie?with_genres=878",                      mediaType: "movie" },
+  "upcoming":         { label: "Coming Soon",        endpoint: "/movie/upcoming",                                      mediaType: "movie" },
+  "popular-tv":       { label: "Popular Series",     endpoint: "/tv/popular",                                          mediaType: "tv"    },
+  "airing-today":     { label: "Airing Today",       endpoint: "/tv/airing_today",                                     mediaType: "tv"    },
+  "anime":            { label: "Anime",              endpoint: "/discover/tv?with_genres=16&with_original_language=ja",mediaType: "tv"    },
+  "top-rated":        { label: "Top Rated",          endpoint: "/movie/top_rated",                                     mediaType: "movie" },
+  "trending-movies":  { label: "Trending Movies",    endpoint: "/trending/movie/week",                                 mediaType: "movie" },
+  "trending-tv":      { label: "Trending Series",    endpoint: "/trending/tv/week",                                    mediaType: "tv"    },
+};
+
 // ── Nav Categories for Hero Nav ───────────────────────────────────────────────
 const NAV_CATEGORIES = [
   { id: "home", label: "Home", items: null },
@@ -80,7 +101,11 @@ const NAV_CATEGORIES = [
 ];
 
 // ── Hero Nav Bar ──────────────────────────────────────────────────────────────
-function HeroNavBar({ onNavigate }) {
+// onOpenGenre replaces the old scrollIntoView behavior for every item that
+// has a GENRE_CATALOGUE entry — clicking "Action" now opens genre mode
+// instead of scrolling to the Action row on the home feed. "Home" now exits
+// genre mode (if active) and scrolls to top, handled by the caller.
+function HeroNavBar({ onNavigate, onOpenGenre }) {
   const [activeMenu, setActiveMenu] = useState(null);
   const leaveTimer = useRef(null);
 
@@ -93,15 +118,16 @@ function HeroNavBar({ onNavigate }) {
     leaveTimer.current = setTimeout(() => setActiveMenu(null), 220);
   }, []);
 
-  const scrollToSection = useCallback((scrollId) => {
-    const el = document.getElementById(`ns-section-${scrollId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+  const handleItemClick = useCallback((scrollId) => {
+    if (GENRE_CATALOGUE[scrollId]) {
+      onOpenGenre?.(scrollId);
     } else {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      const el = document.getElementById(`ns-section-${scrollId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      else window.scrollTo({ top: 0, behavior: "smooth" });
     }
     setActiveMenu(null);
-  }, []);
+  }, [onOpenGenre]);
 
   useEffect(() => () => clearTimeout(leaveTimer.current), []);
 
@@ -118,11 +144,7 @@ function HeroNavBar({ onNavigate }) {
               className={`ns-hero-nav-btn${activeMenu === cat.id ? " ns-hero-nav-btn--open" : ""}`}
               onClick={() => {
                 if (!cat.items) {
-                  if (cat.id === "home") {
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  } else {
-                    onNavigate?.(cat.id);
-                  }
+                  onNavigate?.(cat.id);
                 } else {
                   setActiveMenu(activeMenu === cat.id ? null : cat.id);
                 }
@@ -149,7 +171,7 @@ function HeroNavBar({ onNavigate }) {
                   <button
                     key={item.scroll}
                     className="ns-hero-nav-drop-item"
-                    onClick={() => scrollToSection(item.scroll)}
+                    onClick={() => handleItemClick(item.scroll)}
                   >
                     <span className="ns-hero-nav-drop-dot" />
                     {item.label}
@@ -202,7 +224,7 @@ function SocialSlideNoti() {
   );
 }
 
-// ── Infinite scroll row ───────────────────────────────────────────────────────
+// ── Infinite scroll row (used on the home feed) ────────────────────────────────
 const InfiniteRow = memo(function InfiniteRow({
   id,
   title,
@@ -239,11 +261,9 @@ const InfiniteRow = memo(function InfiniteRow({
           <span style={{ color: "var(--red)", marginLeft: 6 }}>{titleHighlight}</span>
         )}
       </div>
-      <div className="ns-row">
+      <div className="ns-row" data-row-id={id}>
         {items.map((item) => {
           const type = item.media_type === "tv" ? "tv" : "movie";
-          const rk   = `${type}_${item.id}`;
-          const rd   = ratingsMap[rk] || {};
           return (
             <div
               key={`${item.media_type}_${item.id}`}
@@ -296,6 +316,242 @@ const InfiniteRow = memo(function InfiniteRow({
   );
 });
 
+// ── Genre mode short card — the video-forward card genre mode shows instead
+// of a plain poster. Plays the trailer muted+looped on hover (desktop) so
+// browsing a genre feels closer to skimming actual clips, not just a poster
+// wall. Falls back to a static backdrop/poster with a play badge when no
+// trailer key is available yet, or at all (title genuinely has none). ─────
+function GenreShortCard({ item, trailerKey, onSelect, onSave, isSaved }) {
+  const [hover, setHover] = useState(false);
+  const type  = item.media_type === "tv" ? "tv" : "movie";
+  const title = item.title || item.name || "";
+  const year  = (item.release_date || item.first_air_date || "").slice(0, 4);
+  const saved = isSaved ? isSaved(item) : false;
+
+  return (
+    <div
+      className="ns-genre-card"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={() => onSelect(item)}
+    >
+      <div className="ns-genre-card-media">
+        {hover && trailerKey ? (
+          <iframe
+            title={title}
+            src={`https://www.youtube-nocookie.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&loop=1&playlist=${trailerKey}`}
+            allow="autoplay; encrypted-media"
+            frameBorder="0"
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", pointerEvents: "none" }}
+          />
+        ) : item.backdrop_path || item.poster_path ? (
+          <img
+            src={imgUrl(item.backdrop_path || item.poster_path, "w500")}
+            alt={title}
+            loading="lazy"
+            draggable={false}
+          />
+        ) : (
+          <div className="ns-row-card-noposter"><PlayIcon /></div>
+        )}
+        <div className="ns-genre-card-grad" />
+        <div className="ns-genre-card-play"><PlayIcon /></div>
+        {item.vote_average > 0 && (
+          <div className="ns-row-card-score" style={{ top: 8, right: 8 }}>
+            <StarIcon style={{ width: 10, height: 10 }} /> {item.vote_average.toFixed(1)}
+          </div>
+        )}
+        {onSave && (
+          <button
+            className={`ns-genre-card-save${saved ? " is-saved" : ""}`}
+            onClick={(e) => { e.stopPropagation(); onSave(item); }}
+            aria-label={saved ? "Remove from watchlist" : "Add to watchlist"}
+            title={saved ? "Remove from watchlist" : "Add to watchlist"}
+          >
+            {saved ? "✓" : "+"}
+          </button>
+        )}
+      </div>
+      <div className="ns-genre-card-info">
+        <div className="ns-row-card-title">{title}</div>
+        <div className="ns-row-card-meta">
+          <span className="ns-row-card-type">{type}</span>
+          <span>{year}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Genre mode — full destination view for a single genre/category with
+// infinite scroll and inline trailer previews. Trailers are fetched lazily
+// only for the first screen or two of cards, via the same
+// sentinel+IntersectionObserver pattern InfiniteRow already uses for
+// pagination, so opening a genre doesn't fire twenty simultaneous
+// video-lookup requests before the user has even scrolled. ─────────────────
+function GenreMode({ genreKey, apiKey, onSelect, onSave, isSaved, onExit }) {
+  const cat = GENRE_CATALOGUE[genreKey];
+  const [items, setItems]     = useState([]);
+  const [page, setPage]       = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [trailers, setTrailers] = useState({});
+  const trailerFetching = useRef(new Set());
+  const sentinelRef = useRef(null);
+  const seenIds = useRef(new Set());
+
+  const fetchTrailer = useCallback(async (item) => {
+    const key = `${item.media_type || cat.mediaType}_${item.id}`;
+    if (trailerFetching.current.has(key) || trailers[key] !== undefined) return;
+    trailerFetching.current.add(key);
+    try {
+      const type = item.media_type || cat.mediaType;
+      const data = await tmdbFetch(`/${type}/${item.id}/videos`, apiKey);
+      const vids = data.results || [];
+      const best = vids.find((v) => v.site === "YouTube" && v.type === "Trailer")
+                || vids.find((v) => v.site === "YouTube" && v.type === "Teaser")
+                || vids.find((v) => v.site === "YouTube");
+      setTrailers((prev) => ({ ...prev, [key]: best?.key || null }));
+    } catch {
+      setTrailers((prev) => ({ ...prev, [key]: null }));
+    }
+  }, [apiKey, cat, trailers]);
+
+  const loadPage = useCallback(async (pageNum) => {
+    if (!apiKey || !cat) return;
+    setLoading(true);
+    try {
+      const sep  = cat.endpoint.includes("?") ? "&" : "?";
+      const data = await tmdbFetch(`${cat.endpoint}${sep}page=${pageNum}`, apiKey);
+      const fresh = (data.results || [])
+        .filter((i) => i.poster_path && !seenIds.current.has(i.id))
+        .map((i) => { seenIds.current.add(i.id); return { ...i, media_type: cat.mediaType }; });
+      setItems((prev) => [...prev, ...fresh]);
+      setHasMore(pageNum < (data.total_pages || 1) && pageNum < 20);
+      setPage(pageNum + 1);
+    } catch {
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiKey, cat]);
+
+  // Reset and load fresh whenever the genre itself changes.
+  useEffect(() => {
+    setItems([]); setPage(1); setHasMore(true); setTrailers({});
+    seenIds.current = new Set();
+    trailerFetching.current = new Set();
+    loadPage(1);
+    window.scrollTo(0, 0);
+  }, [genreKey]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!hasMore || !sentinelRef.current) return;
+    const obs = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting && !loading) loadPage(page); },
+      { threshold: 0.1, rootMargin: "600px" }
+    );
+    obs.observe(sentinelRef.current);
+    return () => obs.disconnect();
+  }, [hasMore, loading, page, loadPage]);
+
+  // Prefetch trailers for the first couple of screens' worth of cards so
+  // hovering feels instant instead of waiting on a fresh fetch every time.
+  useEffect(() => {
+    items.slice(0, 12).forEach((item) => fetchTrailer(item));
+  }, [items]); // eslint-disable-line
+
+  if (!cat) return null;
+
+  return (
+    <div className="ns-genre-mode fade-in">
+      <div className="ns-genre-header">
+        <button className="ns-genre-back" onClick={onExit} aria-label="Back to Home">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Home
+        </button>
+        <h1 className="ns-genre-title">{cat.label}</h1>
+        <span className="ns-genre-count">{items.length} title{items.length === 1 ? "" : "s"}</span>
+      </div>
+
+      {items.length === 0 && loading && (
+        <div className="loader" style={{ paddingTop: 60 }}><div className="spinner" /></div>
+      )}
+
+      <div className="ns-genre-grid">
+        {items.map((item) => {
+          const key = `${item.media_type}_${item.id}`;
+          return (
+            <GenreShortCard
+              key={key}
+              item={item}
+              trailerKey={trailers[key]}
+              onSelect={onSelect}
+              onSave={onSave}
+              isSaved={isSaved}
+            />
+          );
+        })}
+      </div>
+
+      {hasMore && (
+        <div ref={sentinelRef} style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
+          {loading && <div className="spinner" />}
+        </div>
+      )}
+
+      {!hasMore && items.length > 0 && (
+        <div style={{ textAlign: "center", padding: "32px 0", fontSize: 13, color: "var(--text3)" }}>
+          You've reached the end of {cat.label}.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Row scroll memory — remembers how far across each shelf the user had
+// scrolled, and restores it when they return to the home feed from
+// elsewhere in the app. Keyed by each row's own id (via data-row-id). Only
+// active while in home feed mode — genre mode has no shelves to restore. ──
+const ROW_MEMORY_KEY = "ns_home_row_scroll";
+
+function loadRowMemory() {
+  try { return storage.get(ROW_MEMORY_KEY) || {}; } catch { return {}; }
+}
+function saveRowMemory(mem) {
+  try { storage.set(ROW_MEMORY_KEY, mem); } catch {}
+}
+
+function useRowScrollMemory(active) {
+  const memRef = useRef(loadRowMemory());
+  const saveTimerRef = useRef(null);
+
+  const recordRow = useCallback((rowEl, id) => {
+    memRef.current[id] = rowEl.scrollLeft;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => saveRowMemory(memRef.current), 250);
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const rows = Array.from(document.querySelectorAll("[data-row-id]"));
+    const cleanups = [];
+
+    rows.forEach((rowEl) => {
+      const id = rowEl.dataset?.rowId;
+      if (!id) return;
+      const saved = memRef.current[id];
+      if (saved != null) rowEl.scrollLeft = saved;
+      const handler = () => recordRow(rowEl, id);
+      rowEl.addEventListener("scroll", handler, { passive: true });
+      cleanups.push(() => rowEl.removeEventListener("scroll", handler));
+    });
+
+    return () => cleanups.forEach((fn) => fn());
+  }, [active, recordRow]);
+}
+
 export default function HomePage({
   trending,
   trendingTV,
@@ -310,8 +566,21 @@ export default function HomePage({
   onMarkUnwatched,
   history,
   apiKey,
+  onSave,     // optional — enables save/watchlist buttons on genre cards
+  isSaved,    // optional — (item) => bool, for genre card save-state
   onNavigate, // optional — for HeroNavBar page-level navigation
+  active = true, // false when HomePage is mounted-but-hidden behind another page
 }) {
+  // ── Genre mode state — when set, replaces the home feed entirely with
+  // GenreMode until the user exits back to Home. ─────────────────────────
+  const [genreKey, setGenreKey] = useState(null);
+  const openGenre = useCallback((key) => setGenreKey(key), []);
+  const exitGenre = useCallback(() => { setGenreKey(null); window.scrollTo(0, 0); }, []);
+  const handleHeroNavigate = useCallback((id) => {
+    if (id === "home") { exitGenre(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    onNavigate?.(id);
+  }, [onNavigate, exitGenre]);
+
   const [heroIdx,    setHeroIdx]    = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
   const [heroFading, setHeroFading] = useState(false);
@@ -326,8 +595,15 @@ export default function HomePage({
     setTimeout(() => { setHeroIdx(idx); setHeroFading(false); }, 350);
   }, [heroIdx]);
 
+  // Auto-rotate only while the page is actually visible AND not in genre
+  // mode. Previously this ran continuously even while another page was on
+  // screen, since HomePage now stays mounted rather than unmounting on
+  // navigation — a real, measurable source of the reported lag: a
+  // setInterval plus two nested setTimeouts firing every 7 seconds
+  // indefinitely in the background, for the entire session, whether or not
+  // Home was ever visible again.
   useEffect(() => {
-    if (heroPaused || heroItems.length < 2) return;
+    if (!active || genreKey || heroPaused || heroItems.length < 2) return;
     timerRef.current = setInterval(() => {
       setHeroIdx((prev) => {
         setHeroFading(true);
@@ -336,7 +612,9 @@ export default function HomePage({
       });
     }, HERO_INTERVAL);
     return () => clearInterval(timerRef.current);
-  }, [heroPaused, heroItems.length]);
+  }, [active, genreKey, heroPaused, heroItems.length]);
+
+  useRowScrollMemory(active && !genreKey);
 
   const [layout]   = useState(() => loadHomeLayout());
   const { order: rowOrder, visible: rowVisible } = layout;
@@ -396,19 +674,22 @@ export default function HomePage({
   const [animeTVMore, setAnimeTVMore] = useState(true);
   const [animeTVLoad, setAnimeTVLoad] = useState(false);
 
+  // Trimmed to what actually needs a rating lookup on the visible home feed:
+  // in-progress items, the two trending rails, similar/top-rated. Previously
+  // this concatenated all fourteen paginated arrays — including rows the
+  // user may have infinite-scrolled dozens of pages into — on every single
+  // render, then fed that ever-growing array into useRatings. That was the
+  // other major, measurable source of lag: the array grew unbounded for the
+  // life of the session and useRatings had to reprocess all of it on every
+  // render, not just the newly-added items. Genre mode cards get their
+  // ratings inline from item.vote_average (already present on the raw TMDB
+  // response) and never touch this map at all.
   const allItems = useMemo(() => [
     ...inProgress,
     ...trending.map((i) => ({ ...i, media_type: "movie" })),
     ...trendingTV.map((i) => ({ ...i, media_type: "tv" })),
     ...similarItems, ...topRatedItems,
-    ...popularMovies, ...popularTV,
-    ...nowPlaying, ...airingToday,
-    ...upcomingMovies, ...actionMovies,
-    ...comedyMovies, ...horrorMovies,
-    ...scifiMovies, ...animeTV,
-  ], [inProgress, trending, trendingTV, similarItems, topRatedItems,
-      popularMovies, popularTV, nowPlaying, airingToday,
-      upcomingMovies, actionMovies, comedyMovies, horrorMovies, scifiMovies, animeTV]);
+  ], [inProgress, trending, trendingTV, similarItems, topRatedItems]);
 
   const { ratingsMap, ageLimitSetting } = useRatings(allItems);
 
@@ -445,8 +726,17 @@ export default function HomePage({
     finally { setLoading(false); }
   }, [apiKey, offline]);
 
+  // Guards the initial fetch so it only ever runs once per mount, even
+  // though HomePage now stays mounted indefinitely — without this,
+  // apiKey/offline changing reference elsewhere in the app would silently
+  // re-trigger every row's fetch from scratch and duplicate the "Because
+  // you watched" pick.
+  const didInitialFetch = useRef(false);
+
   useEffect(() => {
     if (!apiKey || offline) return;
+    if (didInitialFetch.current) return;
+    didInitialFetch.current = true;
 
     if (history && history.length > 0) {
       const source = getRecentHistoryItem(history);
@@ -534,29 +824,6 @@ export default function HomePage({
         .ns-home-hero-bg.is-fading {
           opacity: 0;
         }
-
-        /* ── Netflix-style smooth gradient blend ── */
-        // .ns-home-hero-grad {
-        //   position: absolute;
-        //   inset: 0;
-        //   background:
-        //     linear-gradient(
-        //       to bottom,
-        //       rgba(4,8,13,0.82) 0%,
-        //       rgba(4,8,13,0.18) 20%,
-        //       transparent 44%,
-        //       rgba(4,8,13,0.55) 68%,
-        //       var(--bg, #04080d) 100%
-        //     ),
-        //     linear-gradient(
-        //       105deg,
-        //       rgba(4,8,13,0.75) 0%,
-        //       rgba(4,8,13,0.22) 35%,
-        //       transparent 62%
-        //     );
-        //   pointer-events: none;
-        //   z-index: 1;
-        // }
 
         /* ── Bottom fade — seamless blend into content ── */
         .ns-home-hero-bottom-fade {
@@ -773,6 +1040,139 @@ export default function HomePage({
         }
         .ns-hero-nav-drop-item:hover .ns-hero-nav-drop-dot {
           opacity: 1;
+        }
+
+        /* ══════════════════════════════════════════════════
+           GENRE MODE
+        ══════════════════════════════════════════════════ */
+        .ns-genre-mode {
+          padding: 28px 40px 60px;
+          min-height: 70vh;
+        }
+        .ns-genre-header {
+          display: flex;
+          align-items: baseline;
+          gap: 18px;
+          margin-bottom: 26px;
+          flex-wrap: wrap;
+        }
+        .ns-genre-back {
+          all: unset;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          color: var(--text2);
+          font-size: 13px;
+          font-weight: 600;
+          padding: 7px 12px;
+          border-radius: 8px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.08);
+          transition: background 0.15s, color 0.15s;
+        }
+        .ns-genre-back:hover {
+          background: rgba(255,255,255,0.09);
+          color: var(--text);
+        }
+        .ns-genre-title {
+          font-size: 26px;
+          font-weight: 800;
+          color: var(--text);
+          margin: 0;
+        }
+        .ns-genre-count {
+          font-size: 12.5px;
+          color: var(--text3);
+          font-weight: 500;
+        }
+        .ns-genre-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+          gap: 18px 14px;
+        }
+        .ns-genre-card {
+          cursor: pointer;
+          border-radius: 10px;
+          overflow: hidden;
+          background: var(--surface2);
+          border: 1px solid rgba(255,255,255,0.06);
+          transition: transform 0.2s cubic-bezier(.34,1.1,.64,1), border-color 0.2s, box-shadow 0.2s;
+        }
+        .ns-genre-card:hover {
+          transform: translateY(-4px);
+          border-color: rgba(0,180,166,0.4);
+          box-shadow: 0 16px 34px rgba(0,0,0,0.55);
+        }
+        .ns-genre-card-media {
+          position: relative;
+          aspect-ratio: 16/9;
+          background: #111;
+          overflow: hidden;
+        }
+        .ns-genre-card-media img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .ns-genre-card-grad {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 45%);
+          pointer-events: none;
+        }
+        .ns-genre-card-play {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: rgba(255,255,255,0.9);
+          opacity: 0;
+          transition: opacity 0.2s;
+          pointer-events: none;
+        }
+        .ns-genre-card:hover .ns-genre-card-play {
+          opacity: 0.85;
+        }
+        .ns-genre-card-save {
+          all: unset;
+          position: absolute;
+          bottom: 8px;
+          right: 8px;
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          background: rgba(0,0,0,0.6);
+          border: 1px solid rgba(255,255,255,0.2);
+          color: #fff;
+          font-size: 14px;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: background 0.15s, border-color 0.15s;
+        }
+        .ns-genre-card-save:hover {
+          background: rgba(0,180,166,0.35);
+          border-color: rgba(0,180,166,0.6);
+        }
+        .ns-genre-card-save.is-saved {
+          background: rgba(0,180,166,0.85);
+          border-color: rgba(0,180,166,0.9);
+        }
+        .ns-genre-card-info {
+          padding: 9px 10px 11px;
+        }
+        @media (max-width: 860px) {
+          .ns-genre-mode { padding: 20px 18px 44px; }
+          .ns-genre-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 10px; }
+          .ns-genre-title { font-size: 21px; }
+        }
+        @media (max-width: 540px) {
+          .ns-genre-grid { grid-template-columns: repeat(2, 1fr); }
         }
 
         /* ══════════════════════════════════════════════════
@@ -1017,206 +1417,217 @@ export default function HomePage({
         }
       `}</style>
 
-      {/* ── Offline ── */}
-      {offline && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16, color: "var(--text2)" }}>
-          <div style={{ fontSize: 48 }}>📡</div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: "var(--text)" }}>No internet connection</div>
-          <div style={{ fontSize: 14, color: "var(--text3)" }}>Trending and search require an internet connection. Your downloads and library still work offline.</div>
-          <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={onRetry}>Retry</button>
-        </div>
-      )}
-
-      {!offline && loading && <div className="loader"><div className="spinner" /></div>}
-
-      {/* ── Cinematic hero with nav overlay ── */}
-      {!loading && hero && (
-        <div
-          className="ns-home-hero"
-          onMouseEnter={() => setHeroPaused(true)}
-          onMouseLeave={() => setHeroPaused(false)}
-        >
-          <div
-            className={`ns-home-hero-bg${heroFading ? " is-fading" : ""}`}
-            key={heroIdx}
-            style={{ backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})` }}
-          />
-          {/* Gradient layers — smooth Netflix blend */}
-          <div className="ns-home-hero-grad" />
-          <div className="ns-home-hero-bottom-fade" />
-
-          {/* Category nav overlay */}
-          <HeroNavBar onNavigate={onNavigate} />
-
-          {/* Hero content */}
-          <div className="ns-home-hero-content">
-            <div className="ns-home-hero-type">
-              Trending&nbsp;·&nbsp;{hero.media_type === "tv" ? "Series" : "Movie"}
-            </div>
-            <h1 className="ns-home-hero-title">{hero.title || hero.name}</h1>
-            <div className="ns-home-hero-meta">
-              <span className="ns-home-hero-rating"><StarIcon /> {hero.vote_average?.toFixed(1)}</span>
-              <span>{(hero.release_date || hero.first_air_date || "").slice(0, 4)}</span>
-            </div>
-            <p className="ns-home-hero-overview">{hero.overview}</p>
-            <div className="ns-home-hero-actions">
-              <button className="btn btn-primary" onClick={() => onSelect(hero)}><PlayIcon /> Watch Now</button>
-              <button className="btn btn-secondary" onClick={() => onSelect(hero)}>More Info</button>
-            </div>
-          </div>
-
-          {/* Slide dots */}
-          {heroItems.length > 1 && (
-            <div className="ns-home-hero-dots">
-              {heroItems.map((_, i) => (
-                <button
-                  key={i}
-                  className={`ns-home-hero-dot${i === heroIdx ? " active" : ""}`}
-                  onClick={() => goToHero(i)}
-                  aria-label={`Hero ${i + 1}`}
-                />
-              ))}
+      {genreKey ? (
+        <GenreMode
+          genreKey={genreKey}
+          apiKey={apiKey}
+          onSelect={onSelect}
+          onSave={onSave}
+          isSaved={isSaved}
+          onExit={exitGenre}
+        />
+      ) : (
+        <>
+          {/* ── Offline ── */}
+          {offline && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16, color: "var(--text2)" }}>
+              <div style={{ fontSize: 48 }}>📡</div>
+              <div style={{ fontSize: 20, fontWeight: 600, color: "var(--text)" }}>No internet connection</div>
+              <div style={{ fontSize: 14, color: "var(--text3)" }}>Trending and search require an internet connection. Your downloads and library still work offline.</div>
+              <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={onRetry}>Retry</button>
             </div>
           )}
-        </div>
+
+          {!offline && loading && <div className="loader"><div className="spinner" /></div>}
+
+          {/* ── Cinematic hero with nav overlay ── */}
+          {!loading && hero && (
+            <div
+              className="ns-home-hero"
+              onMouseEnter={() => setHeroPaused(true)}
+              onMouseLeave={() => setHeroPaused(false)}
+            >
+              <div
+                className={`ns-home-hero-bg${heroFading ? " is-fading" : ""}`}
+                key={heroIdx}
+                style={{ backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})` }}
+              />
+              <div className="ns-home-hero-bottom-fade" />
+
+              {/* Category nav overlay */}
+              <HeroNavBar onNavigate={handleHeroNavigate} onOpenGenre={openGenre} />
+
+              {/* Hero content */}
+              <div className="ns-home-hero-content">
+                <div className="ns-home-hero-type">
+                  Trending&nbsp;·&nbsp;{hero.media_type === "tv" ? "Series" : "Movie"}
+                </div>
+                <h1 className="ns-home-hero-title">{hero.title || hero.name}</h1>
+                <div className="ns-home-hero-meta">
+                  <span className="ns-home-hero-rating"><StarIcon /> {hero.vote_average?.toFixed(1)}</span>
+                  <span>{(hero.release_date || hero.first_air_date || "").slice(0, 4)}</span>
+                </div>
+                <p className="ns-home-hero-overview">{hero.overview}</p>
+                <div className="ns-home-hero-actions">
+                  <button className="btn btn-primary" onClick={() => onSelect(hero)}><PlayIcon /> Watch Now</button>
+                  <button className="btn btn-secondary" onClick={() => onSelect(hero)}>More Info</button>
+                </div>
+              </div>
+
+              {/* Slide dots */}
+              {heroItems.length > 1 && (
+                <div className="ns-home-hero-dots">
+                  {heroItems.map((_, i) => (
+                    <button
+                      key={i}
+                      className={`ns-home-hero-dot${i === heroIdx ? " active" : ""}`}
+                      onClick={() => goToHero(i)}
+                      aria-label={`Hero ${i + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Continue Watching ── */}
+          {Array.isArray(inProgress) && inProgress.length > 0 && (
+            <div className="section ns-continue-section">
+              <div className="section-title">Continue Watching</div>
+              <div className="cards-grid">
+                {inProgress.map((item) => {
+                  const pk = item.media_type === "movie"
+                    ? `movie_${item.id}`
+                    : `tv_${item.id}_s${item.season}e${item.episode}`;
+                  return (
+                    <MediaCard
+                      key={`${item.media_type}_${item.id}`}
+                      item={item}
+                      onClick={() => onSelect(item)}
+                      progress={progress[pk] || 0}
+                      watched={watched}
+                      onMarkWatched={onMarkWatched}
+                      onMarkUnwatched={onMarkUnwatched}
+                      ageRating={getRating(item)?.cert}
+                      restricted={itemRestricted(item)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Trending carousels ── */}
+          <div id="ns-section-trending-movies">
+            {trendingMovieItems.length > 0 && (
+              <TrendingCarousel key="trendingMovies" items={trendingMovieItems} title="Trending Movies" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
+            )}
+          </div>
+          <div id="ns-section-trending-tv">
+            {trendingTVItems.length > 0 && (
+              <TrendingCarousel key="trendingTV" items={trendingTVItems} title="Trending Series" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
+            )}
+          </div>
+
+          {/* ── Infinite scroll rows ── */}
+          <InfiniteRow id="ns-section-popular-movies" title="Popular Movies"  items={popularMovies}  onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularMoviesMore}  loadingMore={popularMoviesLoad}  onLoadMore={loadMorePopularMovies} />
+          <InfiniteRow id="ns-section-popular-tv"     title="Popular Series"  items={popularTV}      onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularTVMore}      loadingMore={popularTVLoad}      onLoadMore={loadMorePopularTV} />
+          <InfiniteRow id="ns-section-now-playing"    title="Now Playing"     items={nowPlaying}     onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={nowPlayingMore}     loadingMore={nowPlayingLoad}     onLoadMore={loadMoreNowPlaying} />
+          <InfiniteRow id="ns-section-airing-today"   title="Airing Today"    items={airingToday}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={airingTodayMore}    loadingMore={airingTodayLoad}    onLoadMore={loadMoreAiringToday} />
+
+          <div id="ns-section-top-rated">
+            {topRatedItems.length > 0 && (
+              <TrendingCarousel key="topRated" items={topRatedItems} title="Top Rated" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
+            )}
+          </div>
+
+          <InfiniteRow id="ns-section-upcoming"       title="Coming Soon"     items={upcomingMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={upcomingMoviesMore} loadingMore={upcomingMoviesLoad} onLoadMore={loadMoreUpcoming} />
+          <InfiniteRow id="ns-section-action"         title="Action"          items={actionMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={actionMoviesMore}   loadingMore={actionMoviesLoad}   onLoadMore={loadMoreAction} />
+          <InfiniteRow id="ns-section-comedy"         title="Comedy"          items={comedyMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={comedyMoviesMore}   loadingMore={comedyMoviesLoad}   onLoadMore={loadMoreComedy} />
+          <InfiniteRow id="ns-section-horror"         title="Horror"          items={horrorMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={horrorMoviesMore}   loadingMore={horrorMoviesLoad}   onLoadMore={loadMoreHorror} />
+          <InfiniteRow id="ns-section-scifi"          title="Sci-Fi"          items={scifiMovies}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={scifiMoviesMore}    loadingMore={scifiMoviesLoad}    onLoadMore={loadMoreScifi} />
+          <InfiniteRow id="ns-section-anime"          title="Anime"           items={animeTV}        onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={animeTVMore}        loadingMore={animeTVLoad}        onLoadMore={loadMoreAnime} />
+
+          {similarItems.length > 0 && similarSource && (
+            <InfiniteRow
+              title="Because you watched"
+              titleHighlight={similarSource.title || similarSource.name}
+              items={similarItems}
+              onSelect={onSelect}
+              ratingsMap={enrichedRatingsMap}
+              hasMore={false}
+            />
+          )}
+
+          {/* ══════════════════════════════════════════════════
+              NETFLIX-STYLE FOOTER
+          ══════════════════════════════════════════════════ */}
+          <footer className="ns-footer-v2">
+            <div className="ns-fv2-inner">
+              {/* Social links */}
+              <div className="ns-fv2-social">
+                <a href="https://discord.gg/6UyqP9Qr" target="_blank" rel="noopener noreferrer"
+                   className="ns-fv2-social-link ns-fv2-discord" aria-label="Discord" title="Discord">
+                  <DiscordIcon size={18} />
+                </a>
+                <a href="#" target="_blank" rel="noopener noreferrer"
+                   className="ns-fv2-social-link ns-fv2-x" aria-label="X" title="X">
+                  <XIcon size={18} />
+                </a>
+                <a href="https://www.facebook.com/Novasparksmovies" target="_blank" rel="noopener noreferrer"
+                   className="ns-fv2-social-link ns-fv2-fb" aria-label="Facebook" title="Facebook">
+                  <FacebookIcon size={18} />
+                </a>
+                <a href="https://www.tiktok.com/@novaspark4k" target="_blank" rel="noopener noreferrer"
+                   className="ns-fv2-social-link ns-fv2-tt" aria-label="TikTok" title="TikTok">
+                  <TikTokIcon size={18} />
+                </a>
+              </div>
+
+              {/* Links grid — Netflix style */}
+              <div className="ns-fv2-links">
+                <div className="ns-fv2-col">
+                  <span className="ns-fv2-link">Help Center</span>
+                  <span className="ns-fv2-link">Account</span>
+                  <span className="ns-fv2-link">Media Center</span>
+                  <span className="ns-fv2-link">Investor Relations</span>
+                </div>
+                <div className="ns-fv2-col">
+                  <span className="ns-fv2-link">Careers</span>
+                  <span className="ns-fv2-link">Shop</span>
+                  <span className="ns-fv2-link">Redeem Gift Cards</span>
+                  <span className="ns-fv2-link">Buy Gift Cards</span>
+                </div>
+                <div className="ns-fv2-col">
+                  <span className="ns-fv2-link">Terms of Use</span>
+                  <span className="ns-fv2-link">Privacy</span>
+                  <span className="ns-fv2-link">Legal Notices</span>
+                  <span className="ns-fv2-link">Cookie Preferences</span>
+                </div>
+                <div className="ns-fv2-col">
+                  <span className="ns-fv2-link">Contact Us</span>
+                  <span className="ns-fv2-link">Speed Test</span>
+                  <span className="ns-fv2-link">Ad Choices</span>
+                  <span className="ns-fv2-link">Only on NovaSpark</span>
+                </div>
+              </div>
+
+              {/* Disclaimer */}
+              <p className="ns-fv2-disclaimer">
+                NovaSpark does not host or store any media content. All content is sourced from third-party providers.
+                Stream quality and availability may vary by region. You must be of legal viewing age in your jurisdiction.
+                We are not responsible for third-party content or advertisements.
+              </p>
+
+              {/* Bottom bar */}
+              <div className="ns-fv2-bottom">
+                <span className="ns-fv2-brand">NovaSpark</span>
+                <span className="ns-fv2-copy">© 2026 NovaSpark. All rights reserved.</span>
+              </div>
+            </div>
+          </footer>
+        </>
       )}
-
-      {/* ── Continue Watching ── */}
-      {Array.isArray(inProgress) && inProgress.length > 0 && (
-        <div className="section ns-continue-section">
-          <div className="section-title">Continue Watching</div>
-          <div className="cards-grid">
-            {inProgress.map((item) => {
-              const pk = item.media_type === "movie"
-                ? `movie_${item.id}`
-                : `tv_${item.id}_s${item.season}e${item.episode}`;
-              return (
-                <MediaCard
-                  key={`${item.media_type}_${item.id}`}
-                  item={item}
-                  onClick={() => onSelect(item)}
-                  progress={progress[pk] || 0}
-                  watched={watched}
-                  onMarkWatched={onMarkWatched}
-                  onMarkUnwatched={onMarkUnwatched}
-                  ageRating={getRating(item)?.cert}
-                  restricted={itemRestricted(item)}
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Trending carousels ── */}
-      <div id="ns-section-trending-movies">
-        {trendingMovieItems.length > 0 && (
-          <TrendingCarousel key="trendingMovies" items={trendingMovieItems} title="Trending Movies" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
-        )}
-      </div>
-      <div id="ns-section-trending-tv">
-        {trendingTVItems.length > 0 && (
-          <TrendingCarousel key="trendingTV" items={trendingTVItems} title="Trending Series" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
-        )}
-      </div>
-
-      {/* ── Infinite scroll rows ── */}
-      <InfiniteRow id="ns-section-popular-movies" title="Popular Movies"  items={popularMovies}  onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularMoviesMore}  loadingMore={popularMoviesLoad}  onLoadMore={loadMorePopularMovies} />
-      <InfiniteRow id="ns-section-popular-tv"     title="Popular Series"  items={popularTV}      onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={popularTVMore}      loadingMore={popularTVLoad}      onLoadMore={loadMorePopularTV} />
-      <InfiniteRow id="ns-section-now-playing"    title="Now Playing"     items={nowPlaying}     onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={nowPlayingMore}     loadingMore={nowPlayingLoad}     onLoadMore={loadMoreNowPlaying} />
-      <InfiniteRow id="ns-section-airing-today"   title="Airing Today"    items={airingToday}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={airingTodayMore}    loadingMore={airingTodayLoad}    onLoadMore={loadMoreAiringToday} />
-
-      <div id="ns-section-top-rated">
-        {topRatedItems.length > 0 && (
-          <TrendingCarousel key="topRated" items={topRatedItems} title="Top Rated" onSelect={onSelect} ratingsMap={enrichedRatingsMap} />
-        )}
-      </div>
-
-      <InfiniteRow id="ns-section-upcoming"       title="Coming Soon"     items={upcomingMovies} onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={upcomingMoviesMore} loadingMore={upcomingMoviesLoad} onLoadMore={loadMoreUpcoming} />
-      <InfiniteRow id="ns-section-action"         title="Action"          items={actionMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={actionMoviesMore}   loadingMore={actionMoviesLoad}   onLoadMore={loadMoreAction} />
-      <InfiniteRow id="ns-section-comedy"         title="Comedy"          items={comedyMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={comedyMoviesMore}   loadingMore={comedyMoviesLoad}   onLoadMore={loadMoreComedy} />
-      <InfiniteRow id="ns-section-horror"         title="Horror"          items={horrorMovies}   onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={horrorMoviesMore}   loadingMore={horrorMoviesLoad}   onLoadMore={loadMoreHorror} />
-      <InfiniteRow id="ns-section-scifi"          title="Sci-Fi"          items={scifiMovies}    onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={scifiMoviesMore}    loadingMore={scifiMoviesLoad}    onLoadMore={loadMoreScifi} />
-      <InfiniteRow id="ns-section-anime"          title="Anime"           items={animeTV}        onSelect={onSelect} ratingsMap={enrichedRatingsMap} hasMore={animeTVMore}        loadingMore={animeTVLoad}        onLoadMore={loadMoreAnime} />
-
-      {similarItems.length > 0 && similarSource && (
-        <InfiniteRow
-          title="Because you watched"
-          titleHighlight={similarSource.title || similarSource.name}
-          items={similarItems}
-          onSelect={onSelect}
-          ratingsMap={enrichedRatingsMap}
-          hasMore={false}
-        />
-      )}
-
-      {/* ══════════════════════════════════════════════════
-          NETFLIX-STYLE FOOTER
-      ══════════════════════════════════════════════════ */}
-      <footer className="ns-footer-v2">
-        <div className="ns-fv2-inner">
-          {/* Social links */}
-          <div className="ns-fv2-social">
-            <a href="https://discord.gg/6UyqP9Qr" target="_blank" rel="noopener noreferrer"
-               className="ns-fv2-social-link ns-fv2-discord" aria-label="Discord" title="Discord">
-              <DiscordIcon size={18} />
-            </a>
-            <a href="#" target="_blank" rel="noopener noreferrer"
-               className="ns-fv2-social-link ns-fv2-x" aria-label="X" title="X">
-              <XIcon size={18} />
-            </a>
-            <a href="https://www.facebook.com/Novasparksmovies" target="_blank" rel="noopener noreferrer"
-               className="ns-fv2-social-link ns-fv2-fb" aria-label="Facebook" title="Facebook">
-              <FacebookIcon size={18} />
-            </a>
-            <a href="https://www.tiktok.com/@novaspark4k" target="_blank" rel="noopener noreferrer"
-               className="ns-fv2-social-link ns-fv2-tt" aria-label="TikTok" title="TikTok">
-              <TikTokIcon size={18} />
-            </a>
-          </div>
-
-          {/* Links grid — Netflix style */}
-          <div className="ns-fv2-links">
-            <div className="ns-fv2-col">
-              <span className="ns-fv2-link">Help Center</span>
-              <span className="ns-fv2-link">Account</span>
-              <span className="ns-fv2-link">Media Center</span>
-              <span className="ns-fv2-link">Investor Relations</span>
-            </div>
-            <div className="ns-fv2-col">
-              <span className="ns-fv2-link">Careers</span>
-              <span className="ns-fv2-link">Shop</span>
-              <span className="ns-fv2-link">Redeem Gift Cards</span>
-              <span className="ns-fv2-link">Buy Gift Cards</span>
-            </div>
-            <div className="ns-fv2-col">
-              <span className="ns-fv2-link">Terms of Use</span>
-              <span className="ns-fv2-link">Privacy</span>
-              <span className="ns-fv2-link">Legal Notices</span>
-              <span className="ns-fv2-link">Cookie Preferences</span>
-            </div>
-            <div className="ns-fv2-col">
-              <span className="ns-fv2-link">Contact Us</span>
-              <span className="ns-fv2-link">Speed Test</span>
-              <span className="ns-fv2-link">Ad Choices</span>
-              <span className="ns-fv2-link">Only on NovaSpark</span>
-            </div>
-          </div>
-
-          {/* Disclaimer */}
-          <p className="ns-fv2-disclaimer">
-            NovaSpark does not host or store any media content. All content is sourced from third-party providers.
-            Stream quality and availability may vary by region. You must be of legal viewing age in your jurisdiction.
-            We are not responsible for third-party content or advertisements.
-          </p>
-
-          {/* Bottom bar */}
-          <div className="ns-fv2-bottom">
-            <span className="ns-fv2-brand">NovaSpark</span>
-            <span className="ns-fv2-copy">© 2026 NovaSpark. All rights reserved.</span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

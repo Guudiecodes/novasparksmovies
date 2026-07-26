@@ -8,7 +8,6 @@ import { canUseAI, incrementFreeDailyUsage } from "../utils/premium";
 import PremiumGate from "../components/PremiumGate";
 import UsageStatus from "../components/UsageStatus";
 
-// â”€â”€â”€ KEYS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const GROQ_KEY    = "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";
 const GEMINI_KEY  = "AIzaSyBuCi_KEm0TvPeG0VjYkCnIcHRQTJVKTJ8";
 const TK          = "8265bd1679663a7ea12ac168da84d2e8";
@@ -828,11 +827,14 @@ function ActorBackdrop({ person }) {
   );
 }
 
-// â”€â”€â”€ TOAST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function Toast({ msg }) {
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+function Toast({ msg, onClose }) {
   return (
-    <div style={{ position: "fixed", bottom: 34, left: "50%", transform: "translateX(-50%)", background: "rgba(10,10,10,0.97)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "9px 20px", fontSize: 13, color: "rgba(255,255,255,0.76)", zIndex: 9000, backdropFilter: "blur(20px)", boxShadow: "0 8px 28px rgba(0,0,0,0.75)", whiteSpace: "nowrap", animation: "nsToast 0.22s cubic-bezier(.34,1.4,.64,1)" }}>
-      {msg}
+    <div style={{ position: "fixed", top: 20, right: 20, maxWidth: 320, background: "rgba(10,10,10,0.97)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13, color: "rgba(255,255,255,0.85)", zIndex: 9999, backdropFilter: "blur(20px)", boxShadow: "0 12px 32px rgba(0,0,0,0.6)", animation: "nsToastIn 0.25s cubic-bezier(.34,1.4,.64,1)" }}>
+      <div style={{ flex: 1, lineHeight: 1.5 }}>{msg}</div>
+      <button onClick={onClose} aria-label="Dismiss" style={{ all: "unset", cursor: "pointer", color: "rgba(255,255,255,0.35)", flexShrink: 0, padding: 2, lineHeight: 1 }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
   );
 }
@@ -1583,25 +1585,25 @@ export default function NSAIPage({
         return true;
       }
 
-      case "REPORT_ISSUE": {
+     case "REPORT_ISSUE": {
         let wStatus = null;
         try { wStatus = storage.get("ns_watch_status"); } catch {}
         const fresh = wStatus && (Date.now() - (wStatus.ts || 0) < 120000);
 
         if (fresh && wStatus.status === "failed") {
-          pushAI(`All available servers for *${wStatus.title}* were just tried and none worked right now â€” that happens sometimes and it's usually temporary. Retrying now.`);
+          pushAI(`All available servers for *${wStatus.title}* were just tried and none worked right now — that happens sometimes and it's usually temporary. Retrying now.`);
           try { storage.set("ns_watch_refresh_request", { itemId: wStatus.itemId, ts: Date.now() }); } catch {}
           return true;
         }
         if (fresh && (wStatus.status === "testing" || wStatus.status === "retrying")) {
-          pushAI(`Still trying servers for *${wStatus.title}* â€” give it a few more seconds. If it's still stuck after that, tell me again and I'll step in.`);
+          pushAI(`Still trying servers for *${wStatus.title}* — give it a few more seconds. If it's still stuck after that, tell me again and I'll step in.`);
           return true;
         }
         if (fresh && wStatus.status === "found") {
-          pushAI(`It actually looks like *${wStatus.title}* found a working server on this end â€” worth checking if it's playing now. If not, tell me what's happening (no sound, wrong episode, subtitles, something else) and I'll look closer.`);
+          pushAI(`It actually looks like *${wStatus.title}* found a working server on this end — worth checking if it's playing now. If not, tell me what's happening (no sound, wrong episode, subtitles, something else) and I'll look closer.`);
           return true;
         }
-        pushAI("Noted â€” I don't have enough on this from here to auto-fix it, but I've flagged it so the team can look into it directly.");
+        pushAI("Noted — I don't have enough on this from here to auto-fix it, but I've flagged it so the team can look into it directly.");
         return true;
       }
 
@@ -1609,7 +1611,6 @@ export default function NSAIPage({
     }
   }, [continueWatching, watchHistory, savedItems, playTrailer, playEpisode, playTitle, addToList, showActorFilms, showImages, onNavigate, pushAI, flash, openShorts]);
 
-  // â”€â”€ MAIN SEND â€” streams the conversational path, runs commands instantly â”€â”€
   const send = useCallback(async (override) => {
     const raw = (override ?? input).trim();
     if (!raw || busy) return;
@@ -1734,7 +1735,7 @@ export default function NSAIPage({
         @keyframes nsFade  { from{opacity:0}to{opacity:1} }
         @keyframes nsMsg   { from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)} }
         @keyframes nsDot   { 0%,80%,100%{transform:scale(0.3);opacity:0.12}40%{transform:scale(1);opacity:1} }
-        @keyframes nsToast { from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)} }
+        @keyframes nsToastIn { from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)} }
         @keyframes nsBlink { 50%{opacity:0} }
         @keyframes nsPulseMic { 0%,100%{box-shadow:0 0 0 0 ${hexToRgba(BRAND,0.5)}} 50%{box-shadow:0 0 0 6px ${hexToRgba(BRAND,0)}} }
 
@@ -1888,6 +1889,12 @@ export default function NSAIPage({
                           â–¶ Watch "{m.watchAction.title}"
                         </button>
                       )}
+                      {m.upgrade && (
+                        <button className="ns-watch-btn"
+                          onClick={() => window.dispatchEvent(new CustomEvent("novaspark:upgrade"))}>
+                          {m.upgrade.cta}
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -1983,7 +1990,7 @@ export default function NSAIPage({
           }}
         />
       )}
-      {toast && <Toast msg={toast} />}
+      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
       {showAIGate && <PremiumGate feature="ai" onClose={() => setShowAIGate(false)} />}
     </div>
   );

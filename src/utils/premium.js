@@ -1,17 +1,7 @@
-﻿// premium.js â€” NovaSpark subscriptions Â· v4.0
+// premium.js — NovaSpark subscriptions · v4.0
 // SINGLE SOURCE OF TRUTH for plan, trial, region, and feature access.
-//
-// Tiers: Standard (AI, no Shorts, no downloads) < Premium (everything).
-// Free (post-trial): everything else locked; Shorts + AI get a small
-// daily taste (resets at midnight local time) instead of zero access â€”
-// intentional hook, not an oversight.
-// priceUsd is a fixed reference price (~â‚¦1,380/$, checked 2026-07-20),
-// NOT a live conversion â€” real USD billing still needs Stripe/Paddle
-// wired up; Paystack is NGN-first. Flagging so this isn't silently wrong.
-
 import { storage } from "./storage";
 
-// â”€â”€ Storage keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PREMIUM_KEY        = "ns_premium_record";
 const PREMIUM_FLAG_KEY   = "ns_premium";
 const WARN_DISMISSED_KEY = "ns_warn_dismissed";
@@ -19,14 +9,12 @@ const TRIAL_KEY          = "ns_trial_start";
 const ACTIVITY_KEY       = "ns_activity_log";
 const ADMIN_FLOOR_KEY    = "ns_admin_global_plan";
 const MIGRATED_KEY       = "ns_migrated_from_streambert";
-const REGION_KEY         = "ns_region"; // "NG" | "INTL"
+const REGION_KEY         = "ns_region";
 
 export const API_BASE = "https://novaspark.app";
-
 export const TRIAL_DAYS = 4;
 const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
 
-// â”€â”€ Plans â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const PLANS = {
   free: {
     id: "free", name: "Free", price: 0, priceUsd: 0, priceKobo: 0, currency: "NGN",
@@ -45,7 +33,7 @@ export const PLANS = {
   premium: {
     id: "premium", name: "Premium", price: 1700, priceUsd: 1.29, priceKobo: 170000, currency: "NGN",
     color: "#f5a623", badge: "Best Value", durationDays: 30,
-    tagline: "Every feature NovaSpark has â€” unlimited downloads, Shorts, 4K, pop-out, priority support.",
+    tagline: "Every feature NovaSpark has — unlimited downloads, Shorts, 4K, pop-out, priority support.",
     features: { adFree: true, browse: true, watch: true, watchlist: true, history: true, multipleSource: true, downloads: true, subtitles: true, continueWatching: true, ai: true, shorts: true, popOut: true, quality4k: true, prioritySupport: true, earlyAccess: true },
     downloadLimit: Infinity, maxQuality: "4K Ultra HD",
   },
@@ -62,19 +50,18 @@ export const FEATURE_LABELS = {
   prioritySupport: "Priority support", earlyAccess: "Early access to new features",
 };
 
-// â”€â”€ Region + pricing display â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function getRegion() { try { return storage.get(REGION_KEY) || "NG"; } catch { return "NG"; } }
 export function setRegion(region) { try { storage.set(REGION_KEY, region === "INTL" ? "INTL" : "NG"); } catch {} }
 
 export function formatPrice(plan) {
   if (!plan) return "Free";
   if (getRegion() === "INTL") return plan.priceUsd ? `$${plan.priceUsd.toFixed(2)}/month` : "Free";
-  return plan.price ? `â‚¦${plan.price.toLocaleString()}/month` : "Free";
+  return plan.price ? `₦${plan.price.toLocaleString()}/month` : "Free";
 }
 export function formatPricePerDay(plan) {
   if (!plan) return null;
-  if (getRegion() === "INTL") return plan.priceUsd ? `â‰ˆ $${(plan.priceUsd / 30).toFixed(2)}/day` : null;
-  return plan.price ? `â‰ˆ â‚¦${Math.round(plan.price / 30)}/day` : null;
+  if (getRegion() === "INTL") return plan.priceUsd ? `≈ $${(plan.priceUsd / 30).toFixed(2)}/day` : null;
+  return plan.price ? `≈ ₦${Math.round(plan.price / 30)}/day` : null;
 }
 
 export function simpleHash(str) {
@@ -83,7 +70,6 @@ export function simpleHash(str) {
   return h.toString(16);
 }
 
-// â”€â”€ Trial â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function initTrial() {
   migrateLegacyStreambertData();
   try { if (storage.get(TRIAL_KEY) == null) storage.set(TRIAL_KEY, Date.now()); } catch {}
@@ -106,8 +92,8 @@ export function getTrialBannerMessage() {
   if (getCurrentPlan() !== "free") return null;
   const t = getTrialStatus();
   if (!t.started || t.expired) return null;
-  if (t.hoursLeft <= 24) return `â° Your free trial ends in ${t.hoursLeft}h. Lock in your plan to keep everything.`;
-  return `â° ${t.daysLeft} day${t.daysLeft !== 1 ? "s" : ""} left on your free trial.`;
+  if (t.hoursLeft <= 24) return `⏰ Your free trial ends in ${t.hoursLeft}h. Lock in your plan to keep everything.`;
+  return `⏰ ${t.daysLeft} day${t.daysLeft !== 1 ? "s" : ""} left on your free trial.`;
 }
 function migrateLegacyStreambertData() {
   try {
@@ -121,7 +107,6 @@ function migrateLegacyStreambertData() {
   } catch {}
 }
 
-// â”€â”€ Plan resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function getPremiumRecord() { return storage.get(PREMIUM_KEY) || null; }
 export function isPremiumActive() {
   const rec = getPremiumRecord();
@@ -137,7 +122,6 @@ export function getAdminGlobalPlan() { try { return storage.get(ADMIN_FLOOR_KEY)
 export function setAdminGlobalPlan(planId) {
   try { if (!planId || planId === "free") storage.remove(ADMIN_FLOOR_KEY); else storage.set(ADMIN_FLOOR_KEY, planId); } catch {}
 }
-/** Admin floor > purchased plan > active trial (full taste) > free. */
 export function getEffectivePlan() {
   const purchased = getCurrentPlan();
   const floor = getAdminGlobalPlan();
@@ -149,9 +133,6 @@ export function getPremiumPlan() { return PLANS[getEffectivePlan()] || PLANS.fre
 function atLeast(requiredId) { return (PLAN_RANK[getEffectivePlan()] ?? 0) >= (PLAN_RANK[requiredId] ?? 999); }
 export function isOnTrial() { return getCurrentPlan() === "free" && getTrialStatus().active; }
 
-// â”€â”€ Free-tier daily taste limits (Shorts + AI only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Resets at midnight local time â€” "every morning" from the user's side.
-// Only applies once the trial has ended; the trial itself is unlimited.
 const FREE_DAILY_LIMITS = { shorts: 15, ai: 15 };
 function todayKey(feature) {
   const d = new Date();
@@ -171,7 +152,6 @@ export function checkFreeDailyLimit(feature) {
   return { allowed: used < limit, used, limit, remaining: Math.max(0, limit - used) };
 }
 
-// â”€â”€ Feature gates â€” every page should call these, never read storage directly â”€
 export function canWatch()         { return atLeast("standard"); }
 export function canWatchlist()     { return atLeast("standard"); }
 export function canDownload()      { return atLeast("premium"); }
@@ -182,13 +162,11 @@ export function canPopOut()        { return atLeast("premium"); }
 export function can4K()            { return atLeast("premium"); }
 export function hasPrioritySupport() { return atLeast("premium"); }
 
-/** AI: Standard+ get it unlimited. Free (post-trial) gets a capped daily taste. */
 export function canUseAI() {
   const plan = getEffectivePlan();
   if (plan === "standard" || plan === "premium") return true;
   return checkFreeDailyLimit("ai").allowed;
 }
-/** Shorts: Premium only, unlimited. Free (post-trial) gets a capped daily taste. */
 export function canUseShorts() {
   const plan = getEffectivePlan();
   if (plan === "premium") return true;
@@ -203,7 +181,6 @@ export function checkDownloadLimit() {
   return { allowed: canDownload(), used: 0, limit, remaining: limit };
 }
 
-// â”€â”€ Session + upsell timing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function recordSessionBlock() {
   try { if (typeof sessionStorage === "undefined") return;
     sessionStorage.setItem("ns_session_blocks", String((parseInt(sessionStorage.getItem("ns_session_blocks") || "0", 10)) + 1));
@@ -219,7 +196,6 @@ export function shouldNudgeUpgrade() {
   return (hour >= 18 && hour <= 23) || (trial.active && trial.hoursLeft <= 24) || trial.expired || getSessionBlockCount() >= 2;
 }
 
-// â”€â”€ Gate descriptors + psychology-tuned messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const GATES = {
   watch:         { label: "Watching",           description: "Stream movies and shows in full.",             required: "standard" },
   watchlist:     { label: "Watchlist",           description: "Save titles to watch later.",                   required: "standard" },
@@ -231,54 +207,62 @@ export const GATES = {
   pip:           { label: "Pop-Out Player",      description: "Watch in a floating window while you browse.",  required: "premium"  },
   quality_4k:    { label: "4K Ultra HD",         description: "Stream in 4K resolution when available.",       required: "premium"  },
 };
-const GATE_ICONS = { watch: "ðŸŽ¬", watchlist: "ðŸ“Œ", source_switch: "ðŸŒ", subtitles: "ðŸ“", ai: "âœ¨", download: "â¬‡ï¸", shorts: "âš¡", pip: "ðŸ–¼ï¸", quality_4k: "ðŸŽ¬" };
+const GATE_ICONS = { watch: "🎬", watchlist: "📌", source_switch: "🌐", subtitles: "📝", ai: "✨", download: "⬇️", shorts: "⚡", pip: "🖼️", quality_4k: "🎬" };
 
 export function getGateMessage(feature) {
   const gate = GATES[feature];
-  if (!gate) return { icon: "ðŸ”’", title: "Premium Feature", desc: "Upgrade your plan to unlock this.", subdesc: null, price: null, cta: "See Plans", urgency: false, plan: PLANS.standard };
-
+  if (!gate) return { icon: "🔒", title: "Premium Feature", desc: "Upgrade your plan to unlock this.", subdesc: null, price: null, cta: "See Plans", urgency: false, plan: PLANS.standard };
   const plan = PLANS[gate.required];
   const priceStr = formatPrice(plan);
   const perDay = formatPricePerDay(plan);
   const trial = getTrialStatus();
   const blocks = getSessionBlockCount();
   recordSessionBlock();
-
   const isDailyTaste = (feature === "ai" || feature === "shorts") && getEffectivePlan() === "free" && trial.expired;
   if (isDailyTaste) {
-    return {
-      icon: GATE_ICONS[feature] || "ðŸ”’", title: `Out of free ${gate.label} for today`,
-      desc: `Resets tomorrow â€” or go unlimited right now with ${plan.name}.`,
-      subdesc: perDay ? `${priceStr} Â· ${perDay}` : priceStr,
-      price: priceStr, cta: `Go Unlimited â€” ${priceStr}`, urgency: true, plan,
-    };
+    return { icon: GATE_ICONS[feature] || "🔒", title: `Out of free ${gate.label} for today`, desc: `Resets tomorrow — or go unlimited right now with ${plan.name}.`, subdesc: perDay ? `${priceStr} · ${perDay}` : priceStr, price: priceStr, cta: `Go Unlimited — ${priceStr}`, urgency: true, plan };
   }
   if (trial.expired && getCurrentPlan() === "free") {
-    return {
-      icon: GATE_ICONS[feature] || "ðŸ”’", title: `Your free trial ended â€” get ${gate.label} back`,
-      desc: `You had full access for ${TRIAL_DAYS} days. Pick a plan to keep using NovaSpark.`,
-      subdesc: perDay ? `${priceStr} Â· ${perDay}` : priceStr,
-      price: priceStr, cta: `Unlock ${gate.label}`, urgency: true, plan,
-    };
+    return { icon: GATE_ICONS[feature] || "🔒", title: `Your free trial ended — get ${gate.label} back`, desc: `You had full access for ${TRIAL_DAYS} days. Pick a plan to keep using NovaSpark.`, subdesc: perDay ? `${priceStr} · ${perDay}` : priceStr, price: priceStr, cta: `Unlock ${gate.label}`, urgency: true, plan };
   }
   if (trial.active && trial.hoursLeft <= 24) {
-    return {
-      icon: GATE_ICONS[feature] || "ðŸ”’", title: `${trial.hoursLeft}h left on your trial`,
-      desc: `Lock in ${gate.label} â€” and everything else â€” before your trial ends.`,
-      subdesc: `${plan.name} â€” ${priceStr}`, price: priceStr, cta: "Keep My Access", urgency: true, plan,
-    };
+    return { icon: GATE_ICONS[feature] || "🔒", title: `${trial.hoursLeft}h left on your trial`, desc: `Lock in ${gate.label} — and everything else — before your trial ends.`, subdesc: `${plan.name} — ${priceStr}`, price: priceStr, cta: "Keep My Access", urgency: true, plan };
   }
   if (blocks >= 2) {
-    return {
-      icon: GATE_ICONS[feature] || "ðŸ”’", title: `Unlock ${gate.label}`, desc: gate.description,
-      subdesc: `${plan.name} â€” ${priceStr}${perDay ? ` (${perDay})` : ""}`, price: priceStr, cta: `Upgrade â€” ${priceStr}`, urgency: true, plan,
-    };
+    return { icon: GATE_ICONS[feature] || "🔒", title: `Unlock ${gate.label}`, desc: gate.description, subdesc: `${plan.name} — ${priceStr}${perDay ? ` (${perDay})` : ""}`, price: priceStr, cta: `Upgrade — ${priceStr}`, urgency: true, plan };
   }
-  return { icon: GATE_ICONS[feature] || "ðŸ”’", title: gate.label, desc: gate.description, subdesc: null, price: priceStr, cta: `Upgrade to ${plan.name}`, urgency: false, plan };
+  return { icon: GATE_ICONS[feature] || "🔒", title: gate.label, desc: gate.description, subdesc: null, price: priceStr, cta: `Upgrade to ${plan.name}`, urgency: false, plan };
 }
+
+export function getDailyLimitMessage(feature) {
+  const gate = GATES[feature];
+  if (!gate) return { icon: "🔒", title: "Premium Feature", desc: "Upgrade your plan to unlock this.", subdesc: null, price: null, cta: "See Plans", urgency: false, plan: PLANS.standard };
+  const plan = PLANS[gate.required];
+  const priceStr = formatPrice(plan);
+  const perDay = formatPricePerDay(plan);
+  const trial = getTrialStatus();
+  const blocks = getSessionBlockCount();
+  const limitStatus = checkFreeDailyLimit(feature);
+  recordSessionBlock();
+
+  // Trial expired → loss aversion ("you HAD this")
+  if (trial.expired && getCurrentPlan() === "free") {
+    return { icon: GATE_ICONS[feature] || "🔒", title: `Your free trial ended — get ${gate.label} back`, desc: `You had full access for ${TRIAL_DAYS} days. Pick a plan to keep using NovaSpark.`, subdesc: perDay ? `${priceStr} · ${perDay}` : priceStr, price: priceStr, cta: `Unlock ${gate.label}`, urgency: true, plan };
+  }
+  // Trial final 24h → countdown urgency
+  if (trial.active && trial.hoursLeft <= 24) {
+    return { icon: GATE_ICONS[feature] || "🔒", title: `${trial.hoursLeft}h left on your trial`, desc: `Lock in ${gate.label} — and everything else — before your trial ends.`, subdesc: `${plan.name} — ${priceStr}`, price: priceStr, cta: "Keep My Access", urgency: true, plan };
+  }
+  // Repeat block in session → direct, price-forward
+  if (blocks >= 2) {
+    return { icon: GATE_ICONS[feature] || "🔒", title: `Out of free ${gate.label} for today`, desc: `Resets tomorrow — or go unlimited right now with ${plan.name}.`, subdesc: perDay ? `${priceStr} · ${perDay}` : priceStr, price: priceStr, cta: `Go Unlimited — ${priceStr}`, urgency: true, plan };
+  }
+  // Trial active / first hit → soft, benefit-forward
+  return { icon: GATE_ICONS[feature] || "🔒", title: `${limitStatus.remaining} free ${gate.label} left today`, desc: gate.description, subdesc: null, price: priceStr, cta: `Upgrade to ${plan.name}`, urgency: false, plan };
+}
+
 export function getSoftLimitNudge(remaining) { return `${remaining} left today. Upgrade for unlimited.`; }
 
-// â”€â”€ Purchase â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function setPremiumPlan(planId, email, password, txnRef, durationDaysOverride) {
   const plan = PLANS[planId];
   const days = durationDaysOverride ?? plan?.durationDays ?? 30;
@@ -327,7 +311,6 @@ export function verifyPassword(password) {
 export function canUpgradeTo(targetPlanId) { return (PLAN_RANK[targetPlanId] ?? 0) > (PLAN_RANK[getEffectivePlan()] ?? 0); }
 export function clearPremium() { storage.remove(PREMIUM_KEY); storage.remove(PREMIUM_FLAG_KEY); storage.remove(WARN_DISMISSED_KEY); }
 
-// â”€â”€ Server sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function syncPremiumFromServer(email, password) {
   try {
     const res = await fetch(`${API_BASE}/api/restore`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim().toLowerCase(), passwordHash: simpleHash(password) }) });
@@ -353,7 +336,6 @@ export async function autoSyncPremium() {
   } catch {}
 }
 
-// â”€â”€ Activity tracker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function trackActivity(feature, meta = {}) {
   try { const log = storage.get(ACTIVITY_KEY) || []; log.push({ feature, meta, ts: Date.now() }); if (log.length > 500) log.splice(0, log.length - 500); storage.set(ACTIVITY_KEY, log); } catch {}
 }
