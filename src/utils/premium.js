@@ -339,6 +339,7 @@ export async function autoSyncPremium() {
 export function trackActivity(feature, meta = {}) {
   try { const log = storage.get(ACTIVITY_KEY) || []; log.push({ feature, meta, ts: Date.now() }); if (log.length > 500) log.splice(0, log.length - 500); storage.set(ACTIVITY_KEY, log); } catch {}
 }
+export const recordFeatureUse = trackActivity;
 export function getActivityLog() { const log = storage.get(ACTIVITY_KEY) || []; return log.sort((a, b) => b.ts - a.ts); }
 export function getFeatureUsageSummary() { return getActivityLog().reduce((acc, e) => { acc[e.feature] = (acc[e.feature] || 0) + 1; return acc; }, {}); }
 export function getUserEngagementProfile() {
