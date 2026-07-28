@@ -20,7 +20,8 @@ import { useBlockedStats } from "../utils/useBlockedStats";
 import MediaCard         from "../components/MediaCard";
 import { storage }       from "../utils/storage";
 import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } from "../utils/ageRating";
-import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
+import { canSwitchSource, canDownload, canPopOut, shouldShowAds } from "../utils/gate";
+import { maybeShowAd } from "../utils/adsterra";
 import PremiumGate       from "../components/PremiumGate";
 
 
@@ -536,6 +537,7 @@ export default function MoviePage({
   }, [playing, progressKey, watchedThreshold, playerSource, progressViaFrames]);
 
   const handlePlay = useCallback(() => {
+    maybeShowAd(shouldShowAds(planId));
     if (onWatch) {
       onHistory({ ...d, media_type: "movie" });
       onWatch({ item: d, season: null, episode: null, sourceId: foundSource });
@@ -545,7 +547,7 @@ export default function MoviePage({
     onHistory({ ...d, media_type: "movie" });
     const pw = preWarmRef.current;
     if (pw) { try { pw.src = "about:blank"; } catch {} }
-  }, [d, onHistory, onWatch, foundSource]);
+  }, [d, onHistory, onWatch, foundSource, planId]);
 
   useEffect(() => {
     if (!playing || !NEEDS_INTERCEPT.includes(playerSource)) return;

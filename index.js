@@ -315,6 +315,18 @@ function createWindow() {
     },
   });
 
+  // Popunder ads (and any other window.open() calls from the main renderer)
+  // are blocked by default in Electron. Redirect them to the OS browser
+  // instead of silently swallowing them.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      if (/^https?:\/\//i.test(url)) {
+        shell.openExternal(url).catch(() => {});
+      }
+    } catch {}
+    return { action: "deny" };
+  });
+
   // -- Source protection: prevent DevTools / source inspection -------------------
   mainWindow.webContents.on('devtools-opened', () => {
     mainWindow.webContents.closeDevTools();

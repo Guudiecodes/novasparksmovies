@@ -32,6 +32,10 @@ export function canUseSubtitles(_p)  { return OPEN_ACCESS || Premium.canUseSubti
 export function canContinueWatch(_p) { return OPEN_ACCESS || Premium.canContinueWatch(); }
 export function canPopOut(_p)        { return OPEN_ACCESS || Premium.canPopOut(); }
 export function can4K(_p)            { return OPEN_ACCESS || Premium.can4K(); }
+
+// OPEN_ACCESS forces ads off too, same as every other gate here — dev/test
+// builds shouldn't serve ads.
+export function shouldShowAds(_p) { return !OPEN_ACCESS && Premium.shouldShowAds(); }
 export function canUseAI(_p)         { return OPEN_ACCESS || Premium.canUseAI(); }
 export function canUseShorts(_p)     { return OPEN_ACCESS || Premium.canUseShorts(); }
 

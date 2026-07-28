@@ -10,6 +10,7 @@
 import ErrorBoundary from "./components/ErrorBoundary";
 import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
 import WindowTitlebar from "./components/WindowTitlebar";
+import PopunderAd from "./components/PopunderAd";
 import { storage, secureStorage, STORAGE_KEYS } from "./utils/storage";
 import { applyAccentColor } from "./utils/appearance";
 import { collectBackupData } from "./utils/backup";
@@ -485,6 +486,17 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
 
   // Parses the current window.location back into { page, params } so we know
   // what to (re)load — used on first mount and on every popstate.
+  // Only trust a URL-derived page name if it's one this app actually
+  // renders. In Electron the window loads via a file:// URL, so
+  // window.location.pathname is a disk path, not a route — splitting it
+  // used to hand parts[0] (e.g. "C:") straight to setPage(), which matched
+  // nothing below and rendered a blank screen until sidebar navigation
+  // set a real page value.
+  const VALID_PAGES = [
+    "home", "reel", "movie", "tv", "watch", "pricing", "history",
+    "settings", "downloads", "nsai", "admin", "genre",
+  ];
+
   const parseLocation = useCallback(() => {
     const path  = window.location.pathname;
     const parts = path.split("/").filter(Boolean);
@@ -504,7 +516,8 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
         },
       };
     }
-    return { page: parts[0], params: null };
+    if (VALID_PAGES.includes(parts[0])) return { page: parts[0], params: null };
+    return { page: "home", params: null };
   }, []);
 
   // Full item objects (poster, title, overview, etc.) live in memory and
@@ -1171,6 +1184,7 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
           />
         )}
         {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
+             <PopunderAd />
       </div>
     </ErrorBoundary>
   );

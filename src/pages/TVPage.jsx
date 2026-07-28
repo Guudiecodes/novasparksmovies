@@ -58,7 +58,8 @@ import {
   getAgeLimitSetting,
   getRatingCountry,
 } from "../utils/ageRating";
-import { canSwitchSource, canDownload, canPopOut } from "../utils/gate";
+import { canSwitchSource, canDownload, canPopOut, shouldShowAds } from "../utils/gate";
+import { maybeShowAd } from "../utils/adsterra";
 import PremiumGate from "../components/PremiumGate";
 
 // â”€â”€ Disclaimer ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -683,6 +684,7 @@ export default function TVPage({
   const handleWatch = useCallback(() => {
     const firstEp = currentSeasonEpisodes[0];
     if (!firstEp) return;
+    maybeShowAd(shouldShowAds(planId));
     if (onWatch) {
       onHistory({ ...d, media_type: "tv", season: selectedSeason, episode: firstEp.episode_number, episodeName: firstEp.name });
       onWatch({ item: { ...d, media_type: "tv" }, season: selectedSeason, episode: firstEp.episode_number, episodeName: firstEp.name, sourceId: playerSource });
@@ -691,7 +693,7 @@ export default function TVPage({
     setM3u8Url(null); setInterceptedSubs([]); setResolvedPlayerUrl(null); setResolvingUrl(false); setResolveError(null);
     setSelectedEp(firstEp); setPlaying(true);
     onHistory({ ...d, media_type: "tv", season: selectedSeason, episode: firstEp.episode_number, episodeName: firstEp.name });
-  }, [currentSeasonEpisodes, d, selectedSeason, onHistory, onWatch]);
+  }, [currentSeasonEpisodes, d, selectedSeason, onHistory, onWatch, planId]);
 
   if (loading) return <div className="loader"><div className="spinner" /></div>;
 

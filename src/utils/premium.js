@@ -162,6 +162,10 @@ export function canPopOut()        { return atLeast("premium"); }
 export function can4K()            { return atLeast("premium"); }
 export function hasPrioritySupport() { return atLeast("premium"); }
 
+// Ads only show to users below the Standard tier — i.e. the Free plan.
+// Any paid plan (Standard or Premium) turns ads off immediately.
+export function shouldShowAds() { return !atLeast("standard"); }
+
 export function canUseAI() {
   const plan = getEffectivePlan();
   if (plan === "standard" || plan === "premium") return true;
