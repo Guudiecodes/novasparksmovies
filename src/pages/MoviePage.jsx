@@ -23,6 +23,7 @@ import { fetchMovieRating, isRestricted, getAgeLimitSetting, getRatingCountry } 
 import { canSwitchSource, canDownload, canPopOut, shouldShowAds } from "../utils/gate";
 import { maybeShowAd } from "../utils/adsterra";
 import PremiumGate       from "../components/PremiumGate";
+import PushAd             from "../components/PushAd";
 
 
 // Place between movie rows:
@@ -778,6 +779,7 @@ export default function MoviePage({
 
       {/* â”€â”€ Disclaimer ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <DisclaimerTicker />
+      <PushAd planId={planId} />
 
       {playing && <ServerToast status={autoSourceStatus} sourceLabel={PLAYER_SOURCES.find((s) => s.id === playerSource)?.label} />}
 

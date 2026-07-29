@@ -7,6 +7,8 @@ import { storage } from "../utils/storage";
 import { canUseAI, incrementFreeDailyUsage } from "../utils/premium";
 import PremiumGate from "../components/PremiumGate";
 import UsageStatus from "../components/UsageStatus";
+import PushAd from "../components/PushAd";
+import PopunderAd from "../components/PopunderAd";
 
 const GROQ_KEY    = "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";
 const GEMINI_KEY  = "AIzaSyBuCi_KEm0TvPeG0VjYkCnIcHRQTJVKTJ8";
@@ -1205,8 +1207,10 @@ export default function NSAIPage({
   watchHistory = [],
   continueWatching = [],
   accentColor = "#00b4a6",
+  isPremium,
 }) {
   const BRAND = (typeof accentColor === "string" && !accentColor.startsWith("var")) ? accentColor : "#00b4a6";
+  const planId = isPremium?.planId || (isPremium ? "premium" : "free");
   const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 
   const mem = useRef(loadMemory());
@@ -1730,6 +1734,8 @@ export default function NSAIPage({
       isolation: "isolate",
       contain: "layout style",
     }}>
+      <PushAd planId={planId} />
+      <PopunderAd />
 
       <style>{`
         @keyframes nsFade  { from{opacity:0}to{opacity:1} }

@@ -166,6 +166,10 @@ export function hasPrioritySupport() { return atLeast("premium"); }
 // Any paid plan (Standard or Premium) turns ads off immediately.
 export function shouldShowAds() { return !atLeast("standard"); }
 
+// Push-notification prompt is looser than the general ad gate — it shows to
+// Free AND Standard, only Premium is fully ad-free from this one.
+export function shouldShowPushPrompt() { return !atLeast("premium"); }
+
 export function canUseAI() {
   const plan = getEffectivePlan();
   if (plan === "standard" || plan === "premium") return true;
@@ -174,7 +178,8 @@ export function canUseAI() {
 export function canUseShorts() {
   const plan = getEffectivePlan();
   if (plan === "premium") return true;
-  if (plan === "standard") return false;
+  // Standard and Free now share the same daily limit — no hard block.
+  // Only Premium gets unlimited Shorts.
   return checkFreeDailyLimit("shorts").allowed;
 }
 

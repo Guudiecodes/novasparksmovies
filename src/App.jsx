@@ -1075,6 +1075,7 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
                 watchHistory={history}
                 continueWatching={inProgress}
                 accentColor="var(--red, #e50914)"
+                isPremium={isPremium}
               />
             )}
 
@@ -1183,8 +1184,7 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
             onCancel={() => { setCloseConfirm(null); window.electron.respondClose(false); }}
           />
         )}
-        {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
-             <PopunderAd />
+{showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
       </div>
     </ErrorBoundary>
   );
