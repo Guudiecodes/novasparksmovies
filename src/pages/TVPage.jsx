@@ -48,6 +48,7 @@ import {
 } from "../components/Icons";
 import DownloadModal from "../components/DownloadModal";
 import TrailerModal from "../components/TrailerModal";
+import PopunderAd from "../components/PopunderAd";
 import BlockedStatsModal from "../components/BlockedStatsModal";
 import { useBlockedStats } from "../utils/useBlockedStats";
 import { storage, STORAGE_KEYS } from "../utils/storage";
@@ -1231,6 +1232,7 @@ export default function TVPage({
           episode={selectedEp?.episode_number} posterPath={d.poster_path} tmdbId={item.id} />
       )}
       {gateModal && <PremiumGate feature={gateModal} onUpgrade={handleUpgrade} onClose={() => setGateModal(null)} />}
+   <PopunderAd />
     </div>
   );
 }

@@ -24,6 +24,7 @@ import { canSwitchSource, canDownload, canPopOut, shouldShowAds } from "../utils
 import { maybeShowAd } from "../utils/adsterra";
 import PremiumGate       from "../components/PremiumGate";
 import PushAd             from "../components/PushAd";
+import PopunderAd         from "../components/PopunderAd";
 
 
 // Place between movie rows:
@@ -1148,6 +1149,7 @@ export default function MoviePage({
       {gateModal && (
         <PremiumGate feature={gateModal} onUpgrade={handleUpgrade} onClose={() => setGateModal(null)} />
       )}
+   <PopunderAd />
     </div>
   );
 }
