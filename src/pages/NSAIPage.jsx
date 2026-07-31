@@ -1,4 +1,4 @@
-﻿// NSAIPage.jsx — NovaSparks AI · v11.0 · LIVE ENGINE
+// NSAIPage.jsx — NovaSparks AI · v11.0 · LIVE ENGINE
 // Reads humans. Fixes errors. Forgets nothing. Routes by expertise.
 // New in v11: on-device taste learning, live token streaming, voice in/out,
 // and an AI Shorts Studio that scripts + narrates + cuts a vertical promo reel.

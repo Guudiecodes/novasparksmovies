@@ -1,4 +1,4 @@
-﻿import { getCurrentPlan, getTrialStatus, checkFreeDailyLimit, formatPrice, PLANS } from "../utils/premium";
+import { getCurrentPlan, getTrialStatus, checkFreeDailyLimit, formatPrice, PLANS } from "../utils/premium";
 
 /**
  * UsageStatus — compact, professional plan/limit indicator.

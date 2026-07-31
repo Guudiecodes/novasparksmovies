@@ -1,4 +1,4 @@
-?import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   PLAYER_SOURCES, getSourceUrl, tmdbFetch, imgUrl,
   BROWSER_RESTRICTED_DEFAULT, NEEDS_INTERCEPT,

@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { CloseIcon } from "./Icons";
 import { setPremiumPlan, API_BASE } from "../utils/premium";
 

@@ -1,4 +1,4 @@
-﻿import { useEffect } from "react";
+import { useEffect } from "react";
 import { getGateMessage } from "../utils/gate";
 import { getDailyLimitMessage } from "../utils/premium";
 

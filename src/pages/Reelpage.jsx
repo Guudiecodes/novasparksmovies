@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { canUseShorts, canDownload, incrementFreeDailyUsage, recordFeatureUse } from "../utils/premium";
 import PremiumGate from "../components/PremiumGate";

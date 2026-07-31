@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { savePremiumRecord, simpleHash, API_BASE } from "../utils/premium";
 import { CloseIcon } from "./Icons";
 
