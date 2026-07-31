@@ -29,7 +29,7 @@ function FAQItem({ q, a }) {
         style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "14px 18px", fontSize: 14, fontWeight: 600, color: "var(--text)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
       >
         {q}
-        <span style={{ fontSize: 18, color: "var(--text3)", flexShrink: 0, marginLeft: 12 }}>{open ? "âˆ’" : "+"}</span>
+        <span style={{ fontSize: 18, color: "var(--text3)", flexShrink: 0, marginLeft: 12 }}>{open ? "−" : "+"}</span>
       </button>
       {open && (
         <div style={{ padding: "0 18px 14px", fontSize: 13, color: "var(--text3)", lineHeight: 1.7 }}>{a}</div>
@@ -160,7 +160,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
           style={{ fontSize: 13, color: "#00b4a6", borderColor: "rgba(0,180,166,0.3)" }}
           onClick={() => setShowRestore(true)}
         >
-          Already subscribed? ðŸ”„ Restore access
+          Already subscribed? 🔄 Restore access
         </button>
       </div>
 
@@ -187,15 +187,15 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
         <div style={{ background: "rgba(0,180,166,0.08)", border: "1px solid rgba(0,180,166,0.3)", borderRadius: 12, padding: "16px 22px", marginBottom: 36, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>
-              {PLANS[record.planId]?.name} â€” Active
+              {PLANS[record.planId]?.name} — Active
               {record.cancelledAt && (
                 <span style={{ marginLeft: 10, fontSize: 11, background: "rgba(255,100,50,0.15)", color: "var(--red)", borderRadius: 4, padding: "2px 8px" }}>Cancelled</span>
               )}
             </div>
             <div style={{ fontSize: 13, color: "var(--text3)" }}>
-              {record.email && <span>{record.email} Â· </span>}
+              {record.email && <span>{record.email} · </span>}
               <ExpiryTimer expiresAt={record.expiresAt} />
-              {record.cancelledAt && <span style={{ marginLeft: 6 }}>Â· Access until {new Date(record.expiresAt).toLocaleDateString()}</span>}
+              {record.cancelledAt && <span style={{ marginLeft: 6 }}>· Access until {new Date(record.expiresAt).toLocaleDateString()}</span>}
             </div>
             {record.txnRef && (
               <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>
@@ -262,7 +262,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                     const has = plan.features[key];
                     return (
                       <li key={key} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: has ? "var(--text)" : "var(--text3)" }}>
-                        <span style={{ fontSize: 14, color: has ? "#48c774" : "var(--text3)", flexShrink: 0 }}>{has ? "âœ“" : "â€”"}</span>
+                        <span style={{ fontSize: 14, color: has ? "#48c774" : "var(--text3)", flexShrink: 0 }}>{has ? "✓" : "—"}</span>
                         {label}
                       </li>
                     );
@@ -271,7 +271,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
 
                 {isCurrent ? (
                   <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: plan.color, padding: "10px 0", border: `1px solid ${plan.color}44`, borderRadius: 8 }}>
-                    âœ“ Your current plan
+                    ✓ Your current plan
                   </div>
                 ) : canBuy ? (
                   <button
@@ -292,7 +292,7 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
         })}
       </div>
 
-      {/* Payment methods â€” Paystack channels only, no bank names */}
+      {/* Payment methods — Paystack channels only, no bank names */}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
           Accepted payment methods
@@ -327,8 +327,8 @@ export default function PricingPage({ isPremium, onPremiumUpdate, onBack }) {
                 {["standard", "premium"].map((planId) => (
                   <td key={planId} style={{ textAlign: "center", padding: "11px 16px", borderBottom: "1px solid var(--border)" }}>
                     {PLANS[planId].features[key]
-                      ? <span style={{ color: "#48c774", fontWeight: 700, fontSize: 15 }}>âœ“</span>
-                      : <span style={{ color: "var(--text3)", fontSize: 13 }}>â€”</span>}
+                      ? <span style={{ color: "#48c774", fontWeight: 700, fontSize: 15 }}>✓</span>
+                      : <span style={{ color: "var(--text3)", fontSize: 13 }}>—</span>}
                   </td>
                 ))}
               </tr>

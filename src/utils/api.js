@@ -4,7 +4,7 @@ const IMG_BASE  = "https://image.tmdb.org/t/p";
 export const imgUrl = (path, size = "w500") =>
   path ? `${IMG_BASE}/${size}${path}` : null;
 
-// â”€â”€ Silent error handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Silent error handlers ─────────────────────────────────────────────────────
 let _onAuthError   = () => {};
 let _onUnreachable = () => {};
 export const setApiErrorHandlers = (onAuth, onUnreachable) => {
@@ -142,8 +142,8 @@ export async function fetchProviderSources(type, id, season, episode, service) {
   } catch { return null; }
 }
 
-// NS 1â€“6 = self-hosted ad-free (Chrome primary)
-// NS 7â€“11 = public embed scrapers
+// NS 1–6 = self-hosted ad-free (Chrome primary)
+// NS 7–11 = public embed scrapers
 export async function fetchProviderServices() {
   return ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"];
 }
@@ -180,26 +180,26 @@ export async function fetchAllNonEmbedSources(type, id, season, episode, {
 
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// PLAYER SOURCES  (Embed mode â€” iframe-based)
+// PLAYER SOURCES  (Embed mode — iframe-based)
 //
-// TIER 1 â€” Zero-redirect direct players. Instant load, clean experience.
-// TIER 2 â€” Reliable aggregators, minimal internal redirects.
-// TIER 3 â€” Last-resort fallbacks. Known to have ad-popups or redirect chains.
+// TIER 1 — Zero-redirect direct players. Instant load, clean experience.
+// TIER 2 — Reliable aggregators, minimal internal redirects.
+// TIER 3 — Last-resort fallbacks. Known to have ad-popups or redirect chains.
 //
-// REMOVED: videasy (NS 8) â€” excessive redirects, non-expandable player
-//          mapple (NS 14) â€” embed ads + user redirection
+// REMOVED: videasy (NS 8) — excessive redirects, non-expandable player
+//          mapple (NS 14) — embed ads + user redirection
 // DEAD (previously removed): primesrc, vapsrc, cinezo, smashystream,
 //   twoembed, vidbinge, vidupto, embedsu
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const PLAYER_SOURCES = [
 
-  // â”€â”€ TIER 1 â€” Zero-redirect, instant load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── TIER 1 — Zero-redirect, instant load ─────────────────────────────────
 
   {
     id: "vidlink",
     label: "NS 7",
-    tag: null, note: "â˜… Fast",
+    tag: null, note: "★ Fast",
     tier: 1, moviePriority: 1, tvPriority: 1, browserPriority: 1,
     browserSafe: true, supportsProgress: true, zeroRedirect: true,
     movieUrl: (id) => `https://vidlink.pro/movie/${id}?ads=0`,
@@ -209,7 +209,7 @@ export const PLAYER_SOURCES = [
   {
     id: "multiembed",
     label: "NS 9",
-    tag: null, note: "â˜… Multi-Server",
+    tag: null, note: "★ Multi-Server",
     tier: 1, moviePriority: 2, tvPriority: 2, browserPriority: 2,
     browserSafe: true, supportsProgress: true, zeroRedirect: true,
     movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1`,
@@ -219,33 +219,33 @@ export const PLAYER_SOURCES = [
   {
     id: "pstream",
     label: "NS 15",
-    tag: null, note: "â˜… Direct",
+    tag: null, note: "★ Direct",
     tier: 1, moviePriority: 3, tvPriority: 3, browserPriority: 3,
     browserSafe: true, supportsProgress: true, zeroRedirect: true,
     movieUrl: (id) => `https://iframe.pstream.mov/embed/tmdb-movie-${id}`,
     tvUrl:    (id, s, e) => `https://iframe.pstream.mov/embed/tmdb-tv-${id}/${s}/${e}`,
   },
 
-  // â”€â”€ Peachify â€” clean multi-server player, built-in auto-failover,
+  // ── Peachify — clean multi-server player, built-in auto-failover,
   //    progress events via postMessage (PLAYER_EVENT + MEDIA_DATA),
-  //    no embed ads, no user redirection, fullscreen + PiP ready â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //    no embed ads, no user redirection, fullscreen + PiP ready ──────────
 
   {
     id: "peachify",
     label: "NS 14",
-    tag: null, note: "â˜… Clean",
+    tag: null, note: "★ Clean",
     tier: 1, moviePriority: 4, tvPriority: 4, browserPriority: 4,
     browserSafe: true, supportsProgress: true, zeroRedirect: true,
     movieUrl: (id) => `https://peachify.top/embed/movie/${id}`,
     tvUrl:    (id, s, e) => `https://peachify.top/embed/tv/${id}/${s}/${e}`,
   },
 
-  // â”€â”€ TIER 2 â€” Reliable aggregators â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── TIER 2 — Reliable aggregators ────────────────────────────────────────
 
   {
     id: "autoembed",
     label: "NS 10",
-    tag: null, note: "â˜… Clean",
+    tag: null, note: "★ Clean",
     tier: 2, moviePriority: 5, tvPriority: 5, browserPriority: 5,
     browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
@@ -255,14 +255,14 @@ export const PLAYER_SOURCES = [
   {
     id: "vidsrc_cc",
     label: "NS 11",
-    tag: null, note: "â˜… HD",
+    tag: null, note: "★ HD",
     tier: 2, moviePriority: 6, tvPriority: 6, browserPriority: 6,
     browserSafe: true, supportsProgress: true,
     movieUrl: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
     tvUrl:    (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`,
   },
 
-  // â”€â”€ TIER 3 â€” Last-resort fallbacks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── TIER 3 — Last-resort fallbacks ───────────────────────────────────────
 
   {
     id: "embed2",
@@ -284,7 +284,7 @@ export const PLAYER_SOURCES = [
     tvUrl:    (id, s, e) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
   },
 
-  // â”€â”€ ANIME â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── ANIME ─────────────────────────────────────────────────────────────────
   {
     id: "allmanga",
     label: "NS 20",
@@ -356,19 +356,19 @@ export async function probeUrl(url, _legacyTimeout) {
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SOURCE HEALTH REGISTRY
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // Two-signal health tracking per embed source:
 //
-//   1. HTTP probe results (fast, imprecise â€” reachability check only)
+//   1. HTTP probe results (fast, imprecise — reachability check only)
 //      recordProbe(id, success, responseTimeMs)
 //
-//   2. Actual playback outcomes (authoritative â€” did video actually play?)
+//   2. Actual playback outcomes (authoritative — did video actually play?)
 //      reportPlayOutcome(id, success)   â† called from WatchPage
 //
-// Score range: 0â€“100  |  50 = unknown/neutral  |  100 = fully trusted
+// Score range: 0–100  |  50 = unknown/neutral  |  100 = fully trusted
 //
-// Circuit breaker: score < CIRCUIT_OPEN_SCORE AND failures â‰¥ 3 defers the
-// source to end of queue. Never permanently excluded â€” recovery is possible.
+// Circuit breaker: score < CIRCUIT_OPEN_SCORE AND failures ≥ 3 defers the
+// source to end of queue. Never permanently excluded — recovery is possible.
 //
 // Persistence: localStorage with 30-min TTL per probe entry.
 // Stale entries trigger a background re-probe on next prewarmSources() call.
@@ -379,10 +379,10 @@ const HEALTH_PROBE_TTL   = 30 * 60 * 1000;   // 30 min before re-probe
 
 const SCORE_NEUTRAL      = 50;
 const SCORE_MAX          = 100;
-const SCORE_PROBE_HIT    = 18;   // probe success  â€” small (reachable â‰  plays)
-const SCORE_PROBE_MISS   = 28;   // probe fail     â€” bigger (unreachable = broken)
-const SCORE_PLAY_SUCCESS = 38;   // video played   â€” strong positive
-const SCORE_PLAY_FAIL    = 45;   // video failed   â€” strongest negative
+const SCORE_PROBE_HIT    = 18;   // probe success  — small (reachable ≠ plays)
+const SCORE_PROBE_MISS   = 28;   // probe fail     — bigger (unreachable = broken)
+const SCORE_PLAY_SUCCESS = 38;   // video played   — strong positive
+const SCORE_PLAY_FAIL    = 45;   // video failed   — strongest negative
 const CIRCUIT_OPEN_SCORE = 12;   // threshold to open circuit
 const MIN_FAILURES_OPEN  = 3;    // minimum consecutive failures to open circuit
 
@@ -464,7 +464,7 @@ class _SourceHealthRegistry {
   /**
    * Returns source IDs in recommended trial order:
    *   1. Circuit-closed sources first, sorted by score DESC then priority ASC
-   *   2. Circuit-open sources deferred to end (not excluded â€” recovery possible)
+   *   2. Circuit-open sources deferred to end (not excluded — recovery possible)
    */
   sortedIds(type) {
     const eligible = PLAYER_SOURCES.filter((s) => !s.async && !s.tag);
@@ -484,17 +484,17 @@ export const sourceHealth = new _SourceHealthRegistry();
 
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// PREWARM â€” background-probe all stale sources on module init
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// PREWARM — background-probe all stale sources on module init
+// ─────────────────────────────────────────────────────────────────────────────
 // Uses Fight Club (TMDB 550) as a stable canary to check server reachability
 // without needing the user's actual title. Results populate sourceHealth so
 // WatchPage already has a sorted, trusted list before the user arrives.
 //
 // Auto-called 2 s after module import (see bottom of file).
-// Idempotent â€” runs at most once per session.
+// Idempotent — runs at most once per session.
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-const CANARY_MOVIE_ID = "550"; // Fight Club â€” stable TMDB ID, indexed everywhere
+const CANARY_MOVIE_ID = "550"; // Fight Club — stable TMDB ID, indexed everywhere
 
 let _prewarmDone = false;
 
@@ -544,12 +544,12 @@ export function buildRetryQueue(type, preferredId) {
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // WORKING SOURCE FINDER
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // Health-aware probe ordering:
-//   â€¢ Preferred source â†’ 0 ms delay (always first)
-//   â€¢ Top 3 by health score â†’ 0 ms delay (race immediately)
-//   â€¢ Mid-tier â†’ 150 ms stagger
-//   â€¢ Circuit-open sources â†’ 600 ms stagger (tried last)
+//   • Preferred source → 0 ms delay (always first)
+//   • Top 3 by health score → 0 ms delay (race immediately)
+//   • Mid-tier → 150 ms stagger
+//   • Circuit-open sources → 600 ms stagger (tried last)
 // All probe outcomes update the health registry.
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -799,7 +799,7 @@ export const fetchEpisodeGroup = async (groupId, apiKey) => {
 
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// MODULE INIT â€” auto-prewarm 2 s after import (non-blocking, idempotent)
+// MODULE INIT — auto-prewarm 2 s after import (non-blocking, idempotent)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 if (typeof window !== "undefined") {
   setTimeout(prewarmSources, 2_000);

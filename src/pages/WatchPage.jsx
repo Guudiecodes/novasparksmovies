@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+?import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   PLAYER_SOURCES, getSourceUrl, tmdbFetch, imgUrl,
   BROWSER_RESTRICTED_DEFAULT, NEEDS_INTERCEPT,
@@ -25,7 +25,7 @@ const MAX_CYCLES = 2;
 const posKey = (type, id, s, e) =>
   `ns_pos_${type}_${id}${type === "tv" ? `_s${s}e${e}` : ""}`;
 
-// Sources that never work â€” skipped globally
+// Sources that never work — skipped globally
 const DEAD = [
   "embedsu","cinezo","smashystream","vapsrc",
   "twoembed","vidbinge","vidupto","primesrc","vidcorenl",
@@ -95,7 +95,7 @@ function parseMsg(data) {
   } catch { return null; }
 }
 
-/* â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Sub-components ─────────────────────────────────────────────────────────── */
 function InfoStrip({ year, voteAverage, runtime, overview, genres }) {
   const [exp, setExp] = useState(false);
   const long = overview && overview.length > 200;
@@ -114,7 +114,7 @@ function InfoStrip({ year, voteAverage, runtime, overview, genres }) {
             WebkitLineClamp:long&&!exp?2:undefined,
             WebkitBoxOrient:long&&!exp?"vertical":undefined,
             overflow:long&&!exp?"hidden":undefined}}>{overview}</p>
-          {long&&<button onClick={()=>setExp(v=>!v)} style={{background:"none",border:"none",color:"rgba(255,255,255,.35)",fontSize:12,cursor:"pointer",padding:"5px 0 0",fontFamily:"inherit"}}>{exp?"Show less â–²":"Read more â–¼"}</button>}
+          {long&&<button onClick={()=>setExp(v=>!v)} style={{background:"none",border:"none",color:"rgba(255,255,255,.35)",fontSize:12,cursor:"pointer",padding:"5px 0 0",fontFamily:"inherit"}}>{exp?"Show less ▲":"Read more ▼"}</button>}
         </>
       )}
     </div>
@@ -190,7 +190,7 @@ function IconRefresh({ spin }) {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{flexShrink:0,animation:spin?"wpSpin .7s linear infinite":"none"}}><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>;
 }
 
-/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Main component ──────────────────────────────────────────────────────────── */
 export default function WatchPage({
   item, apiKey, onBack, onSelect, onHistory,
   onSave, isSaved, downloads, onDownloadStarted, onGoToDownloads,
@@ -210,7 +210,7 @@ export default function WatchPage({
     }
     const raw = storage.get("playerSource");
     const cleaned = DEAD.includes(raw) || (isEl && ELECTRON_DEAD.includes(raw)) ? null : raw;
-    // â”€â”€ NS AI: Electron defaults to ns14 as first source â”€â”€
+    // ── NS AI: Electron defaults to ns14 as first source ──
     return cleaned || (isEl ? "peachify" : getDefaultSource());
   });
 
@@ -294,7 +294,7 @@ export default function WatchPage({
   const year    = (d.release_date||d.first_air_date||"").slice(0,4);
   const planId  = isPremium?.planId||(isPremium?"premium":"free");
 
-  // â”€â”€ NS14 first in Electron dropdown, ns13 blocked â”€â”€
+  // ── NS14 first in Electron dropdown, ns13 blocked ──
   const visSrcs = useMemo(() => {
     const list = PLAYER_SOURCES.filter(s => !s.async && !(isEl && ELECTRON_DEAD.includes(s.id)));
     if (!isEl) return list;
@@ -502,7 +502,7 @@ export default function WatchPage({
     window.addEventListener("message",h);return()=>window.removeEventListener("message",h);
   },[embedUrl,nextSrc]);
 
-  // â”€â”€ Electron webview beast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Electron webview beast ────────────────────────────────────────────────
   useEffect(()=>{
     if(!isEl||nonEmbed)return;
     const wv=wvRef.current;if(!wv)return;
@@ -750,7 +750,7 @@ export default function WatchPage({
       <div style={{background:"rgba(229,9,20,.05)",borderBottom:"1px solid rgba(229,9,20,.10)",padding:"4px 0",overflow:"hidden",display:"flex",alignItems:"center"}}>
         <div style={{flex:1,overflow:"hidden"}}>
           <div style={{display:"inline-flex",animation:"wpScroll 50s linear infinite",whiteSpace:"nowrap"}}>
-            {[0,1].map(i=><span key={i} style={{fontSize:11,color:"rgba(255,255,255,.38)",paddingRight:80}}>âš   NovaSparks does not host, store, or distribute any media content.</span>)}
+            {[0,1].map(i=><span key={i} style={{fontSize:11,color:"rgba(255,255,255,.38)",paddingRight:80}}>⚠  NovaSparks does not host, store, or distribute any media content.</span>)}
           </div>
         </div>
       </div>
@@ -759,7 +759,7 @@ export default function WatchPage({
       <div className="watch-topbar">
         <button className="btn btn-ghost" onClick={onBack} style={{gap:6,flexShrink:0}}><BackIcon/> Back</button>
         <div className="watch-topbar-title" style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-          {title}{type==="tv"&&<span className="watch-topbar-ep">&nbsp;Â·&nbsp;S{season} E{episode}</span>}
+          {title}{type==="tv"&&<span className="watch-topbar-ep">&nbsp;·&nbsp;S{season} E{episode}</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {showNS&&<span className="wp-live"><svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#e50914"/></svg>LIVE</span>}
@@ -782,8 +782,8 @@ export default function WatchPage({
               {status!=="found"&&<div style={{position:"absolute",top:0,bottom:0,width:"42%",background:"linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent)",animation:"wpShim 1.9s infinite ease-in-out"}}/>}
               <div style={{position:"relative",zIndex:1,display:"flex",alignItems:"center",gap:6}}>
                 {status==="found"
-                  ?<><span style={{color:"#4caf50",fontSize:15,fontWeight:700}}>âœ“</span><span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.9)",whiteSpace:"nowrap"}}>{curLabel}</span></>
-                  :<><div style={{width:10,height:10,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,.18)",borderTopColor:"rgba(255,255,255,.85)",animation:"wpSpin .65s linear infinite",flexShrink:0}}/><span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.72)",whiteSpace:"nowrap",animation:"wpPulse 1.8s infinite"}}>{retryN===0?"Findingâ€¦":`Server ${retryN+1}`}</span></>
+                  ?<><span style={{color:"#4caf50",fontSize:15,fontWeight:700}}>✓</span><span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.9)",whiteSpace:"nowrap"}}>{curLabel}</span></>
+                  :<><div style={{width:10,height:10,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,.18)",borderTopColor:"rgba(255,255,255,.85)",animation:"wpSpin .65s linear infinite",flexShrink:0}}/><span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.72)",whiteSpace:"nowrap",animation:"wpPulse 1.8s infinite"}}>{retryN===0?"Finding…":`Server ${retryN+1}`}</span></>
                 }
               </div>
             </div>
@@ -815,7 +815,7 @@ export default function WatchPage({
         </div>
       </div>
 
-      {/* â”€â”€ Player â”€â”€ */}
+      {/* ── Player ── */}
       <div className="watch-player-wrap" style={{overflow:"hidden",position:"relative"}}>
         <BlackScreen visible={loading&&!showFailed&&!showNS&&!(nonEmbed&&!!neStream)}/>
         {showFailed&&<FailedOverlay onRetry={refresh} onBack={onBack}/>}
@@ -847,7 +847,7 @@ export default function WatchPage({
                 key={`ns-${nonEmbed?"ne":"em"}-${item.id}-s${season}e${episode}${nonEmbed?`-${neIdx.current}`:""}`}
                 streamUrl={nsUrl} startTime={restoreT}
                 subtitles={nonEmbed?unifiedCaps.map(c=>({url:c.url,lang:c.lang||""})):subs}
-                title={`${title}${type==="tv"?` Â· S${season}E${episode}`:""}`}
+                title={`${title}${type==="tv"?` · S${season}E${episode}`:""}`}
                 onReady={()=>{setLoading(false);setStatus("found");setPlaying(true);}}
                 onError={()=>{if(nonEmbed)nextNeSrc();else{m3u8Ref.current=null;setM3u8(null);setSubs([]);setLoading(true);nextSrc();}}}
                 onPlayStateChange={setPlaying}
@@ -865,7 +865,7 @@ export default function WatchPage({
           <HLSPlayer
             key={`hls-ne-${item.id}-s${season}e${episode}-${neIdx.current}`}
             streamUrl={neUrl} streamType={neStream?.format||"hls"} subtitles={unifiedCaps} startTime={restoreT}
-            title={`${title}${type==="tv"?` Â· S${season}E${episode}`:""}`}
+            title={`${title}${type==="tv"?` · S${season}E${episode}`:""}`}
             onReady={()=>{setLoading(false);setStatus("found");setPlaying(true);}}
             onError={nextNeSrc} onPlayStateChange={setPlaying}
             onTimeUpdate={(ct,dur)=>{if(!dur)return;if(ct>10&&dur>60)storage.set(posKey(type,item.id,season,episode),{time:ct,dur,ts:Date.now()});setSkipIntro(type==="tv"&&ct>=20&&ct<=300);setNextEp(hasNext&&(dur-ct<=90||ct/dur>=0.92));}}
@@ -908,7 +908,7 @@ export default function WatchPage({
                   <span>{lbl}</span>
                   <div style={{display:"flex",alignItems:"center",gap:5}}>
                     {tag&&<span style={{fontSize:10,fontWeight:700,background:"rgba(229,9,20,.12)",color:"#e50914",border:"1px solid rgba(229,9,20,.22)",borderRadius:4,padding:"2px 6px"}}>{tag}</span>}
-                    {active&&<span style={{color:"#e50914",fontSize:12,fontWeight:700}}>âœ“</span>}
+                    {active&&<span style={{color:"#e50914",fontSize:12,fontWeight:700}}>✓</span>}
                   </div>
                 </button>
               );
@@ -917,7 +917,7 @@ export default function WatchPage({
         )}
       </div>
 
-      {/* â”€â”€ Below player â”€â”€ */}
+      {/* ── Below player ── */}
       {(d?.overview||year||d?.vote_average>0)&&<InfoStrip year={year} voteAverage={d?.vote_average} runtime={runtime} overview={d?.overview} genres={d?.genres||[]}/>}
 
       {type==="tv"&&eps.length>0&&(
@@ -961,7 +961,7 @@ export default function WatchPage({
           <button className="btn btn-secondary"
             onClick={()=>{if(curDl){onGoToDownloads?.(curDl.id);return;}if(!canDownload(planId)){setGate("download");return;}setShowDl(true);}}
             style={curDl?{color:curDl.status==="downloading"?"var(--red)":"#4caf50",borderColor:curDl.status==="downloading"?"rgba(229,9,20,.3)":"rgba(76,175,80,.3)"}:undefined}>
-            {curDl?(curDl.status==="downloading"?"â†“ Downloadingâ€¦":"âœ“ Downloaded"):<><DownloadIcon/> Download</>}
+            {curDl?(curDl.status==="downloading"?"↓ Downloading…":"✓ Downloaded"):<><DownloadIcon/> Download</>}
           </button>
           <button className="btn btn-ghost" onClick={onBack}><BackIcon/> Back</button>
         </div>
@@ -976,7 +976,7 @@ export default function WatchPage({
                 <div className="card-poster">
                   {r.poster_path?<img src={imgUrl(r.poster_path)} alt={r.title||r.name} loading="lazy"/>:<div className="no-poster"><PlayIcon/></div>}
                   <div className="card-overlay wp-rel-ov" style={{opacity:0,transition:"opacity .2s"}}><div className="card-play"><PlayIcon/></div></div>
-                  {r.vote_average>0&&<div className="card-badge">â˜… {r.vote_average.toFixed(1)}</div>}
+                  {r.vote_average>0&&<div className="card-badge">★ {r.vote_average.toFixed(1)}</div>}
                 </div>
                 <div className="card-info">
                   <div className="card-title">{r.title||r.name}</div>
@@ -989,7 +989,7 @@ export default function WatchPage({
             <div style={{display:"flex",justifyContent:"center",marginTop:24}}>
               <button onClick={()=>fetchRel(relPage+1)} disabled={relLoad}
                 style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,color:"var(--text,#fff)",fontSize:14,fontWeight:600,padding:"12px 36px",cursor:relLoad?"not-allowed":"pointer",opacity:relLoad?0.6:1,transition:"background .2s"}}>
-                {relLoad?"Loadingâ€¦":"Load More"}
+                {relLoad?"Loading…":"Load More"}
               </button>
             </div>
           )}

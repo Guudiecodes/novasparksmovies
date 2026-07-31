@@ -85,14 +85,14 @@ export default function RestoreModal({ onClose, onSuccess }) {
           <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
             {step === "restore" && "Restore Subscription"}
             {step === "forgot"  && "Reset Password"}
-            {step === "success" && "ðŸŽ‰ Subscription Restored!"}
+            {step === "success" && "🎉 Subscription Restored!"}
           </div>
           <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)", display: "flex", padding: 4, borderRadius: 6 }} onClick={onClose}>
             <CloseIcon />
           </button>
         </div>
 
-        {/* â”€â”€ Restore step â”€â”€ */}
+        {/* ── Restore step ── */}
         {step === "restore" && (
           <div style={{ padding: "20px 20px 24px" }}>
             <p style={{ fontSize: 13, color: "var(--text3)", marginBottom: 18, lineHeight: 1.6 }}>
@@ -113,7 +113,7 @@ export default function RestoreModal({ onClose, onSuccess }) {
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text2)", marginBottom: 6 }}>Password</label>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
-                  className="apikey-input" type={showPass ? "text" : "password"} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  className="apikey-input" type={showPass ? "text" : "password"} placeholder="••••••••"
                   value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
                   onKeyDown={(e) => e.key === "Enter" && handleRestore()}
                   style={{ flex: 1, marginBottom: 0 }}
@@ -136,7 +136,7 @@ export default function RestoreModal({ onClose, onSuccess }) {
               style={{ width: "100%", justifyContent: "center", fontSize: 14, padding: 12, marginBottom: 12 }}
               onClick={handleRestore} disabled={loading}
             >
-              {loading ? "Checkingâ€¦" : "Restore My Subscription â†’"}
+              {loading ? "Checking…" : "Restore My Subscription →"}
             </button>
 
             <button
@@ -149,14 +149,14 @@ export default function RestoreModal({ onClose, onSuccess }) {
           </div>
         )}
 
-        {/* â”€â”€ Forgot password step â”€â”€ */}
+        {/* ── Forgot password step ── */}
         {step === "forgot" && (
           <div style={{ padding: "20px 20px 24px" }}>
             <p style={{ fontSize: 13, color: "var(--text3)", marginBottom: 6, lineHeight: 1.6 }}>
               Enter your Paystack payment reference to verify your identity.
             </p>
             <p style={{ fontSize: 12, color: "var(--text3)", marginBottom: 18, lineHeight: 1.5 }}>
-              Find it in your Paystack confirmation email â€” it looks like <code style={{ color: "var(--text2)" }}>NS_1234567890_ABCDEF</code>
+              Find it in your Paystack confirmation email — it looks like <code style={{ color: "var(--text2)" }}>NS_1234567890_ABCDEF</code>
             </p>
 
             <div style={{ marginBottom: 14 }}>
@@ -171,7 +171,7 @@ export default function RestoreModal({ onClose, onSuccess }) {
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text2)", marginBottom: 6 }}>New password</label>
               <input
-                className="apikey-input" type={showPass ? "text" : "password"} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                className="apikey-input" type={showPass ? "text" : "password"} placeholder="••••••••"
                 value={newPassword} onChange={(e) => { setNewPassword(e.target.value); setError(""); }}
                 style={{ width: "100%", marginBottom: 0 }}
               />
@@ -181,7 +181,7 @@ export default function RestoreModal({ onClose, onSuccess }) {
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text2)", marginBottom: 6 }}>Confirm new password</label>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
-                  className="apikey-input" type={showPass ? "text" : "password"} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  className="apikey-input" type={showPass ? "text" : "password"} placeholder="••••••••"
                   value={confirmPass} onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
                   style={{ flex: 1, marginBottom: 0 }}
                 />
@@ -203,7 +203,7 @@ export default function RestoreModal({ onClose, onSuccess }) {
               style={{ width: "100%", justifyContent: "center", fontSize: 14, padding: 12, marginBottom: 12 }}
               onClick={handleForgotPassword} disabled={loading}
             >
-              {loading ? "Resettingâ€¦" : "Reset Password â†’"}
+              {loading ? "Resetting…" : "Reset Password →"}
             </button>
 
             <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", fontSize: 13 }}
@@ -213,10 +213,10 @@ export default function RestoreModal({ onClose, onSuccess }) {
           </div>
         )}
 
-        {/* â”€â”€ Success step â”€â”€ */}
+        {/* ── Success step ── */}
         {step === "success" && result && (
           <div style={{ padding: "28px 20px 32px", textAlign: "center" }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>âœ…</div>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>
               Welcome back!
             </div>
@@ -227,7 +227,7 @@ export default function RestoreModal({ onClose, onSuccess }) {
               Active until <strong style={{ color: "var(--text)" }}>{new Date(result.expiresAt).toLocaleDateString()}</strong>
             </p>
             <button className="btn btn-primary" style={{ justifyContent: "center", fontSize: 14, padding: "10px 32px" }} onClick={onClose}>
-              Continue watching â†’
+              Continue watching →
             </button>
           </div>
         )}

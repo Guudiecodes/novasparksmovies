@@ -23,7 +23,7 @@ import SearchModal from "./components/SearchModal";
 import CloseConfirmModal from "./components/CloseConfirmModal";
 import UpdateModal from "./components/UpdateModal";
 
-// â”€â”€ NovaSpark: hardcoded key â€” users never see a setup screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── NovaSpark: hardcoded key — users never see a setup screen ────────────────
 const NS_TMDB_KEY = "4bea51722649d28dcd5453a94f8f40ad";
 
 const HomePage      = lazy(() => import("./pages/HomePage"));
@@ -37,7 +37,7 @@ const PricingPage   = lazy(() => import("./pages/PricingPage"));
 const NSAIPage      = lazy(() => import("./pages/NSAIPage"));
 const ReelPage      = lazy(() => import("./pages/Reelpage"));
 
-// â”€â”€ Admin panel + Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Admin panel + Login ──────────────────────────────────────────────────────
 const AdminPage      = lazy(() => import("./pages/AdminPage"));
 const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage"));
 const LoginPage      = lazy(() => import("./pages/LoginPage"));
@@ -1120,11 +1120,11 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
             boxShadow: "0 2px 16px rgba(0,0,0,0.4)",
             fontSize: 14, fontWeight: 500, color: "#fff",
           }}>
-            <span>ðŸŽ‰ NovaSpark v{updateBanner.latest} is available!</span>
+            <span>🎉 NovaSpark v{updateBanner.latest} is available!</span>
             <button onClick={() => setShowUpdateModal(true)} style={{ color: "#fff", fontWeight: 700, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 6, padding: "4px 12px", fontSize: 13, cursor: "pointer" }}>
               Install Update
             </button>
-            <button onClick={() => setUpdateBanner(null)} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }} aria-label="Dismiss">Ã—</button>
+            <button onClick={() => setUpdateBanner(null)} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }} aria-label="Dismiss">×</button>
           </div>
         )}
 
@@ -1139,22 +1139,22 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
             {episodeCheckStatus === "checking" && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", fontSize: 14, color: "var(--text2)" }}>
                 <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid var(--text3)", borderTopColor: "var(--red)", borderRadius: "50%", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
-                Checking for new episodesâ€¦
+                Checking for new episodes…
               </div>
             )}
             {episodeCheckStatus === "none" && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", fontSize: 14, color: "var(--text3)" }}>
-                <span style={{ fontSize: 16 }}>âœ“</span> No new episodes found
+                <span style={{ fontSize: 16 }}>✓</span> No new episodes found
               </div>
             )}
             {episodeCheckStatus?.entries && (
               <div style={{ padding: "14px 18px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 7 }}>
-                    <span style={{ color: "var(--red)", fontSize: 15 }}>ðŸŽ¬</span>
+                    <span style={{ color: "var(--red)", fontSize: 15 }}>🎬</span>
                     New episode{episodeCheckStatus.entries.length > 1 ? "s" : ""} available
                   </div>
-                  <button onClick={() => { clearTimeout(episodeDismissTimerRef.current); setEpisodeCheckStatus(null); }} style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px" }} aria-label="Dismiss">Ã—</button>
+                  <button onClick={() => { clearTimeout(episodeDismissTimerRef.current); setEpisodeCheckStatus(null); }} style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px" }} aria-label="Dismiss">×</button>
                 </div>
                 <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
                   {episodeCheckStatus.entries.slice(0, 5).map((entry) => (

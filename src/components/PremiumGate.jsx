@@ -3,7 +3,7 @@ import { getGateMessage } from "../utils/gate";
 import { getDailyLimitMessage } from "../utils/premium";
 
 /**
- * PremiumGate â€” psychology-enhanced upgrade modal.
+ * PremiumGate — psychology-enhanced upgrade modal.
  *
  * Adapts its tone automatically based on trial state:
 *   • Trial active, first hit  → soft, benefit-forward
@@ -33,7 +33,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
   };
 
   // Urgency state uses a warm amber/gold palette (loss, scarcity).
-  // Default state uses the brand teal â€” calm, inviting.
+  // Default state uses the brand teal — calm, inviting.
   const accentColor  = urgency ? "#f5a623" : "#00b4a6";
   const accentGlow   = urgency ? "rgba(245,166,35,0.18)" : "rgba(0,180,166,0.12)";
   const accentBorder = urgency ? "rgba(245,166,35,0.28)" : "rgba(0,180,166,0.2)";
@@ -106,7 +106,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
           onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.3)"; }}
         >
-          Ã—
+          ×
         </button>
 
         {/* Icon */}
@@ -131,7 +131,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
           {desc}
         </p>
 
-        {/* Sub-description â€” loss aversion or social proof line */}
+        {/* Sub-description — loss aversion or social proof line */}
         {subdesc && (
           <p style={{
             fontSize: 12.5, color: accentColor, lineHeight: 1.6,
@@ -174,7 +174,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
             fontSize: 13.5, fontWeight: 800, color: accentColor,
             position: "relative", zIndex: 1,
           }}>
-            ðŸ’Ž {price}
+            💎 {price}
           </div>
         )}
 
@@ -195,7 +195,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
             position: "relative", zIndex: 1,
           }}
         >
-          ðŸ”“ {cta}
+          🔓 {cta}
         </button>
 
         {/* Dismiss */}
@@ -222,7 +222,7 @@ export default function PremiumGate({ feature, onUpgrade, onClose }) {
           marginTop: 14, letterSpacing: "0.02em",
           position: "relative", zIndex: 1,
         }}>
-          ðŸ”’ Secure payment Â· Cancel anytime Â· Instant access
+          🔒 Secure payment · Cancel anytime · Instant access
         </p>
       </div>
     </div>

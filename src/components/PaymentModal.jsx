@@ -9,7 +9,7 @@ const CRYPTO_WALLETS = {
   "Bitcoin (BTC)": "12SDDVhtgYaKkmYg5tNxCygo43EqxndDXm",
 };
 
-// Dynamically load Paystack inline script â€” safe to call multiple times
+// Dynamically load Paystack inline script — safe to call multiple times
 function loadPaystackScript() {
   return new Promise((resolve, reject) => {
     if (window.PaystackPop) { resolve(); return; }
@@ -50,7 +50,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
     return true;
   }
 
-  // â”€â”€ Paystack inline popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Paystack inline popup ─────────────────────────────────────────────────
   async function handlePaystack() {
     setError("");
     if (!validate()) return;
@@ -96,7 +96,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
           onSuccess?.();
         },
         onClose() {
-          // User closed popup without paying â€” stay on step 2
+          // User closed popup without paying — stay on step 2
           setLoading(false);
           setStep(2);
         },
@@ -111,7 +111,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
     }
   }
 
-  // â”€â”€ Crypto manual confirm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Crypto manual confirm ─────────────────────────────────────────────────
   async function handleCryptoConfirm() {
     setError("");
     if (!validate()) return;
@@ -143,7 +143,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
     setTimeout(() => setCopied(""), 2000);
   }
 
-  // â”€â”€ Shared input style â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Shared input style ────────────────────────────────────────────────────
   const inputStyle = {
     width: "100%", boxSizing: "border-box",
     background: "var(--surface2)", border: "1px solid var(--border)",
@@ -163,7 +163,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
         {/* Plan badge */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: `${planColor}22`, border: `1px solid ${planColor}55`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontSize: 18 }}>âš¡</span>
+            <span style={{ fontSize: 18 }}>⚡</span>
           </div>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>{plan.name} Plan</div>
@@ -171,7 +171,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
           </div>
         </div>
 
-        {/* â”€â”€ Step 1: Choose method â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Step 1: Choose method ─────────────────────────────────────────── */}
         {step === 1 && (
           <>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Choose payment method</div>
@@ -200,7 +200,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
           </>
         )}
 
-        {/* â”€â”€ Step 2: Account details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Step 2: Account details ───────────────────────────────────────── */}
         {step === 2 && (
           <>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>
@@ -212,7 +212,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                 : "Send the equivalent of your plan price to a wallet below, then confirm with your transaction hash."}
             </div>
 
-            {/* Crypto wallets â€” compact */}
+            {/* Crypto wallets — compact */}
             {method === "crypto" && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8, lineHeight: 1.5 }}>
@@ -229,7 +229,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                         onClick={() => copyWallet(key, addr)}
                         style={{ background: copied === key ? `${planColor}22` : "var(--surface)", border: `1px solid ${planColor}55`, color: planColor, borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", flexShrink: 0, fontWeight: 600 }}
                       >
-                        {copied === key ? "âœ“" : "Copy"}
+                        {copied === key ? "✓" : "Copy"}
                       </button>
                     </div>
                   ))}
@@ -275,24 +275,24 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
                 onClick={method === "paystack" ? handlePaystack : handleCryptoConfirm}
                 disabled={loading}
               >
-                {loading ? "Opening paymentâ€¦" : method === "paystack" ? `Pay ${price}` : "Confirm payment"}
+                {loading ? "Opening payment…" : method === "paystack" ? `Pay ${price}` : "Confirm payment"}
               </button>
             </div>
           </>
         )}
 
-        {/* â”€â”€ Step 3: Paystack popup is open â€” message while it's in front â”€â”€â”€ */}
+        {/* ── Step 3: Paystack popup is open — message while it's in front ─── */}
         {step === 3 && (
           <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
             <div style={{ fontSize: 36, marginBottom: 16 }}>ðŸ”</div>
             <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>Complete your payment</div>
             <div style={{ fontSize: 13, color: "var(--text3)", lineHeight: 1.7 }}>
-              The Paystack checkout is open. Complete your payment there â€” your plan activates the moment it's confirmed.
+              The Paystack checkout is open. Complete your payment there — your plan activates the moment it's confirmed.
             </div>
           </div>
         )}
 
-        {/* â”€â”€ Step 4: Success â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Step 4: Success ───────────────────────────────────────────────── */}
         {step === 5 && (
           <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: "#f5a623", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Submitted for review</div>
@@ -311,7 +311,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }) {
 
         {step === 4 && (
           <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>ðŸŽ‰</div>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
             <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>Welcome to {plan.name}!</div>
             <div style={{ fontSize: 14, color: "var(--text3)", lineHeight: 1.7, marginBottom: 28 }}>
               Your subscription is active. Enjoy the full NovaSpark experience.
