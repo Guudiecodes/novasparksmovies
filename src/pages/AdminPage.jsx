@@ -39,7 +39,7 @@ async function adminPost(action, body = {}) {
   url.searchParams.set("action", action);
   const res = await fetch(url.toString(), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
+    headers: { "Content-Type": "application/json", "x-admin-token": getAdminToken() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
@@ -221,6 +221,13 @@ function AdminDashboard({ onBack }) {
   const [cryptoLoading,  setCryptoLoading] = useState(false);
   const [cryptoActionId, setCryptoActionId]= useState(null);
 
+  // Grant plan (manual, bypasses payment)
+  const [grantOpenFor, setGrantOpenFor] = useState(null);
+  const [grantPlan,    setGrantPlan]    = useState("basic");
+  const [grantDays,    setGrantDays]    = useState(30);
+  const [grantBusy,    setGrantBusy]    = useState(false);
+  const [grantMsg,     setGrantMsg]     = useState("");
+
   // Settings tab state
   const [globalPlan,    setGlobalPlanState] = useState(() => getAdminGlobalPlan() || "free");
   const [planSaved,     setPlanSaved]       = useState(false);
@@ -246,16 +253,30 @@ function AdminDashboard({ onBack }) {
     secureStorage.get("ns_wyzie_global_key").then(val => { if (val) setWyzieKey(val); });
   }, []);
 
+  const fetchAllUsersPaginated = useCallback(async () => {
+    let page = 0;
+    let all = [];
+    while (true) {
+      const res = await adminFetch("users", { page });
+      const batch = res.users || [];
+      all = all.concat(batch);
+      if (batch.length < (res.limit || 50)) break;
+      page++;
+      if (page > 100) break;
+    }
+    return all;
+  }, []);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setApiError(null);
     const [statsRes, usersRes, actRes] = await Promise.allSettled([
       adminFetch("stats"),
-      adminFetch("users"),
+      fetchAllUsersPaginated(),
       adminFetch("activity"),
     ]);
     if (statsRes.status === "fulfilled") setStats(statsRes.value);
-    if (usersRes.status === "fulfilled") setUsers(usersRes.value.users || []);
+    if (usersRes.status === "fulfilled") setUsers(usersRes.value || []);
     if (actRes.status === "fulfilled")   setRemoteActivity(actRes.value.activity || []);
     if (
       statsRes.status === "rejected" &&
@@ -266,7 +287,7 @@ function AdminDashboard({ onBack }) {
     }
     setLastRefreshed(new Date());
     setLoading(false);
-  }, []);
+  }, [fetchAllUsersPaginated]);
 
   useEffect(() => {
     fetchAll();
@@ -298,6 +319,20 @@ function AdminDashboard({ onBack }) {
       console.error("crypto decision failed:", e);
     }
     setCryptoActionId(null);
+  };
+
+  const handleGrantPlan = async (email) => {
+    setGrantBusy(true);
+    setGrantMsg("");
+    try {
+      await adminPost("grant_plan", { email, plan_id: grantPlan, duration_days: grantDays });
+      setGrantMsg("Granted successfully");
+      await fetchAll();
+      setTimeout(() => { setGrantOpenFor(null); setGrantMsg(""); }, 1200);
+    } catch (e) {
+      setGrantMsg("Failed - " + e.message);
+    }
+    setGrantBusy(false);
   };
 
   const handleSavePlan = () => {
@@ -374,7 +409,7 @@ function AdminDashboard({ onBack }) {
 
   const sRow = {
     display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
+    gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr",
     padding: "0 20px",
     alignItems: "center",
     gap: 12,
@@ -576,7 +611,7 @@ function AdminDashboard({ onBack }) {
                   borderBottom: "1px solid var(--border)",
                   fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, color: "var(--text3)",
                 }}>
-                  <span>User</span><span>Plan</span><span>Joined</span><span>Last Active</span><span>Status</span>
+                  <span>User</span><span>Plan</span><span>Joined</span><span>Last Active</span><span>Status</span><span>Actions</span>
                 </div>
                 {/* Rows */}
                 {filteredUsers.map(u => {
@@ -624,9 +659,63 @@ function AdminDashboard({ onBack }) {
                       }}>
                         {isExpired ? "Expired" : isActive ? "Online" : "Offline"}
                       </span>
+                      <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }}
+                        onClick={() => { setGrantOpenFor(u.email); setGrantPlan(u.plan && u.plan !== "free" ? u.plan : "basic"); setGrantDays(30); setGrantMsg(""); }}>
+                        Grant
+                      </button>
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {grantOpenFor && (
+              <div style={{
+                position: "fixed", inset: 0, zIndex: 500,
+                background: "rgba(0,0,0,0.6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <div style={{
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  borderRadius: 16, padding: "28px 32px", width: 380, maxWidth: "90%",
+                  boxShadow: "0 30px 80px rgba(0,0,0,0.7)",
+                }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Grant Plan</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 20, wordBreak: "break-all" }}>{grantOpenFor}</div>
+
+                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "var(--text3)", marginBottom: 7 }}>Plan</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+                    {["mobile", "basic", "standard", "premium"].map(p => (
+                      <button key={p} onClick={() => setGrantPlan(p)}
+                        className={grantPlan === p ? "btn btn-primary" : "btn btn-ghost"}
+                        style={{ padding: "6px 14px", fontSize: 12, textTransform: "capitalize" }}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "var(--text3)", marginBottom: 7 }}>Duration (days)</div>
+                  <input className="apikey-input" type="number" min="1" value={grantDays}
+                    onChange={e => setGrantDays(Number(e.target.value) || 30)}
+                    style={{ width: "100%", marginBottom: 20 }} />
+
+                  {grantMsg && (
+                    <div style={{ fontSize: 13, marginBottom: 14, color: grantMsg.indexOf("Granted") !== -1 ? "#48c774" : "var(--red)" }}>
+                      {grantMsg}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button className="btn btn-ghost" style={{ flex: 1 }}
+                      onClick={() => { setGrantOpenFor(null); setGrantMsg(""); }}>
+                      Cancel
+                    </button>
+                    <button className="btn btn-primary" style={{ flex: 1 }} disabled={grantBusy}
+                      onClick={() => handleGrantPlan(grantOpenFor)}>
+                      {grantBusy ? "Granting..." : "Confirm Grant"}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

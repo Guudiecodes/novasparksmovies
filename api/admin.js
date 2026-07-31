@@ -191,7 +191,28 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
-    return res.status(400).json({ error: "Unknown action. Use: stats | users | activity | crypto_pending | crypto_approve | crypto_reject" });
+    // -- Grant plan: manual admin grant, bypasses payment -------------------------
+    if (action === "grant_plan" && req.method === "POST") {
+      const { email, plan_id, duration_days } = req.body || {};
+      if (!email || !plan_id) return res.status(400).json({ error: "Missing email or plan_id" });
+
+      const days = Number(duration_days) > 0 ? Number(duration_days) : 30;
+      const expiresAt = now + days * DAY;
+
+      await sbWrite("POST", "/subscriptions?on_conflict=email", {
+        email,
+        plan_id,
+        started_at:   now,
+        expires_at:   expiresAt,
+        cancelled_at: null,
+        warning_sent: { "7d": false, "3d": false, "1d": false },
+        updated_at:   new Date().toISOString(),
+      });
+
+      return res.json({ ok: true, expiresAt });
+    }
+
+    return res.status(400).json({ error: "Unknown action. Use: stats | users | activity | crypto_pending | crypto_approve | crypto_reject | grant_plan" });
 
   } catch (e) {
     console.error("admin API error:", e.message);
