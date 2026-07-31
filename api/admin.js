@@ -165,7 +165,6 @@ export default async function handler(req, res) {
         txn_ref:       claim.txn_ref,
         started_at:    now,
         expires_at:    expiresAt,
-        cancelled_at:  null,
         warning_sent:  { "7d": false, "3d": false, "1d": false },
         updated_at:    new Date().toISOString(),
       });
