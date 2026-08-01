@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { canUseShorts, canDownload, incrementFreeDailyUsage, recordFeatureUse } from "../utils/premium";
 import PremiumGate from "../components/PremiumGate";
 import PushAd from "../components/PushAd";
-import PopunderAd from "../components/PopunderAd";
+// import PopunderAd from "../components/PopunderAd";
 
 const TMDB_BASE    = "https://api.themoviedb.org/3";
 const TMDB_IMG     = "https://image.tmdb.org/t/p";
@@ -802,8 +802,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
     return(
       <div ref={containerRef} style={{position:"fixed",top:0,bottom:0,left:"var(--sidebar,54px)",right:0,background:"#0f0f0f",display:"flex",flexDirection:"column",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",overflow:"hidden"}}>
         <style>{G}</style>
-        <PushAd planId={planId} />
-        <PopunderAd />
+        <PushAd planId={planId} />{/* <PopunderAd /> */}
         {/* Header */}
         <div style={{height:HEADER_H,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",background:"#0f0f0f",zIndex:10}}>
           <button onClick={()=>nav("home")} style={{all:"unset",display:"flex",alignItems:"center",gap:10,cursor:"pointer",color:"rgba(255,255,255,0.7)",fontSize:14,fontWeight:500,padding:"6px 10px 6px 6px",borderRadius:8,transition:"color 0.15s,background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#fff";e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.7)";e.currentTarget.style.background="transparent";}}>
@@ -886,8 +885,7 @@ export default function ReelPage({apiKey,onSelect,onSave,savedItems=[],onNavigat
   return createPortal(
     <div ref={containerRef} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000",overflow:"hidden",touchAction:"none",overscrollBehavior:"none",userSelect:"none",WebkitUserSelect:"none",fontFamily:"'DM Sans','Helvetica Neue',sans-serif",zIndex:2147483647}}>
       <style>{`${G} .ns-mob-rail{position:absolute;right:8px;bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;display:flex;flex-direction:column;align-items:center;gap:18px;touch-action:none;} .ns-mob-info{position:absolute;bottom:0;left:0;right:60px;z-index:30;padding:0 14px calc(72px + env(safe-area-inset-bottom)) 16px;pointer-events:none;box-sizing:border-box;} .ns-mob-topbtn{touch-action:manipulation;}`}</style>
-      <PushAd planId={planId} />
-      <PopunderAd />
+      <PushAd planId={planId} />{/* <PopunderAd /> */}
       {showGate&&<PremiumGate feature={showGate} onClose={()=>setShowGate(null)}/>}
       {loading&&spinner}
       {!loading&&reels.map((r,i)=>{
