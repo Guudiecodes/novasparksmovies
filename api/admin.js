@@ -203,7 +203,6 @@ export default async function handler(req, res) {
         plan_id,
         started_at:   now,
         expires_at:   expiresAt,
-        cancelled_at: null,
         warning_sent: { "7d": false, "3d": false, "1d": false },
         updated_at:   new Date().toISOString(),
       });
