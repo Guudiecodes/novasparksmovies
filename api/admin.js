@@ -159,14 +159,9 @@ export default async function handler(req, res) {
       const expiresAt = now + (claim.duration_days || 30) * DAY;
 
       await sbWrite("POST", "/subscriptions?on_conflict=email", {
-        email:         claim.email,
-        password_hash: claim.password_hash,
-        plan_id:       claim.plan_id,
-        txn_ref:       claim.txn_ref,
-        started_at:    now,
-        expires_at:    expiresAt,
-        warning_sent:  { "7d": false, "3d": false, "1d": false },
-        updated_at:    new Date().toISOString(),
+        email,
+        plan_id,
+        expires_at: expiresAt,
       });
 
       await sbWrite("PATCH", `/crypto_pending?id=eq.${id}`, {
@@ -201,10 +196,7 @@ export default async function handler(req, res) {
       await sbWrite("POST", "/subscriptions?on_conflict=email", {
         email,
         plan_id,
-        started_at:   now,
         expires_at:   expiresAt,
-        warning_sent: { "7d": false, "3d": false, "1d": false },
-        updated_at:   new Date().toISOString(),
       });
 
       return res.json({ ok: true, expiresAt });
