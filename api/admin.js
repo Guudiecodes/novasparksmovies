@@ -161,7 +161,7 @@ export default async function handler(req, res) {
       await sbWrite("POST", "/subscriptions?on_conflict=email", {
         email,
         plan_id,
-        expires_at: expiresAt,
+        expires_at: new Date(expiresAt).toISOString(),
       });
 
       await sbWrite("PATCH", `/crypto_pending?id=eq.${id}`, {
@@ -196,7 +196,7 @@ export default async function handler(req, res) {
       await sbWrite("POST", "/subscriptions?on_conflict=email", {
         email,
         plan_id,
-        expires_at:   expiresAt,
+        expires_at: new Date(expiresAt).toISOString(),
       });
 
       return res.json({ ok: true, expiresAt });
