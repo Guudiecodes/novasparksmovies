@@ -100,7 +100,7 @@ export default async function handler(req, res) {
 
       const [users, subs] = await Promise.all([
         sb("/users", {
-          select: "id,email,display_name,created_at,last_active",
+          select: "id,email,display_name,created_at,last_active,access_status,suspended_until,suspended_reason,flagged,flag_reason",
           order:  "created_at.desc",
           limit,
           offset,
@@ -112,13 +112,18 @@ export default async function handler(req, res) {
       subs.forEach(s => { subMap[s.email] = s; });
 
       const result = users.map(u => ({
-        id:          u.id,
-        email:       u.email,
-        display_name:u.display_name,
-        created_at:  u.created_at,
-        last_active: u.last_active,
-        plan:        subMap[u.email]?.plan_id || "free",
-        subExpires:  subMap[u.email]?.expires_at
+        id:               u.id,
+        email:            u.email,
+        display_name:     u.display_name,
+        created_at:       u.created_at,
+        last_active:      u.last_active,
+        access_status:    u.access_status || "active",
+        suspended_until:  u.suspended_until ? new Date(u.suspended_until).getTime() : null,
+        suspended_reason: u.suspended_reason || null,
+        flagged:          !!u.flagged,
+        flag_reason:      u.flag_reason || null,
+        plan:             subMap[u.email]?.plan_id || "free",
+        subExpires:       subMap[u.email]?.expires_at
           ? new Date(subMap[u.email].expires_at).getTime()
           : null,
       }));
@@ -159,8 +164,8 @@ export default async function handler(req, res) {
       const expiresAt = now + (claim.duration_days || 30) * DAY;
 
       await sbWrite("POST", "/subscriptions?on_conflict=email", {
-        email,
-        plan_id,
+        email:      claim.email,
+        plan_id:    claim.plan_id,
         expires_at: new Date(expiresAt).toISOString(),
       });
 
@@ -202,7 +207,124 @@ export default async function handler(req, res) {
       return res.json({ ok: true, expiresAt });
     }
 
-    return res.status(400).json({ error: "Unknown action. Use: stats | users | activity | crypto_pending | crypto_approve | crypto_reject | grant_plan" });
+    // -- Suspend user (temporary) -------------------------------------------------
+    if (action === "suspend_user" && req.method === "POST") {
+      const { email, days, reason } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+      const d = Number(days) > 0 ? Number(days) : 7;
+      const suspendedUntil = now + d * DAY;
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        access_status:    "suspended",
+        suspended_until:  new Date(suspendedUntil).toISOString(),
+        suspended_reason: reason || null,
+      });
+
+      return res.json({ ok: true, suspendedUntil });
+    }
+
+    // -- Unsuspend user -------------------------------------------------------------
+    if (action === "unsuspend_user" && req.method === "POST") {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        access_status:    "active",
+        suspended_until:  null,
+        suspended_reason: null,
+      });
+
+      return res.json({ ok: true });
+    }
+
+    // -- Ban user (permanent) -------------------------------------------------------
+    if (action === "ban_user" && req.method === "POST") {
+      const { email, reason } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        access_status:    "banned",
+        suspended_reason: reason || null,
+      });
+
+      return res.json({ ok: true });
+    }
+
+    // -- Unban user -------------------------------------------------------------------
+    if (action === "unban_user" && req.method === "POST") {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        access_status:    "active",
+        suspended_reason: null,
+      });
+
+      return res.json({ ok: true });
+    }
+
+    // -- Flag user for review (does not block access) --------------------------------
+    if (action === "flag_user" && req.method === "POST") {
+      const { email, reason } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        flagged:     true,
+        flag_reason: reason || null,
+      });
+
+      return res.json({ ok: true });
+    }
+
+    // -- Unflag user -------------------------------------------------------------------
+    if (action === "unflag_user" && req.method === "POST") {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        flagged:     false,
+        flag_reason: null,
+      });
+
+      return res.json({ ok: true });
+    }
+
+    // -- Soft delete (deactivate, keep data, reversible) -------------------------------
+    if (action === "soft_delete_user" && req.method === "POST") {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        access_status: "deleted",
+      });
+
+      return res.json({ ok: true });
+    }
+
+    // -- Restore soft-deleted user -------------------------------------------------------
+    if (action === "restore_user" && req.method === "POST") {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("PATCH", `/users?email=eq.${encodeURIComponent(email)}`, {
+        access_status: "active",
+      });
+
+      return res.json({ ok: true });
+    }
+
+    // -- Hard delete (permanent, irreversible) ---------------------------------------
+    if (action === "hard_delete_user" && req.method === "POST") {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "Missing email" });
+
+      await sbWrite("DELETE", `/subscriptions?email=eq.${encodeURIComponent(email)}`);
+      await sbWrite("DELETE", `/users?email=eq.${encodeURIComponent(email)}`);
+
+      return res.json({ ok: true });
+    }
+
+    return res.status(400).json({ error: "Unknown action. Use: stats | users | activity | crypto_pending | crypto_approve | crypto_reject | grant_plan | suspend_user | unsuspend_user | ban_user | unban_user | flag_user | unflag_user | soft_delete_user | restore_user | hard_delete_user" });
 
   } catch (e) {
     console.error("admin API error:", e.message);
