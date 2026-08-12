@@ -16,7 +16,7 @@ import { collectBackupData } from "./utils/backup";
 import { tmdbFetch, setApiErrorHandlers } from "./utils/api";
 import { clearAppCaches } from "./utils/storage";
 import { checkForUpdates } from "./utils/updates";
-import { autoSyncPremium } from "./utils/premium";
+import { autoSyncPremium, applyServerStatus } from "./utils/premium";
 
 import Sidebar from "./components/Sidebar";
 import SearchModal from "./components/SearchModal";
@@ -95,6 +95,43 @@ export default function App() {
     setUserProfile(null);
     setShowLogin(true);
   }, []);
+
+// ── Live account status polling ──────────────────────────────────────────
+  useEffect(() => {
+    if (!userProfile) return;
+    const token = localStorage.getItem("ns_user_token");
+    if (!token) return;
+
+    const API_BASE = (() => {
+      const { hostname, protocol } = window.location;
+      if (protocol === "file:" || hostname === "" || hostname === "null") return "https://novasparks.xyz";
+      if (hostname === "localhost" || hostname === "127.0.0.1") return "https://novasparks.xyz";
+      return window.location.origin;
+    })();
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/my-status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.ok) return;
+        const { blocked, reason } = applyServerStatus(data);
+        setIsPremium(!!storage.get(NS_PREMIUM_KEY));
+        if (blocked) {
+          alert(reason ? `Account access restricted: ${reason}` : "Your account access has been restricted.");
+          handleLogout();
+        }
+      } catch {}
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 5000);
+    return () => clearInterval(interval);
+  }, [userProfile, handleLogout]);
 
   // True once we've pushed at least one history entry this session, or the
   // page was opened somewhere other than the root — i.e. there's somewhere

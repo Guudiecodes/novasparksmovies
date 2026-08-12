@@ -283,6 +283,18 @@ export function setPremiumPlan(planId, email, password, txnRef, durationDaysOver
 }
 export const savePremiumRecord = setPremiumPlan;
 
+export function applyServerStatus(data) {
+  if (data.planId && data.planId !== "free" && data.expiresAt) {
+    const rec = getPremiumRecord() || {};
+    storage.set(PREMIUM_KEY, { ...rec, planId: data.planId, expiresAt: data.expiresAt, lastSyncedAt: Date.now() });
+    storage.set(PREMIUM_FLAG_KEY, { planId: data.planId });
+  } else if (data.planId === "free") {
+    storage.remove(PREMIUM_KEY);
+    storage.remove(PREMIUM_FLAG_KEY);
+  }
+  return { blocked: !!data.blocked, accessStatus: data.accessStatus, reason: data.reason };
+}
+
 export function syncPremiumFlag() {
   const active = isPremiumActive();
   const rec = getPremiumRecord();
