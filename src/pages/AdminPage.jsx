@@ -228,6 +228,10 @@ function AdminDashboard({ onBack }) {
   const [grantBusy,    setGrantBusy]    = useState(false);
   const [grantMsg,     setGrantMsg]     = useState("");
 
+  // Manage menu (suspend/ban/flag/delete)
+  const [manageOpenFor, setManageOpenFor] = useState(null);
+  const [manageBusy,    setManageBusy]    = useState(false);
+
   // Settings tab state
   const [globalPlan,    setGlobalPlanState] = useState(() => getAdminGlobalPlan() || "free");
   const [planSaved,     setPlanSaved]       = useState(false);
@@ -244,9 +248,9 @@ function AdminDashboard({ onBack }) {
   const localSummary  = getFeatureUsageSummary();
 
   const FEATURE_LABELS = {
-    watch: "🎬 Watch", download: "â¬‡ï¸ Download", source_switch: "🔄 Source Switch",
-    subtitles: "ðŸ“ Subtitles", login: "ðŸ” Login", search: "ðŸ” Search",
-    pip: "ðŸ–¼ï¸ Pop-Out", signup: "👤 Sign Up", share: "📤 Share",
+    watch: "🎬 Watch", download: "â¬‡ï¸ Download", source_switch: "🔄 Source Switch",
+    subtitles: "ðŸ“ Subtitles", login: "ðŸ” Login", search: "ðŸ” Search",
+    pip: "ðŸ–¼ï¸ Pop-Out", signup: "👤 Sign Up", share: "📤 Share",
   };
 
   useEffect(() => {
@@ -335,6 +339,48 @@ function AdminDashboard({ onBack }) {
     setGrantBusy(false);
   };
 
+  // ── Manage actions: suspend / ban / flag / delete ─────────────────────────
+  const runUserAction = async (action, email, extra = {}) => {
+    setManageBusy(true);
+    try {
+      await adminPost(action, { email, ...extra });
+      await fetchAll();
+    } catch (e) {
+      alert("Action failed: " + e.message);
+    }
+    setManageBusy(false);
+    setManageOpenFor(null);
+  };
+
+  const handleSuspend = (email) => {
+    const days = window.prompt("Suspend for how many days?", "7");
+    if (days === null) return;
+    const reason = window.prompt("Reason (optional):", "") || undefined;
+    runUserAction("suspend_user", email, { days: Number(days) || 7, reason });
+  };
+  const handleUnsuspend  = (email) => runUserAction("unsuspend_user", email);
+  const handleBan = (email) => {
+    if (!window.confirm(`Ban ${email}? They will be logged out and blocked from accessing the app.`)) return;
+    const reason = window.prompt("Reason (optional):", "") || undefined;
+    runUserAction("ban_user", email, { reason });
+  };
+  const handleUnban      = (email) => runUserAction("unban_user", email);
+  const handleFlag = (email) => {
+    const reason = window.prompt("Flag reason (optional):", "") || undefined;
+    runUserAction("flag_user", email, { reason });
+  };
+  const handleUnflag     = (email) => runUserAction("unflag_user", email);
+  const handleSoftDelete = (email) => {
+    if (!window.confirm(`Deactivate ${email}? Their data is kept and this can be reversed with Restore.`)) return;
+    runUserAction("soft_delete_user", email);
+  };
+  const handleRestore    = (email) => runUserAction("restore_user", email);
+  const handleHardDelete = (email) => {
+    if (!window.confirm(`PERMANENTLY delete ${email} and all their data? This cannot be undone.`)) return;
+    if (window.prompt("Type the email to confirm permanent deletion:") !== email) { alert("Email didn't match. Cancelled."); return; }
+    runUserAction("hard_delete_user", email);
+  };
+
   const handleSavePlan = () => {
     setAdminGlobalPlan(globalPlan === "free" ? null : globalPlan);
     setPlanSaved(true);
@@ -414,6 +460,14 @@ function AdminDashboard({ onBack }) {
     alignItems: "center",
     gap: 12,
   };
+
+  const menuItemStyle = {
+    display: "block", width: "100%", textAlign: "left",
+    background: "none", border: "none", cursor: "pointer",
+    padding: "9px 14px", fontSize: 12.5, color: "var(--text2)",
+    fontFamily: "inherit",
+  };
+  const menuItemDangerStyle = { ...menuItemStyle, color: "var(--red)" };
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-body)" }}>
@@ -501,11 +555,10 @@ function AdminDashboard({ onBack }) {
           ))}
         </div>
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• OVERVIEW TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* OVERVIEW TAB */}
         {tab === "overview" && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 1100 }}>
 
-            {/* Feature Usage */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "26px 30px" }}>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Feature Usage</div>
               <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 22 }}>Most-used features this session</div>
@@ -518,7 +571,6 @@ function AdminDashboard({ onBack }) {
               ))}
             </div>
 
-            {/* Recent Signups */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "26px 30px" }}>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Recent Signups</div>
               <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 22 }}>Latest registered users</div>
@@ -547,7 +599,6 @@ function AdminDashboard({ onBack }) {
               ))}
             </div>
 
-            {/* Live Activity Feed — full width */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "26px 30px", gridColumn: "1 / -1" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>Live Activity Feed</div>
@@ -583,7 +634,7 @@ function AdminDashboard({ onBack }) {
           </div>
         )}
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• USERS TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* USERS TAB */}
         {tab === "users" && (
           <div style={{ maxWidth: 1100 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22 }}>
@@ -604,7 +655,6 @@ function AdminDashboard({ onBack }) {
               </div>
             ) : (
               <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
-                {/* Header */}
                 <div style={{
                   ...sRow,
                   height: 42, background: "var(--surface2)",
@@ -613,10 +663,22 @@ function AdminDashboard({ onBack }) {
                 }}>
                   <span>User</span><span>Plan</span><span>Joined</span><span>Last Active</span><span>Status</span><span>Actions</span>
                 </div>
-                {/* Rows */}
                 {filteredUsers.map(u => {
                   const isActive  = u.last_active && (Date.now() - new Date(u.last_active).getTime()) < 86400000;
                   const isExpired = u.subExpires && u.subExpires < Date.now();
+                  const status = u.access_status || "active";
+                  const isSuspended = status === "suspended" && u.suspended_until && u.suspended_until > Date.now();
+                  const isBanned    = status === "banned";
+                  const isDeleted   = status === "deleted";
+
+                  let badgeLabel = isExpired ? "Expired" : isActive ? "Online" : "Offline";
+                  let badgeColor = isExpired ? "var(--red)" : isActive ? "#48c774" : "var(--text3)";
+                  let badgeBg    = isExpired ? "rgba(229,9,20,0.1)" : isActive ? "rgba(72,199,116,0.1)" : "rgba(255,255,255,0.05)";
+                  let badgeBorder= isExpired ? "rgba(229,9,20,0.25)" : isActive ? "rgba(72,199,116,0.25)" : "var(--border)";
+                  if (isDeleted)      { badgeLabel = "Deleted";    badgeColor = "var(--text3)"; badgeBg = "rgba(255,255,255,0.05)"; badgeBorder = "var(--border)"; }
+                  else if (isBanned)  { badgeLabel = "Banned";     badgeColor = "var(--red)";    badgeBg = "rgba(229,9,20,0.12)";   badgeBorder = "rgba(229,9,20,0.3)"; }
+                  else if (isSuspended){ badgeLabel = "Suspended"; badgeColor = "#ffb450";        badgeBg = "rgba(255,180,80,0.12)"; badgeBorder = "rgba(255,180,80,0.3)"; }
+
                   return (
                     <div key={u.id} style={{
                       ...sRow, minHeight: 56,
@@ -636,8 +698,9 @@ function AdminDashboard({ onBack }) {
                           {(u.display_name || u.email || "?")[0].toUpperCase()}
                         </div>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
                             {u.display_name || "—"}
+                            {u.flagged && <span title={u.flag_reason || "Flagged"} style={{ fontSize: 11 }}>🚩</span>}
                           </div>
                           <div style={{ fontSize: 11, color: "var(--text3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {u.email}
@@ -653,16 +716,48 @@ function AdminDashboard({ onBack }) {
                         display: "inline-block",
                         fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 4,
                         textTransform: "uppercase", letterSpacing: 0.5,
-                        background: isExpired ? "rgba(229,9,20,0.1)" : isActive ? "rgba(72,199,116,0.1)" : "rgba(255,255,255,0.05)",
-                        color: isExpired ? "var(--red)" : isActive ? "#48c774" : "var(--text3)",
-                        border: `1px solid ${isExpired ? "rgba(229,9,20,0.25)" : isActive ? "rgba(72,199,116,0.25)" : "var(--border)"}`,
+                        background: badgeBg, color: badgeColor, border: `1px solid ${badgeBorder}`,
                       }}>
-                        {isExpired ? "Expired" : isActive ? "Online" : "Offline"}
+                        {badgeLabel}
                       </span>
-                      <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }}
-                        onClick={() => { setGrantOpenFor(u.email); setGrantPlan(u.plan && u.plan !== "free" ? u.plan : "basic"); setGrantDays(30); setGrantMsg(""); }}>
-                        Grant
-                      </button>
+
+                      <div style={{ position: "relative" }}>
+                        <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }}
+                          onClick={() => setManageOpenFor(manageOpenFor === u.email ? null : u.email)}>
+                          Manage ▾
+                        </button>
+                        {manageOpenFor === u.email && (
+                          <>
+                            <div style={{ position: "fixed", inset: 0, zIndex: 400 }} onClick={() => setManageOpenFor(null)} />
+                            <div style={{
+                              position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 401,
+                              background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10,
+                              boxShadow: "0 10px 30px rgba(0,0,0,0.5)", minWidth: 190, overflow: "hidden",
+                            }}>
+                              <button style={menuItemStyle} disabled={manageBusy}
+                                onClick={() => { setGrantOpenFor(u.email); setGrantPlan(u.plan && u.plan !== "free" ? u.plan : "basic"); setGrantDays(30); setGrantMsg(""); setManageOpenFor(null); }}>
+                                💎 Grant Plan
+                              </button>
+                              {isSuspended
+                                ? <button style={menuItemStyle} disabled={manageBusy} onClick={() => handleUnsuspend(u.email)}>↩️ Unsuspend</button>
+                                : <button style={menuItemStyle} disabled={manageBusy} onClick={() => handleSuspend(u.email)}>⏸️ Suspend</button>}
+                              {isBanned
+                                ? <button style={menuItemStyle} disabled={manageBusy} onClick={() => handleUnban(u.email)}>↩️ Unban</button>
+                                : <button style={menuItemDangerStyle} disabled={manageBusy} onClick={() => handleBan(u.email)}>🚫 Ban</button>}
+                              {u.flagged
+                                ? <button style={menuItemStyle} disabled={manageBusy} onClick={() => handleUnflag(u.email)}>🏳️ Unflag</button>
+                                : <button style={menuItemStyle} disabled={manageBusy} onClick={() => handleFlag(u.email)}>🚩 Flag</button>}
+                              {isDeleted
+                                ? <button style={menuItemStyle} disabled={manageBusy} onClick={() => handleRestore(u.email)}>↩️ Restore</button>
+                                : <button style={menuItemStyle} disabled={manageBusy} onClick={() => handleSoftDelete(u.email)}>🗑️ Deactivate</button>}
+                              <div style={{ borderTop: "1px solid var(--border)" }} />
+                              <button style={menuItemDangerStyle} disabled={manageBusy} onClick={() => handleHardDelete(u.email)}>
+                                ⚠️ Delete Permanently
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -721,7 +816,7 @@ function AdminDashboard({ onBack }) {
           </div>
         )}
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• ACTIVITY TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* ACTIVITY TAB */}
         {tab === "activity" && (
           <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 24, maxWidth: 1100 }}>
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "26px 30px" }}>
@@ -766,8 +861,7 @@ function AdminDashboard({ onBack }) {
           </div>
         )}
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SETTINGS TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
-{/* CRYPTO REVIEW TAB */}
+        {/* CRYPTO REVIEW TAB */}
         {tab === "crypto" && (
           <div style={{ maxWidth: 1000 }}>
             <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20, lineHeight: 1.7 }}>
@@ -805,9 +899,8 @@ function AdminDashboard({ onBack }) {
           </div>
         )}
 
-                {tab === "settings" && (
+        {tab === "settings" && (
           <div style={{ maxWidth: 720 }}>
-            {/* Global Plan Floor */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "28px 32px", marginBottom: 20 }}>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Global Feature Access</div>
               <div style={{ fontSize: 13, color: "var(--text3)", lineHeight: 1.7, marginBottom: 22 }}>
@@ -847,7 +940,6 @@ function AdminDashboard({ onBack }) {
               </div>
             </div>
 
-            {/* Wyzie Key */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "28px 32px" }}>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
                 Wyzie Subtitle API Key
