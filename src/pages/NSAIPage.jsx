@@ -8,7 +8,7 @@ import { canUseAI, incrementFreeDailyUsage } from "../utils/premium";
 import PremiumGate from "../components/PremiumGate";
 import UsageStatus from "../components/UsageStatus";
 import PushAd from "../components/PushAd";
-// import PopunderAd from "../components/PopunderAd";
+import PopunderAd from "../components/PopunderAd";
 
 const GROQ_KEY    = "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";
 const GEMINI_KEY  = "AIzaSyBuCi_KEm0TvPeG0VjYkCnIcHRQTJVKTJ8";
@@ -1735,7 +1735,7 @@ export default function NSAIPage({
       contain: "layout style",
     }}>
       <PushAd planId={planId} />
-      {/* <PopunderAd /> */}
+      <PopunderAd />
 
       <style>{`
         @keyframes nsFade  { from{opacity:0}to{opacity:1} }
