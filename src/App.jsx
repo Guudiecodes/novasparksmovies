@@ -22,6 +22,8 @@ import Sidebar from "./components/Sidebar";
 import SearchModal from "./components/SearchModal";
 import CloseConfirmModal from "./components/CloseConfirmModal";
 import UpdateModal from "./components/UpdateModal";
+import PopunderAd from "./components/PopunderAd";
+
 
 // ── NovaSpark: hardcoded key — users never see a setup screen ────────────────
 const NS_TMDB_KEY = "4bea51722649d28dcd5453a94f8f40ad";
@@ -133,11 +135,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [userProfile, handleLogout]);
 
-  // True once we've pushed at least one history entry this session, or the
-  // page was opened somewhere other than the root — i.e. there's somewhere
-  // for the browser (or our navigateBack) to actually go back to. The
-  // History API doesn't expose a readable length/index, so this is tracked
-  // by hand alongside our own pushState calls.
   const [canGoBack, setCanGoBack] = useState(() => window.location.pathname !== "/");
 
   const [saved,      setSaved]      = useState(() => storage.get("saved")      || {});
@@ -496,14 +493,10 @@ export default function App() {
 
   const pageRef     = useRef(page);
   const selectedRef = useRef(selected);
-const scrollMemory = useRef(storage.get("scrollMemory") || {});
+  const scrollMemory = useRef(storage.get("scrollMemory") || {});
   useEffect(() => { pageRef.current     = page;     }, [page]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
 
-  // ── URL <-> app-state mapping ────────────────────────────────────────────
-  // Pages that carry an id-addressable item get a real path so refresh, deep
-  // links, and history entries all resolve to the same place. Everything
-  // else (home, settings, downloads, etc.) is a flat top-level path.
   const pathForPage = useCallback((pg, data) => {
     if (pg === "movie" && data?.id)              return `/movie/${data.id}`;
     if (pg === "tv"    && data?.id)              return `/tv/${data.id}`;
@@ -520,14 +513,6 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
     return `/${pg}`;
   }, []);
 
-  // Parses the current window.location back into { page, params } so we know
-  // what to (re)load — used on first mount and on every popstate.
-  // Only trust a URL-derived page name if it's one this app actually
-  // renders. In Electron the window loads via a file:// URL, so
-  // window.location.pathname is a disk path, not a route — splitting it
-  // used to hand parts[0] (e.g. "C:") straight to setPage(), which matched
-  // nothing below and rendered a blank screen until sidebar navigation
-  // set a real page value.
   const VALID_PAGES = [
     "home", "reel", "movie", "tv", "watch", "pricing", "history",
     "settings", "downloads", "nsai", "admin", "genre",
@@ -556,12 +541,6 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
     return { page: "home", params: null };
   }, []);
 
-  // Full item objects (poster, title, overview, etc.) live in memory and
-  // can't be serialized into a URL — only the id can. So whenever a page
-  // loads from a URL we don't already have data for (first load, refresh,
-  // typed/pasted link, or a popstate that skipped past our in-memory cache),
-  // refetch the item from TMDB before rendering. itemCache avoids refetching
-  // something we already navigated to earlier in the session.
   const itemCache = useRef({});
   const resolveFromUrl = useCallback(async ({ page: pg, params }) => {
     if (!params || !apiKey) { setSelected(null); setPage(pg); return; }
@@ -609,9 +588,6 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
     setPage(pg);
   }, [apiKey]); // eslint-disable-line
 
-  // Swaps the current history entry instead of pushing — used for redirects
-  // (e.g. a dead link falling back home) so the bad URL isn't left in the
-  // back-button trail.
   const navigateReplace = useCallback((pg, data = null) => {
     const path = pathForPage(pg, data);
     window.history.replaceState({ page: pg, data }, "", path);
@@ -644,17 +620,9 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
     if (typeof gc === "function") requestIdleCallback(() => gc(), { timeout: 2000 });
   }, [pathForPage]);
 
-  // Real back/forward — delegates to the browser so the OS back button,
-  // mouse-side buttons, and trackpad swipe gestures all behave identically
-  // to the in-app back control. The actual state restoration happens in the
-  // popstate listener below, which fires for both this call and any
-  // external back/forward action.
-  const navigateBack = useCallback(() => { window.history.back(); }, []);
+  const navigateBack    = useCallback(() => { window.history.back(); }, []);
   const navigateForward = useCallback(() => { window.history.forward(); }, []);
 
-  // First mount: resolve whatever URL the app was opened/refreshed on, and
-  // seed a history entry for it so the very first popstate has somewhere
-  // to go back to.
   useEffect(() => {
     const initial = parseLocation();
     window.history.replaceState({ page: initial.page, data: null }, "", window.location.pathname + window.location.search);
@@ -663,11 +631,6 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
     }
   }, []); // eslint-disable-line
 
-  // Fires on real back/forward (button, gesture, or our navigateBack/Forward
-  // calls). Prefers the object pushState stashed (instant, no refetch) and
-  // falls back to re-parsing + refetching from TMDB when that's unavailable
-  // — e.g. after a hard refresh where history.state was rebuilt by the
-  // browser, not by us.
   useEffect(() => {
     const onPop = (e) => {
       const toKey = window.location.pathname + window.location.search;
@@ -709,9 +672,6 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
         const tag = (e.target?.tagName || "").toUpperCase();
         if (tag !== "INPUT" && tag !== "TEXTAREA") { e.preventDefault(); setShowShortcuts((v) => !v); }
       }
-      // Alt+Left / Alt+Right mirror the browser's own back/forward chord
-      // (and Cmd+[ / Cmd+] on macOS) rather than overloading Ctrl/Cmd+Z,
-      // which people expect to mean "undo my last edit," not "go back."
       if (e.altKey && e.key === "ArrowLeft")  { e.preventDefault(); navigateBack(); }
       if (e.altKey && e.key === "ArrowRight") { e.preventDefault(); navigateForward(); }
       if (e.metaKey && e.key === "[") { e.preventDefault(); navigateBack(); }
@@ -950,14 +910,6 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
         />
 
         <div className="main">
-{/* HomePage stays mounted for the lifetime of the app rather than
-              being torn down on navigation like every other page below. It
-              owns a dozen independently-paginated rows (Popular, Action,
-              Anime, etc.), each with its own fetch-page/hasMore state that
-              would otherwise reset to page 1 and refetch every time the user
-              left and came back. Hiding it with CSS instead of unmounting
-              keeps all of that state — and the user's exact scroll position
-              within it — intact across the whole session. */}
           <div style={{ display: page === "home" ? "block" : "none" }}>
             <Suspense fallback={null}>
               <HomePage
@@ -1220,7 +1172,11 @@ const scrollMemory = useRef(storage.get("scrollMemory") || {});
             onCancel={() => { setCloseConfirm(null); window.electron.respondClose(false); }}
           />
         )}
-{showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
+        {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
+        <PopunderAd />
+
       </div>
     </ErrorBoundary>
   );
