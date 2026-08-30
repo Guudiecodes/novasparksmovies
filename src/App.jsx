@@ -1175,7 +1175,7 @@ export default function App() {
 
         {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
-        <PopunderAd />
+        {!showLogin && <PopunderAd />}
 
       </div>
     </ErrorBoundary>
